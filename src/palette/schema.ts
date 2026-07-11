@@ -1,6 +1,6 @@
 import type { Palette, PaletteEntry } from '@/types';
 
-const HEX = /^[A-Z]\d{3}$/;
+const HEX = /^[A-Z]\d{2}$/;
 
 function rgbValid(rgb: readonly number[]): boolean {
   return rgb.length === 3
