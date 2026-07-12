@@ -1,0 +1,30 @@
+[
+  {
+    "id": "p-128-set",
+    "name": "128 色 MARD 拼豆套装",
+    "image": "/products/128-set.jpg",
+    "price": 99.00,
+    "currency": "CNY",
+    "description": "包含 MARD 全 128 色，每包约 1000 颗",
+    "url": "https://item.taobao.com/iid=REPLACE_ME_128",
+    "badge": "热销"
+  },
+  {
+    "id": "p-24-set",
+    "name": "24 色入门套装",
+    "image": "/products/24-set.jpg",
+    "price": 29.90,
+    "currency": "CNY",
+    "description": "适合新手，颜色覆盖常用色",
+    "url": "https://item.taobao.com/iid=REPLACE_ME_24"
+  },
+  {
+    "id": "p-tools",
+    "name": "拼豆工具套装",
+    "image": "/products/tools.jpg",
+    "price": 19.90,
+    "currency": "CNY",
+    "description": "折板 + 镊子 + 熨斗垫",
+    "url": "https://item.taobao.com/iid=REPLACE_ME_TOOLS"
+  }
+]
