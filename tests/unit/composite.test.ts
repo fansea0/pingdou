@@ -28,7 +28,6 @@ describe('renderComposite', () => {
     const canvas = renderComposite(indices, 3, palette, { cellPx: 32 });
     const opts = DEFAULT_COMPOSITE_OPTIONS;
     const beadW = 3 * 32;
-    const legendRows = 1 + 3 + 1;
     const legendW = opts.legendColWidth + 100 + 100 + 80 + opts.legendPadding * 2;
     const expectedW = beadW + opts.cellGap + legendW;
     expect(canvas.width).toBe(expectedW);
