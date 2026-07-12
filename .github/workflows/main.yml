@@ -1,0 +1,42 @@
+name: build_ping_dou
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.js"
+  
+
+jobs:
+  build:
+    name: 构建Vue项目
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Server
+        env:
+          HOST: ${{ secrets.SERVER_HOST }}
+          USER: root
+          PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+          sshpass -p "$PASSWORD" ssh \
+            -o StrictHostKeyChecking=no \
+            $USER@$HOST << 'EOF'
+
+          cd /root/project/pingdou
+
+          git pull
+
+          npm install
+
+          npm run dev
+
+          EOF
