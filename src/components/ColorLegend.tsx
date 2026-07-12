@@ -8,7 +8,7 @@ export function ColorLegend({ legend }: Props) {
   if (legend.length === 0) {
     return (
       <aside className="legend-wrap">
-        <p className="legend-empty">当前图像未匹配到任何色号</p>
+        <p className="empty-state">上传图片后查看色号对照表</p>
       </aside>
     );
   }

@@ -24,7 +24,15 @@ describe('ColorLegend', () => {
 
   it('renders empty state when legend is empty', () => {
     const { container } = render(<ColorLegend legend={[]} />);
-    expect(container.querySelector('.legend-empty')?.textContent).toMatch(/未匹配/);
+    const el = container.querySelector('.empty-state');
+    expect(el).toBeTruthy();
+    expect(el?.textContent).toMatch(/上传图片后查看色号对照表/);
+  });
+
+  it('does not show empty-state when legend has items', () => {
+    const { container } = render(<ColorLegend legend={legend} />);
+    expect(container.querySelector('.empty-state')).toBeNull();
+    expect(container.querySelector('.legend-row')).toBeTruthy();
   });
 
   it('does not have any highlighted class on rows', () => {

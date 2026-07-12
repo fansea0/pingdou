@@ -340,12 +340,6 @@ button.primary:disabled {
   font-variant-numeric: tabular-nums;
   color: var(--color-text);
 }
-.legend-empty {
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-  padding: var(--space-5) 0;
-  text-align: center;
-}
 
 /* === Error === */
 .error {
