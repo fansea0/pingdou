@@ -190,3 +190,13 @@ button.primary:disabled { background: #ccc; cursor: not-allowed; }
   padding: 16px 0;
   text-align: center;
 }
+
+/* === PreviewCanvas scroll wrapper === */
+.preview-scroll {
+  max-width: 100%;
+  max-height: 80vh;
+  overflow: auto;
+  background: white;
+  border-radius: 4px;
+}
+.preview-scroll.dim { opacity: 0.5; }
