@@ -28,3 +28,14 @@ export interface ExportItem {
   readonly blob: Blob;
   readonly filename: string;
 }
+
+export interface Product {
+  readonly id: string;
+  readonly name: string;
+  readonly image: string;
+  readonly price: number;
+  readonly currency: 'CNY';
+  readonly description: string;
+  readonly url: string;
+  readonly badge?: string;
+}
