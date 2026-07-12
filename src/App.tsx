@@ -7,6 +7,7 @@ import { PreviewCanvas } from '@/components/PreviewCanvas';
 import { ColorLegend } from '@/components/ColorLegend';
 import { ExportPanel } from '@/components/ExportPanel';
 import { AdSlot } from '@/components/AdSlot';
+import { ProductShowcase } from '@/components/ProductShowcase';
 import { computeLegend } from '@/pipeline/legend';
 import './components/AdSlot.css';
 
@@ -108,6 +109,8 @@ export function App() {
           <AdSlot slotId={AD_SLOT_SIDEBAR} width={300} height={250} position="sidebar" />
         </aside>
       </main>
+
+      <ProductShowcase />
 
       <AdSlot slotId={AD_SLOT_FOOTER} width={728} height={90} position="footer" />
 
