@@ -47,4 +47,35 @@ test.describe('拼豆图生成器 - 主流程', () => {
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^pingdou-\d+x\d+-composite\.png$/);
   });
+
+  test('点击 + 按钮缩放，toolbar 数字同步更新', async ({ page }) => {
+    test.skip(!fs.existsSync(FIXTURE), 'fixture 缺失 — 跳过');
+    await page.goto('/');
+    await page.locator('input[type=file]').setInputFiles(FIXTURE);
+    await expect(page.locator('.legend-row').first()).toBeVisible({ timeout: 10000 });
+
+    const zoomInput = page.locator('.zoom-toolbar input[type=number]');
+    await expect(zoomInput).toHaveValue('1');
+
+    await page.locator('[data-testid="zoom-in"]').click();
+    await expect(zoomInput).toHaveValue('1.5');
+
+    await page.locator('[data-testid="zoom-in"]').click();
+    await expect(zoomInput).toHaveValue('2');
+  });
+
+  test('点击复位按钮回到 1x', async ({ page }) => {
+    test.skip(!fs.existsSync(FIXTURE), 'fixture 缺失 — 跳过');
+    await page.goto('/');
+    await page.locator('input[type=file]').setInputFiles(FIXTURE);
+    await expect(page.locator('.legend-row').first()).toBeVisible({ timeout: 10000 });
+
+    await page.locator('[data-testid="zoom-in"]').click();
+    await page.locator('[data-testid="zoom-in"]').click();
+    const zoomInput = page.locator('.zoom-toolbar input[type=number]');
+    await expect(zoomInput).not.toHaveValue('1');
+
+    await page.locator('[data-testid="zoom-reset"]').click();
+    await expect(zoomInput).toHaveValue('1');
+  });
 });
