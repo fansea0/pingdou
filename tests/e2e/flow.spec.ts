@@ -18,4 +18,34 @@ test.describe('拼豆图生成器 - 主流程', () => {
     await page.locator('input[type=file]').setInputFiles(FIXTURE);
     await expect(page.locator('canvas.preview')).toBeVisible({ timeout: 10000 });
   });
+
+  test('上传后右侧色号对照表显示', async ({ page }) => {
+    test.skip(!fs.existsSync(FIXTURE), 'fixture 缺失 — 跳过');
+    await page.goto('/');
+    await page.locator('input[type=file]').setInputFiles(FIXTURE);
+    await expect(page.locator('.legend-row').first()).toBeVisible({ timeout: 10000 });
+  });
+
+  test('hover 对照表行时该行加 highlighted 类', async ({ page }) => {
+    test.skip(!fs.existsSync(FIXTURE), 'fixture 缺失 — 跳过');
+    await page.goto('/');
+    await page.locator('input[type=file]').setInputFiles(FIXTURE);
+    await expect(page.locator('.legend-row').first()).toBeVisible({ timeout: 10000 });
+
+    const firstRow = page.locator('.legend-row').first();
+    await firstRow.hover();
+    await expect(firstRow).toHaveClass(/highlighted/);
+  });
+
+  test('点击"导出合成图"下载 composite PNG', async ({ page }) => {
+    test.skip(!fs.existsSync(FIXTURE), 'fixture 缺失 — 跳过');
+    await page.goto('/');
+    await page.locator('input[type=file]').setInputFiles(FIXTURE);
+    await expect(page.locator('.legend-row').first()).toBeVisible({ timeout: 10000 });
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('.export-panel button.primary').click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^pingdou-\d+x\d+-composite\.png$/);
+  });
 });
