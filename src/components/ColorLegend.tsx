@@ -2,11 +2,9 @@ import type { LegendRow } from '@/pipeline/legend';
 
 interface Props {
   legend: LegendRow[];
-  highlightedIndex: number | null;
-  onHoverIndex: (idx: number | null) => void;
 }
 
-export function ColorLegend({ legend, highlightedIndex, onHoverIndex }: Props) {
+export function ColorLegend({ legend }: Props) {
   if (legend.length === 0) {
     return (
       <aside className="legend-wrap">
@@ -18,7 +16,7 @@ export function ColorLegend({ legend, highlightedIndex, onHoverIndex }: Props) {
   return (
     <aside className="legend-wrap">
       <h3 className="legend-title">色号对照表</h3>
-      <p className="legend-subtitle">悬停查看对应格子</p>
+      <p className="legend-subtitle">当前图像所用色号</p>
       <div className="legend-table">
         <div className="legend-header">
           <div className="col-swatch">色块</div>
@@ -27,16 +25,7 @@ export function ColorLegend({ legend, highlightedIndex, onHoverIndex }: Props) {
           <div className="col-count">数量</div>
         </div>
         {legend.map(row => (
-          <div
-            key={row.id}
-            className={
-              row.index === highlightedIndex
-                ? 'legend-row highlighted'
-                : 'legend-row'
-            }
-            onMouseEnter={() => onHoverIndex(row.index)}
-            onMouseLeave={() => onHoverIndex(null)}
-          >
+          <div key={row.id} className="legend-row">
             <div className="col-swatch">
               <span
                 className="swatch"

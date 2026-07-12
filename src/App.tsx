@@ -15,7 +15,6 @@ export function App() {
   const { status, result, error, process, reprocess, exportComposite } = usePipeline(palette);
   const [gridSize, setGridSize] = useState(100);
   const [enableDither, setEnableDither] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const legend = useMemo(
@@ -68,13 +67,11 @@ export function App() {
             gridSize={gridSize}
             onGridSizeChange={n => {
               setGridSize(n);
-              setHighlightedIndex(null);
               reprocess({ gridSize: n, enableDither });
             }}
             enableDither={enableDither}
             onDitherChange={b => {
               setEnableDither(b);
-              setHighlightedIndex(null);
               reprocess({ gridSize, enableDither: b });
             }}
             disabled={status === 'idle' || status === 'loading'}
@@ -90,17 +87,12 @@ export function App() {
             result={result}
             palette={palette}
             cellPx={PREVIEW_CELL_PX}
-            highlightedIndex={highlightedIndex}
             isRecomputing={status === 'recomputing'}
           />
         </section>
 
         <aside className="right">
-          <ColorLegend
-            legend={legend}
-            highlightedIndex={highlightedIndex}
-            onHoverIndex={setHighlightedIndex}
-          />
+          <ColorLegend legend={legend} />
         </aside>
       </main>
     </div>
