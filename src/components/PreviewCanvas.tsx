@@ -14,7 +14,7 @@ export function PreviewCanvas({ result, palette, cellPx, isRecomputing }: Props)
 
   useEffect(() => {
     if (!result || !ref.current) return;
-    const c = renderPaletteImage(result.indices, result.gridSize, palette, cellPx, '#ddd');
+    const c = renderPaletteImage(result.indices, result.outW, result.outH, palette, cellPx, '#ddd');
     const ctx = ref.current.getContext('2d')!;
     ref.current.width = c.width;
     ref.current.height = c.height;

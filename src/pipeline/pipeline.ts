@@ -49,20 +49,21 @@ export class Pipeline {
    */
   async exportComposite(result: PipelineResult): Promise<void> {
     if (!this.palette) throw new Error('Pipeline not initialized');
-    const { indices, gridSize } = result;
+    const { indices, outW, outH } = result;
 
-    const canvas = renderComposite(indices, gridSize, this.palette, {
+    const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
     });
     const blob = await canvasToBlob(canvas);
-    triggerDownload(blob, `pingdou-${gridSize}x${gridSize}-composite.png`);
+    triggerDownload(blob, `pingdou-${outW}x${outH}-composite.png`);
   }
 
   renderPreview(result: PipelineResult, cellPx: number): HTMLCanvasElement | null {
     if (!this.palette) return null;
     return renderPaletteImage(
       result.indices,
-      result.gridSize,
+      result.outW,
+      result.outH,
       this.palette,
       cellPx,
       null
