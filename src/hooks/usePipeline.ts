@@ -35,15 +35,15 @@ export function usePipeline(palette: Palette | null) {
     if (srcRef.current) throttledProcess(srcRef.current, params);
   }, [throttledProcess]);
 
-  const exportTriptych = useCallback(async (exportCellPx: number) => {
+  const exportComposite = useCallback(async () => {
     if (!pipelineRef.current || !result) return;
     setStatus('exporting');
     try {
-      await pipelineRef.current.exportAll(result, exportCellPx);
+      await pipelineRef.current.exportComposite(result);
     } finally {
       setStatus('ready');
     }
   }, [result]);
 
-  return { status, result, error, process, reprocess, exportTriptych };
+  return { status, result, error, process, reprocess, exportComposite };
 }
