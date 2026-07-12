@@ -12,7 +12,7 @@ const PREVIEW_CELL_PX = 24;
 
 export function App() {
   const { palette, error: paletteError } = usePalette();
-  const { status, result, error, process, reprocess, exportComposite } = usePipeline(palette);
+  const { status, result, error, process, reprocess, exportMulti } = usePipeline(palette);
   const [gridSize, setGridSize] = useState(100);
   const [enableDither, setEnableDither] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -41,11 +41,11 @@ export function App() {
     );
   }
 
-  const handleExport = async () => {
+  const handleExport = async (exportCellPx: number, extraGridSizes: number[]) => {
     if (!result || exporting) return;
     setExporting(true);
     try {
-      await exportComposite();
+      await exportMulti(exportCellPx, extraGridSizes);
     } finally {
       setExporting(false);
     }
@@ -77,6 +77,7 @@ export function App() {
             disabled={status === 'idle' || status === 'loading'}
           />
           <ExportPanel
+            currentGridSize={result?.gridSize ?? 100}
             disabled={!result || exporting}
             onExport={handleExport}
           />
