@@ -39,8 +39,16 @@ function buildRows(indices: Uint8Array, palette: Palette): InternalRow[] {
 }
 
 /**
- * Render a composite image: bead image (with color-code annotations) on top,
- * legend table on bottom. Returns a single HTMLCanvasElement.
+ * Render a composite image: bead image (with color-code annotations) on the LEFT
+ * and legend table on the RIGHT. Both vertically centered.
+ *
+ * Layout:
+ *   canvasW = beadW + cellGap + legendW
+ *   canvasH = max(beadH, legendH)
+ *   beadX = 0
+ *   beadY = floor((canvasH - beadH) / 2)
+ *   legendX = beadW + cellGap
+ *   legendY = floor((canvasH - legendH) / 2)
  */
 export function renderComposite(
   indices: Uint8Array,
@@ -69,8 +77,9 @@ export function renderComposite(
   const legendW = legendInnerW + opts.legendPadding * 2;
   const legendH = legendRowsCount * opts.legendRowHeight + opts.legendPadding * 2;
 
-  const canvasW = Math.max(beadW, legendW);
-  const canvasH = beadH + opts.cellGap + legendH;
+  const canvasW = beadW + opts.cellGap + legendW;
+  const canvasH = Math.max(beadH, legendH);
+
   const canvas = document.createElement('canvas');
   canvas.width = canvasW;
   canvas.height = canvasH;
@@ -79,16 +88,19 @@ export function renderComposite(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  const beadX = Math.floor((canvasW - beadW) / 2);
-  ctx.drawImage(beadCanvas, beadX, 0);
+  const beadX = 0;
+  const beadY = Math.floor((canvasH - beadH) / 2);
+  ctx.drawImage(beadCanvas, beadX, beadY);
 
-  const legendTop = beadH + opts.cellGap;
+  const legendTop = Math.floor((canvasH - legendH) / 2);
+  const legendLeft = beadW + opts.cellGap;
+
   ctx.strokeStyle = '#e5e5e5';
   ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, legendTop + 0.5, legendW - 1, legendH - 1);
+  ctx.strokeRect(legendLeft + 0.5, legendTop + 0.5, legendW - 1, legendH - 1);
 
   const colWidths = [opts.legendColWidth, labelColW, nameColW, countColW];
-  const colXs: number[] = [opts.legendPadding];
+  const colXs: number[] = [legendLeft + opts.legendPadding];
   for (let i = 0; i < colWidths.length - 1; i++) colXs.push(colXs[i] + colWidths[i]);
 
   ctx.font = `bold 13px -apple-system, "PingFang SC", sans-serif`;
@@ -102,8 +114,8 @@ export function renderComposite(
   }
 
   ctx.beginPath();
-  ctx.moveTo(opts.legendPadding, legendTop + opts.legendPadding + opts.legendRowHeight);
-  ctx.lineTo(legendW - opts.legendPadding, legendTop + opts.legendPadding + opts.legendRowHeight);
+  ctx.moveTo(colXs[0], legendTop + opts.legendPadding + opts.legendRowHeight);
+  ctx.lineTo(colXs[0] + legendInnerW, legendTop + opts.legendPadding + opts.legendRowHeight);
   ctx.strokeStyle = '#333';
   ctx.stroke();
 
