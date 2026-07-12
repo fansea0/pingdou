@@ -9,6 +9,7 @@ export function usePipeline(palette: Palette | null) {
   const [status, setStatus] = useState<UIStatus>('idle');
   const [error, setError] = useState<Error | null>(null);
   const srcRef = useRef<ImageData | null>(null);
+  const ditherRef = useRef(false);
 
   useEffect(() => {
     if (!palette) return;
@@ -19,6 +20,7 @@ export function usePipeline(palette: Palette | null) {
   const throttledProcess = useThrottle(async (src: ImageData, params: ProcessParams) => {
     if (!pipelineRef.current) return;
     try {
+      ditherRef.current = params.enableDither;
       await pipelineRef.current.process(src, params, setStatus, setResult);
       setError(null);
     } catch (e) {
@@ -28,22 +30,33 @@ export function usePipeline(palette: Palette | null) {
 
   const process = useCallback((src: ImageData, params: ProcessParams) => {
     srcRef.current = src;
+    ditherRef.current = params.enableDither;
     return throttledProcess(src, params);
   }, [throttledProcess]);
 
   const reprocess = useCallback((params: ProcessParams) => {
-    if (srcRef.current) throttledProcess(srcRef.current, params);
+    if (srcRef.current) {
+      ditherRef.current = params.enableDither;
+      throttledProcess(srcRef.current, params);
+    }
   }, [throttledProcess]);
 
-  const exportComposite = useCallback(async () => {
-    if (!pipelineRef.current || !result) return;
+  const exportMulti = useCallback(async (exportCellPx: number, extraGridSizes: number[]) => {
+    if (!pipelineRef.current || !result || !srcRef.current) return null;
     setStatus('exporting');
     try {
-      await pipelineRef.current.exportComposite(result);
+      const out = await pipelineRef.current.exportMulti(
+        srcRef.current,
+        result,
+        exportCellPx,
+        extraGridSizes,
+        ditherRef.current
+      );
+      return out;
     } finally {
       setStatus('ready');
     }
   }, [result]);
 
-  return { status, result, error, process, reprocess, exportComposite };
+  return { status, result, error, process, reprocess, exportMulti };
 }
