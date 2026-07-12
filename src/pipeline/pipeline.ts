@@ -31,7 +31,13 @@ export class Pipeline {
       if (myToken !== this.token) return;
 
       onStatus('ready');
-      onResult({ indices, gridSize: sampled.width, token: myToken });
+      onResult({
+        indices,
+        gridSize: sampled.width,
+        outW: sampled.width,
+        outH: sampled.height,
+        token: myToken,
+      });
     } catch (err) {
       onStatus('ready');
       throw err;

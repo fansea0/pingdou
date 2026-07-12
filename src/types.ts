@@ -16,6 +16,8 @@ export interface ProcessParams {
 export interface PipelineResult {
   readonly indices: Uint8Array;
   readonly gridSize: number;
+  readonly outW: number;
+  readonly outH: number;
   readonly token: number;
 }
 
