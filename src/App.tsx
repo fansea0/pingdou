@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { usePalette } from '@/hooks/usePalette';
 import { usePipeline } from '@/hooks/usePipeline';
+import { useZoomPan } from '@/hooks/useZoomPan';
 import { UploadZone } from '@/components/UploadZone';
 import { ParamPanel } from '@/components/ParamPanel';
 import { PreviewCanvas } from '@/components/PreviewCanvas';
 import { ColorLegend } from '@/components/ColorLegend';
 import { ExportPanel } from '@/components/ExportPanel';
+import { ZoomToolbar } from '@/components/ZoomToolbar';
 import { computeLegend } from '@/pipeline/legend';
 
 const PREVIEW_CELL_PX = 24;
@@ -13,6 +15,7 @@ const PREVIEW_CELL_PX = 24;
 export function App() {
   const { palette, error: paletteError } = usePalette();
   const { status, result, error, process, reprocess, exportComposite } = usePipeline(palette);
+  const { zoom, panX, panY, setZoom, setPan, zoomIn, zoomOut, reset: resetZoom } = useZoomPan();
   const [gridSize, setGridSize] = useState(100);
   const [enableDither, setEnableDither] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -51,6 +54,23 @@ export function App() {
     }
   };
 
+  const onUpload = (data: ImageData) => {
+    resetZoom();
+    process(data, { gridSize, enableDither });
+  };
+
+  const onGridSizeChange = (n: number) => {
+    setGridSize(n);
+    resetZoom();
+    reprocess({ gridSize: n, enableDither });
+  };
+
+  const onDitherChange = (b: boolean) => {
+    setEnableDither(b);
+    resetZoom();
+    reprocess({ gridSize, enableDither: b });
+  };
+
   return (
     <div className="app">
       <header>
@@ -62,18 +82,12 @@ export function App() {
 
       <main className="layout-3col">
         <aside className="left">
-          <UploadZone onLoad={(data) => process(data, { gridSize, enableDither })} />
+          <UploadZone onLoad={onUpload} />
           <ParamPanel
             gridSize={gridSize}
-            onGridSizeChange={n => {
-              setGridSize(n);
-              reprocess({ gridSize: n, enableDither });
-            }}
+            onGridSizeChange={onGridSizeChange}
             enableDither={enableDither}
-            onDitherChange={b => {
-              setEnableDither(b);
-              reprocess({ gridSize, enableDither: b });
-            }}
+            onDitherChange={onDitherChange}
             disabled={status === 'idle' || status === 'loading'}
           />
           <ExportPanel
@@ -83,12 +97,26 @@ export function App() {
         </aside>
 
         <section className="middle">
-          <PreviewCanvas
-            result={result}
-            palette={palette}
-            cellPx={PREVIEW_CELL_PX}
-            isRecomputing={status === 'recomputing'}
-          />
+          <div className="preview-container">
+            <PreviewCanvas
+              result={result}
+              palette={palette}
+              cellPx={PREVIEW_CELL_PX}
+              zoom={zoom}
+              panX={panX}
+              panY={panY}
+              onPan={setPan}
+              isRecomputing={status === 'recomputing'}
+            />
+            <ZoomToolbar
+              zoom={zoom}
+              onZoomIn={zoomIn}
+              onZoomOut={zoomOut}
+              onReset={resetZoom}
+              onZoomChange={setZoom}
+              disabled={!result}
+            />
+          </div>
         </section>
 
         <aside className="right">
