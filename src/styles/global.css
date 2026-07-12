@@ -63,6 +63,17 @@ body {
   padding: var(--space-5);
 }
 
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-2);
+}
+.app-title {
+  flex: 1;
+  min-width: 0;
+}
 header h1 {
   font-size: var(--text-xl);
   font-weight: 600;
@@ -72,6 +83,14 @@ header h1 {
 header .subtitle {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+.app-footer {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
 }
 
 .layout-3col {

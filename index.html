@@ -3,10 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>拼豆图生成器</title>
+    <meta name="description" content="在线拼豆图生成器：上传任意图片，一键生成 MARD 拼豆图纸与色号对照表，支持高清打印导出。" />
+    <meta name="keywords" content="拼豆图,拼豆,MARD,像素图,手工,色号" />
+    <meta name="robots" content="index,follow" />
+    <title>拼豆图生成器 - 在线制作 MARD 拼豆图纸</title>
   </head>
   <body>
     <div id="root"></div>
+
+    <!--
+      百度联盟广告 SDK（异步加载，不阻塞 React 渲染）
+      申请地址：https://union.baidu.com/bgtc/index.html
+      获取 slotId 后配置 VITE_BAIDU_AD_SLOT_HEADER 等环境变量
+      广告位 ID 缺失时，AdSlot 组件显示占位框，不影响功能
+    -->
+    <script>
+      window._bdAdConfig = {
+        // 站点级配置；具体 slot ID 通过环境变量注入到 AdSlot 组件
+      };
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
