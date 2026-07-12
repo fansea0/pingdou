@@ -46,7 +46,7 @@ describe('useProducts', () => {
       ok: false,
       status: 404,
       json: async () => { throw new Error('should not parse'); },
-    } as Response);
+    } as unknown as Response);
 
     const { result } = renderHook(() => useProducts());
     await waitFor(() => expect(result.current.loading).toBe(false));
