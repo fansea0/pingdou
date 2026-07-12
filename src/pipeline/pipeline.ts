@@ -69,4 +69,49 @@ export class Pipeline {
       null
     );
   }
+
+  /**
+   * Export multiple composite images in sequence.
+   * Re-samples for each extra gridSize (preserving source aspect ratio).
+   * Triggers downloads 100ms apart so the browser does not block.
+   */
+  async exportMulti(
+    src: ImageData,
+    currentResult: PipelineResult,
+    exportCellPx: number,
+    extraGridSizes: number[],
+    enableDither: boolean
+  ): Promise<{ success: number; failed: number }> {
+    if (!this.palette) throw new Error('Pipeline not initialized');
+
+    const sizes = [currentResult.gridSize, ...extraGridSizes.filter(n => n !== currentResult.gridSize)];
+    let success = 0;
+    let failed = 0;
+
+    for (let i = 0; i < sizes.length; i++) {
+      const gridSize = sizes[i];
+      try {
+        const sampled = sampleImage(src, gridSize);
+        const indices = quantizeWithCanvas2D(sampled, this.palette, enableDither);
+        const compositeCanvas = renderComposite(
+          indices,
+          sampled.width,
+          sampled.height,
+          this.palette,
+          { cellPx: exportCellPx }
+        );
+        const blob = await canvasToBlob(compositeCanvas);
+        triggerDownload(blob, `pingdou-${sampled.width}x${sampled.height}.png`);
+        success++;
+        if (i < sizes.length - 1) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      } catch (err) {
+        failed++;
+        console.error(`exportMulti failed for gridSize ${gridSize}:`, err);
+      }
+    }
+
+    return { success, failed };
+  }
 }
