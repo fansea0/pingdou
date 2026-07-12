@@ -24,7 +24,11 @@ export function PreviewCanvas({ result, palette, cellPx, isRecomputing }: Props)
   return (
     <div className="preview-wrap">
       <div className={isRecomputing ? 'preview-scroll dim' : 'preview-scroll'}>
-        <canvas ref={ref} className="preview" />
+        {result ? (
+          <canvas ref={ref} className="preview" />
+        ) : (
+          <p className="empty-state">上传图片以查看预览</p>
+        )}
       </div>
       {isRecomputing && <div className="overlay">计算中...</div>}
     </div>
