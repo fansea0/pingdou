@@ -122,11 +122,6 @@ if (typeof globalThis.HTMLCanvasElement !== 'undefined') {
         moveTo(_x: number, _y: number): void {},
         lineTo(_x: number, _y: number): void {},
         stroke(): void {},
-        save(): void {},
-        restore(): void {},
-        translate(_x: number, _y: number): void {},
-        scale(_x: number, _y: number): void {},
-        rotate(_angle: number): void {},
         strokeRect(x: number, y: number, ww: number, hh: number): void {
           const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(ctx.strokeStyle);
           const r = m ? +m[1] : 0;
