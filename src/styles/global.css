@@ -357,3 +357,16 @@ button.primary:disabled {
   font-size: var(--text-sm);
   border: 1px solid #fecaca;
 }
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  padding: var(--space-5);
+}
