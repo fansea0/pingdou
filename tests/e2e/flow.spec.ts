@@ -45,6 +45,32 @@ test.describe('拼豆图生成器 - 主流程', () => {
     const downloadPromise = page.waitForEvent('download');
     await page.locator('.export-panel button.primary').click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^pingdou-\d+x\d+-composite\.png$/);
+    expect(download.suggestedFilename()).toMatch(/^pingdou-\d+x\d+\.png$/);
+  });
+
+  test('多选额外尺寸触发多次下载', async ({ page }) => {
+    test.skip(!fs.existsSync(FIXTURE), 'fixture 缺失 — 跳过');
+    await page.goto('/');
+    await page.locator('input[type=file]').setInputFiles(FIXTURE);
+    await expect(page.locator('.legend-row').first()).toBeVisible({ timeout: 10000 });
+
+    // Current is 100 (auto-checked, disabled). Pick extras 50 and 200.
+    const opt50 = page.locator('.size-option', { hasText: '50' }).locator('input');
+    const opt200 = page.locator('.size-option', { hasText: '200' }).locator('input');
+    await opt50.check();
+    await opt200.check();
+
+    await expect(page.locator('.export-panel button.primary')).toHaveText('导出 3 张图片');
+
+    const downloads: string[] = [];
+    page.on('download', (d) => downloads.push(d.suggestedFilename()));
+
+    await page.locator('.export-panel button.primary').click();
+    await page.waitForTimeout(1500);
+
+    expect(downloads).toHaveLength(3);
+    downloads.forEach(name => {
+      expect(name).toMatch(/^pingdou-\d+x\d+\.png$/);
+    });
   });
 });
