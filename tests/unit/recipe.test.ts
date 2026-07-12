@@ -21,18 +21,32 @@ describe('generateRecipeCSV', () => {
     const indices = new Uint8Array([0, 1, 0, 1]);
     const blob = generateRecipeCSV(indices, 2, palette);
     const text = await blob.text();
-    const lines = text.split('\n').filter(l => l && !l.startsWith('色号'));
+    const lines = text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l && !l.startsWith('色号') && !l.startsWith('合计'));
     const total = lines
       .map(l => Number(l.split(',').pop()))
       .reduce((a, b) => a + b, 0);
     expect(total).toBe(4);
   });
 
+  it('includes 合计 total row', async () => {
+    const indices = new Uint8Array([0, 0, 1, 1]);
+    const blob = generateRecipeCSV(indices, 2, palette);
+    const text = await blob.text();
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const totalLine = lines.find(l => l.startsWith('合计'));
+    expect(totalLine).toBeDefined();
+    expect(totalLine).toMatch(/合计,,,4/);
+  });
+
   it('skips unused colors', async () => {
     const indices = new Uint8Array([0, 0, 0, 0]);
     const blob = generateRecipeCSV(indices, 2, palette);
     const text = await blob.text();
-    const dataLines = text.split('\n').filter(l => l && !l.startsWith('色号'));
+    const dataLines = text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l && !l.startsWith('色号') && !l.startsWith('合计'));
     expect(dataLines.length).toBe(1);
   });
 });

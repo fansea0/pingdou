@@ -21,7 +21,9 @@ export function generateRecipeCSV(
       return `${id},${name},${hex(rgb)},${count}`;
     });
 
+  const total = indices.length;
   const header = `色号,名称,色值,数量\n`;
-  const csv = header + rows.join('\n');
+  const totalRow = `\n合计,,,${total}`;
+  const csv = header + rows.join('\n') + totalRow;
   return new Blob([csv], { type: 'text/csv' });
 }
