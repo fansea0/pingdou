@@ -94,11 +94,56 @@ if (typeof globalThis.HTMLCanvasElement !== 'undefined') {
           }
           return { data: out, width: ww, height: hh };
         },
+        drawImage(source: HTMLCanvasElement, dx: number, dy: number): void {
+          const srcBag = source as unknown as PixelBufferKey;
+          const srcPixels = srcBag.__pingdouPixels;
+          if (!srcPixels) return;
+          const sw = source.width;
+          const sh = source.height;
+          const ix = Math.floor(dx);
+          const iy = Math.floor(dy);
+          for (let sy = 0; sy < sh; sy++) {
+            const dy2 = iy + sy;
+            if (dy2 < 0 || dy2 >= height) continue;
+            for (let sx = 0; sx < sw; sx++) {
+              const dx2 = ix + sx;
+              if (dx2 < 0 || dx2 >= width) continue;
+              const si = (sy * sw + sx) * 4;
+              const di = (dy2 * width + dx2) * 4;
+              pixels[di] = srcPixels[si];
+              pixels[di + 1] = srcPixels[si + 1];
+              pixels[di + 2] = srcPixels[si + 2];
+              pixels[di + 3] = srcPixels[si + 3];
+            }
+          }
+        },
         fillText(_text: string, _x: number, _y: number): void {},
         beginPath(): void {},
         moveTo(_x: number, _y: number): void {},
         lineTo(_x: number, _y: number): void {},
         stroke(): void {},
+        strokeRect(x: number, y: number, ww: number, hh: number): void {
+          const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(ctx.strokeStyle);
+          const r = m ? +m[1] : 0;
+          const g = m ? +m[2] : 0;
+          const b = m ? +m[3] : 0;
+          const x0 = Math.max(0, Math.floor(x));
+          const y0 = Math.max(0, Math.floor(y));
+          const x1 = Math.min(width, Math.floor(x + ww));
+          const y1 = Math.min(height, Math.floor(y + hh));
+          for (let xx = x0; xx < x1; xx++) {
+            const iT = (y0 * width + xx) * 4;
+            pixels[iT] = r; pixels[iT + 1] = g; pixels[iT + 2] = b; pixels[iT + 3] = 255;
+            const iB = ((y1 - 1) * width + xx) * 4;
+            pixels[iB] = r; pixels[iB + 1] = g; pixels[iB + 2] = b; pixels[iB + 3] = 255;
+          }
+          for (let yy = y0; yy < y1; yy++) {
+            const iL = (yy * width + x0) * 4;
+            pixels[iL] = r; pixels[iL + 1] = g; pixels[iL + 2] = b; pixels[iL + 3] = 255;
+            const iR = (yy * width + (x1 - 1)) * 4;
+            pixels[iR] = r; pixels[iR + 1] = g; pixels[iR + 2] = b; pixels[iR + 3] = 255;
+          }
+        },
       };
       return ctx;
     };
