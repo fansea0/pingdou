@@ -5,9 +5,14 @@ export function pickTextColor(rgb: readonly [number, number, number]): string {
   return luminance > 140 ? '#000' : '#fff';
 }
 
+/**
+ * Render a bead image with color-code annotations on each cell.
+ * Canvas dimensions are outW × outH cells (rectangular grids supported).
+ */
 export function renderAnnotatedImage(
   indices: Uint8Array,
-  gridSize: number,
+  outW: number,
+  outH: number,
   palette: Palette,
   cellPx: number,
   fontPx: number
@@ -16,8 +21,8 @@ export function renderAnnotatedImage(
     throw new Error('Annotated image requires cellPx >= 24');
   }
 
-  const w = gridSize * cellPx;
-  const h = gridSize * cellPx;
+  const w = outW * cellPx;
+  const h = outH * cellPx;
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -27,9 +32,9 @@ export function renderAnnotatedImage(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  for (let y = 0; y < gridSize; y++) {
-    for (let x = 0; x < gridSize; x++) {
-      const idx = indices[y * gridSize + x];
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      const idx = indices[y * outW + x];
       const [r, g, b] = palette[idx].rgb;
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);

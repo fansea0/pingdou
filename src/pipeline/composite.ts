@@ -49,10 +49,13 @@ function buildRows(indices: Uint8Array, palette: Palette): InternalRow[] {
  *   beadY = floor((canvasH - beadH) / 2)
  *   legendX = beadW + cellGap
  *   legendY = floor((canvasH - legendH) / 2)
+ *
+ * Supports non-square bead grids (outW × outH).
  */
 export function renderComposite(
   indices: Uint8Array,
-  gridSize: number,
+  outW: number,
+  outH: number,
   palette: Palette,
   options?: Partial<CompositeOptions>
 ): HTMLCanvasElement {
@@ -60,7 +63,8 @@ export function renderComposite(
 
   const beadCanvas = renderAnnotatedImage(
     indices,
-    gridSize,
+    outW,
+    outH,
     palette,
     opts.cellPx,
     opts.fontPx

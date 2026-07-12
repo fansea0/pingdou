@@ -25,7 +25,7 @@ function countRedPixels(
 describe('renderComposite', () => {
   it('canvas width = beadW + cellGap + legendW', () => {
     const indices = new Uint8Array([0, 1, 2, 0, 1, 2, 0, 1, 2]);
-    const canvas = renderComposite(indices, 3, palette, { cellPx: 32 });
+    const canvas = renderComposite(indices, 3, 3, palette, { cellPx: 32 });
     const opts = DEFAULT_COMPOSITE_OPTIONS;
     const beadW = 3 * 32;
     const legendW = opts.legendColWidth + 100 + 100 + 80 + opts.legendPadding * 2;
@@ -35,64 +35,64 @@ describe('renderComposite', () => {
 
   it('canvas height = max(beadH, legendH)', () => {
     const indices = new Uint8Array([0, 1, 2, 0, 1, 2, 0, 1, 2]);
-    const canvas = renderComposite(indices, 3, palette, { cellPx: 32 });
+    const canvas = renderComposite(indices, 3, 3, palette, { cellPx: 32 });
     const opts = DEFAULT_COMPOSITE_OPTIONS;
     const beadH = 3 * 32;
-    const legendRows = 1 + 3 + 1;
+    // indices uses all 3 colors → legendRows = 1 (header) + 3 (data) + 1 (total) = 5
+    const legendRows = 5;
     const legendH = legendRows * opts.legendRowHeight + opts.legendPadding * 2;
     expect(canvas.height).toBe(Math.max(beadH, legendH));
   });
 
-  it('bead image appears in left half of canvas', () => {
-    const indices = new Uint8Array(9);
+  it('non-square (6x4): canvas preserves rectangle', () => {
+    const indices = new Uint8Array(24);
     indices.fill(0);
-    const canvas = renderComposite(indices, 3, palette, { cellPx: 32 });
-    const ctx = canvas.getContext('2d')!;
-    const beadW = 3 * 32;
-    const leftReds = countRedPixels(ctx, 0, 0, beadW, canvas.height);
-    const rightReds = countRedPixels(ctx, beadW, 0, canvas.width, canvas.height);
-    expect(leftReds).toBeGreaterThan(rightReds * 5);
+    const canvas = renderComposite(indices, 6, 4, palette, { cellPx: 32 });
+    const opts = DEFAULT_COMPOSITE_OPTIONS;
+    const beadW = 6 * 32;
+    const beadH = 4 * 32;
+    // Only 1 color used (all 0) → legendRows = 3
+    const legendRows = 3;
+    const legendH = legendRows * opts.legendRowHeight + opts.legendPadding * 2;
+    const legendW = opts.legendColWidth + 100 + 100 + 80 + opts.legendPadding * 2;
+    expect(canvas.width).toBe(beadW + opts.cellGap + legendW);
+    expect(canvas.height).toBe(Math.max(beadH, legendH));
   });
 
-  it('legend swatch appears in right half of canvas', () => {
-    const indices = new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    const canvas = renderComposite(indices, 3, palette, { cellPx: 32 });
+  it('bead image appears in left half of canvas (non-square)', () => {
+    const indices = new Uint8Array(24);
+    indices.fill(0);
+    const canvas = renderComposite(indices, 6, 4, palette, { cellPx: 32 });
     const ctx = canvas.getContext('2d')!;
-    const beadW = 3 * 32;
+    const beadW = 6 * 32;
+    const leftReds = countRedPixels(ctx, 0, 0, beadW, canvas.height);
+    const rightReds = countRedPixels(ctx, beadW, 0, canvas.width, canvas.height);
+    expect(leftReds).toBeGreaterThan(rightReds * 3);
+  });
+
+  it('legend swatch appears in right half (non-square, only red used)', () => {
+    const indices = new Uint8Array(24);
+    indices.fill(0);
+    const canvas = renderComposite(indices, 6, 4, palette, { cellPx: 32 });
+    const ctx = canvas.getContext('2d')!;
+    const beadW = 6 * 32;
     const rightReds = countRedPixels(ctx, beadW, 0, canvas.width, canvas.height);
     expect(rightReds).toBeGreaterThan(100);
   });
 
-  it('bead image is vertically centered when shorter than legend', () => {
-    // Use a wide canvas so bead is centered but legend is taller.
-    // Verify by checking bead top distance from canvas top == bead bottom distance to canvas bottom.
-    const indices = new Uint8Array([0, 1, 0, 1]);
-    const canvas = renderComposite(indices, 2, palette, { cellPx: 32, legendRowHeight: 60, cellGap: 40 });
+  it('preserves non-square aspect ratio (no cropping)', () => {
+    // 80 wide × 45 tall → 16:9
+    const indices = new Uint8Array(80 * 45);
+    indices.fill(0);
+    const canvas = renderComposite(indices, 80, 45, palette, { cellPx: 32 });
     const ctx = canvas.getContext('2d')!;
-    const canvasH = canvas.height;
-    // Find first non-white row from top (in bead column area, x=16)
-    let firstBeadRow = -1;
-    for (let y = 0; y < canvasH; y++) {
-      const px = ctx.getImageData(16, y, 1, 1).data;
-      if (px[0] === 255 && px[1] === 0 && px[2] === 0 && px[3] === 255) {
-        firstBeadRow = y;
-        break;
-      }
-    }
-    // Find last non-white row from bottom (in bead column area)
-    let lastBeadRow = -1;
-    for (let y = canvasH - 1; y >= 0; y--) {
-      const px = ctx.getImageData(16, y, 1, 1).data;
-      if (px[0] === 255 && px[1] === 0 && px[2] === 0 && px[3] === 255) {
-        lastBeadRow = y;
-        break;
-      }
-    }
-    expect(firstBeadRow).toBeGreaterThanOrEqual(0);
-    expect(lastBeadRow).toBeGreaterThan(firstBeadRow);
-    const topPad = firstBeadRow;
-    const bottomPad = canvasH - 1 - lastBeadRow;
-    // For exact centering, difference should be at most 1 (due to floor())
-    expect(Math.abs(topPad - bottomPad)).toBeLessThanOrEqual(1);
+    const beadW = 80 * 32; // 2560
+    const beadH = 45 * 32; // 1440
+    const tl = ctx.getImageData(16, 16, 1, 1).data;
+    expect([tl[0], tl[1], tl[2]]).toEqual([255, 0, 0]);
+    const right = ctx.getImageData(beadW - 16, 16, 1, 1).data;
+    expect([right[0], right[1], right[2]]).toEqual([255, 0, 0]);
+    const bottom = ctx.getImageData(16, beadH - 16, 1, 1).data;
+    expect([bottom[0], bottom[1], bottom[2]]).toEqual([255, 0, 0]);
   });
 });
