@@ -85,6 +85,13 @@ header .subtitle {
   margin-top: var(--space-5);
 }
 
+/* Medium: shrink side columns */
+@media (max-width: 1400px) {
+  .layout-3col {
+    grid-template-columns: 240px 1fr 240px;
+  }
+}
+
 /* Mobile / narrow: single column stack */
 @media (max-width: 900px) {
   .layout-3col {
