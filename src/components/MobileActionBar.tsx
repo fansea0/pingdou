@@ -66,11 +66,33 @@ export function MobileActionBar({
     onLoad(imageData);
   }, [onLoad]);
 
-  const onTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = (e.clientX - rect.left) / rect.width;
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  const setValueFromPointer = useCallback((clientX: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     onGridSizeChange(nearestPreset(ratioToValue(ratio)));
-  };
+  }, [onGridSizeChange]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    setValueFromPointer(e.clientX);
+
+    const handleMove = (ev: PointerEvent) => {
+      ev.preventDefault();
+      setValueFromPointer(ev.clientX);
+    };
+
+    const handleUp = () => {
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+    };
+
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+  }, [setValueFromPointer]);
 
   return (
     <div className="mobile-action-bar">
@@ -85,9 +107,12 @@ export function MobileActionBar({
         }}
       />
 
-      <div className="mobile-grid-row" onClick={onTrackClick}>
+      <div
+        className="mobile-grid-row"
+        onPointerDown={onPointerDown}
+      >
         <span className="mobile-grid-text">网格</span>
-        <div className="mobile-grid-track-wrap">
+        <div className="mobile-grid-track-wrap" ref={trackRef}>
           <div className="mobile-grid-track">
             <div
               className="mobile-grid-fill"
@@ -97,16 +122,10 @@ export function MobileActionBar({
           {GRID_PRESETS.map(p => {
             const isActive = p === gridSize;
             return (
-              <button
+              <div
                 key={p}
-                type="button"
                 className={`mobile-grid-dot ${isActive ? 'active' : ''}`}
                 style={{ left: `${valueToRatio(p) * 100}%` }}
-                onClick={e => {
-                  e.stopPropagation();
-                  onGridSizeChange(p);
-                }}
-                aria-label={`网格 ${p}`}
               />
             );
           })}

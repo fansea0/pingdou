@@ -1,9 +1,19 @@
+import { useCallback, useRef, useState } from 'react';
 import type { Product } from '@/types';
 import { useProducts } from '@/hooks/useProducts';
 import './ProductShowcase.css';
 
 export function ProductShowcase() {
   const { products, loading, error } = useProducts();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const idx = Math.round(el.scrollLeft / (el.scrollWidth / products.length));
+    setActiveIdx(Math.max(0, Math.min(products.length - 1, idx)));
+  }, [products.length]);
 
   if (loading) {
     return (
@@ -29,8 +39,13 @@ export function ProductShowcase() {
         <h2>购买拼豆材料</h2>
         <p>基于 MARD 色板，一站式购齐</p>
       </header>
-      <div className="product-grid">
+      <div className="product-grid" ref={scrollRef} onScroll={onScroll}>
         {products.map(p => <ProductCard key={p.id} product={p} />)}
+      </div>
+      <div className="product-dots">
+        {products.map((_, i) => (
+          <span key={i} className={`product-dot ${i === activeIdx ? 'active' : ''}`} />
+        ))}
       </div>
     </section>
   );
