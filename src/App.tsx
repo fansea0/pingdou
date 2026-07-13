@@ -7,6 +7,7 @@ import { ParamPanel } from '@/components/ParamPanel';
 import { PreviewCanvas } from '@/components/PreviewCanvas';
 import { ColorLegend } from '@/components/ColorLegend';
 import { ExportPanel } from '@/components/ExportPanel';
+import { MobileActionBar } from '@/components/MobileActionBar';
 import { ProductShowcase } from '@/components/ProductShowcase';
 import { computeLegend } from '@/pipeline/legend';
 
@@ -111,6 +112,19 @@ export function App() {
       </main>
 
       <ProductShowcase />
+
+      <MobileActionBar
+        gridSize={gridSize}
+        beanCount={beanCount}
+        onGridSizeChange={n => {
+          setGridSize(n);
+          reprocess({ gridSize: n, enableDither });
+        }}
+        onLoad={(data) => process(data, { gridSize, enableDither })}
+        onExport={handleExport}
+        canExport={!!result}
+        exporting={exporting}
+      />
 
       <footer className="app-footer">
         <p>© 拼豆图生成器 · 仅作手工参考 · 颜色归各品牌所有</p>

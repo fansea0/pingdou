@@ -84,8 +84,9 @@ describe('ParamPanel', () => {
         onDitherChange={() => {}}
       />
     );
-    const active = container.querySelectorAll('.grid-preset.active');
-    expect(active).toHaveLength(1);
-    expect(active[0].textContent).toBe('50');
+    const activeDots = container.querySelectorAll('.grid-preset.active');
+    expect(activeDots).toHaveLength(1);
+    const activeLabel = container.querySelector('.grid-progress-label.active');
+    expect(activeLabel?.textContent).toBe('50');
   });
 });

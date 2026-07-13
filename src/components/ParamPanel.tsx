@@ -75,6 +75,20 @@ function ProgressBar({
           style={{ width: `${valueToRatio(value) * 100}%` }}
         />
       </div>
+      <div className="grid-progress-labels">
+        {presets.map(p => {
+          const isActive = p === value;
+          return (
+            <span
+              key={p}
+              className={`grid-progress-label ${isActive ? 'active' : ''}`}
+              style={{ left: `${valueToRatio(p) * 100}%` }}
+            >
+              {p}
+            </span>
+          );
+        })}
+      </div>
       {presets.map(p => {
         const isActive = p === value;
         return (
@@ -89,9 +103,7 @@ function ProgressBar({
             }}
             aria-label={`网格 ${p}`}
             disabled={disabled}
-          >
-            {p}
-          </button>
+          />
         );
       })}
     </div>

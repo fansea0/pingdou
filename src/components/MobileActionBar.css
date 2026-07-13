@@ -1,0 +1,130 @@
+/* === Mobile Action Bar (hidden on desktop) === */
+.mobile-action-bar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .mobile-action-bar {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: var(--space-2) var(--space-4);
+    padding-bottom: calc(var(--space-2) + env(safe-area-inset-bottom, 0px));
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    box-shadow: 0 -2px 12px rgba(180, 130, 100, 0.12);
+  }
+
+  /* === Grid row: compact track + dots === */
+  .mobile-grid-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .mobile-grid-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-text);
+    white-space: nowrap;
+    min-width: 22px;
+  }
+
+  .mobile-grid-track-wrap {
+    flex: 1;
+    position: relative;
+    height: 24px;
+  }
+
+  .mobile-grid-track {
+    position: absolute;
+    top: 11px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--color-border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .mobile-grid-fill {
+    height: 100%;
+    background: var(--color-accent);
+    border-radius: 2px;
+    transition: width 0.2s ease;
+  }
+
+  .mobile-grid-dot {
+    position: absolute;
+    top: 11px;
+    transform: translateX(-50%) translateY(-50%);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--color-border);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    padding: 0;
+    z-index: 1;
+  }
+
+  .mobile-grid-dot.active {
+    width: 16px;
+    height: 16px;
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+    z-index: 2;
+  }
+
+  .mobile-grid-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-accent);
+    min-width: 28px;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* === Action row: bean count + buttons === */
+  .mobile-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    height: 32px;
+  }
+
+  .mobile-bean-count {
+    font-size: 10px;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
+  .mobile-buttons {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .mobile-buttons .primary {
+    font-size: 12px;
+    padding: var(--space-1) var(--space-3);
+    white-space: nowrap;
+    width: auto;
+    border-radius: var(--radius-sm);
+  }
+
+  /* prevent content from hiding behind fixed bar */
+  .app {
+    padding-bottom: calc(var(--space-5) + 82px);
+  }
+}

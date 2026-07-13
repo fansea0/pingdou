@@ -105,6 +105,13 @@ header .subtitle {
   header h1 {
     font-size: var(--text-xl);
   }
+
+  /* Controls moved to fixed bottom bar */
+  .param-panel,
+  .export-panel,
+  .upload-zone {
+    display: none;
+  }
 }
 
 /* === Buttons === */
