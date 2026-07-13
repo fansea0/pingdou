@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePalette } from '@/hooks/usePalette';
 import { usePipeline } from '@/hooks/usePipeline';
+import { useSampleImage } from '@/hooks/useSampleImage';
 import { UploadZone } from '@/components/UploadZone';
 import { ParamPanel } from '@/components/ParamPanel';
 import { PreviewCanvas } from '@/components/PreviewCanvas';
@@ -14,6 +15,7 @@ const PREVIEW_CELL_PX = 24;
 export function App() {
   const { palette, error: paletteError } = usePalette();
   const { status, result, error, process, reprocess, exportMulti } = usePipeline(palette);
+  const { imageData: sample } = useSampleImage();
   const [gridSize, setGridSize] = useState(100);
   const [enableDither, setEnableDither] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -22,6 +24,14 @@ export function App() {
     () => (result && palette ? computeLegend(result.indices, palette) : []),
     [result, palette]
   );
+
+  // Auto-process sample image once palette and sample are both ready
+  useEffect(() => {
+    if (sample && palette && status === 'idle') {
+      process(sample, { gridSize, enableDither });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sample, palette, status]);
 
   if (paletteError) {
     return (
@@ -42,11 +52,11 @@ export function App() {
     );
   }
 
-  const handleExport = async (exportCellPx: number, extraGridSizes: number[]) => {
+  const handleExport = async () => {
     if (!result || exporting) return;
     setExporting(true);
     try {
-      await exportMulti(exportCellPx, extraGridSizes);
+      await exportMulti(32, []);
     } finally {
       setExporting(false);
     }
@@ -55,8 +65,8 @@ export function App() {
   return (
     <div className="app">
       <header>
-        <h1>拼豆图生成器</h1>
-        <p className="subtitle">上传图片 → 生成可打印拼豆图（MARD {palette.length} 色）</p>
+        <h1>🐰 拼豆图生成器</h1>
+        <p className="subtitle">上传图片 → 一键生成你的拼豆图纸（MARD {palette.length} 色）</p>
       </header>
 
       {error && <p className="error">处理异常：{error.message}</p>}
@@ -78,7 +88,6 @@ export function App() {
             disabled={status === 'idle' || status === 'loading'}
           />
           <ExportPanel
-            currentGridSize={result?.gridSize ?? 100}
             disabled={!result || exporting}
             onExport={handleExport}
           />
@@ -101,7 +110,7 @@ export function App() {
       <ProductShowcase />
 
       <footer className="app-footer">
-        <p>拼豆图生成器 · MARD 色板 · 纯前端，无后端</p>
+        <p>© 拼豆图生成器 · 仅作手工参考 · 颜色归各品牌所有</p>
       </footer>
     </div>
   );
