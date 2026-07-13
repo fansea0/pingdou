@@ -26,7 +26,7 @@ function ratioToValue(ratio: number): number {
 }
 
 function nearestPreset(rawValue: number): number {
-  let nearest = GRID_PRESETS[0];
+  let nearest: number = GRID_PRESETS[0];
   let minDiff = Math.abs(rawValue - nearest);
   for (const p of GRID_PRESETS) {
     const diff = Math.abs(rawValue - p);
