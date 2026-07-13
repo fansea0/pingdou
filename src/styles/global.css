@@ -85,6 +85,21 @@ header .subtitle {
   margin-top: var(--space-5);
 }
 
+/* Mobile / narrow: single column stack */
+@media (max-width: 900px) {
+  .layout-3col {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+  .preview-wrap {
+    aspect-ratio: auto;
+    min-height: 320px;
+  }
+  header h1 {
+    font-size: var(--text-xl);
+  }
+}
+
 /* === Buttons === */
 button.primary {
   background: var(--color-accent);
