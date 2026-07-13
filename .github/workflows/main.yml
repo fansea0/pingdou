@@ -2,6 +2,7 @@ name: build_ping_dou
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -11,32 +12,156 @@ on:
       - "package.json"
       - "package-lock.json"
       - "vite.config.js"
-  
+      - "vite.config.ts"
+      - ".env"
+      - ".env.*"
+      - ".github/workflows/build_ping_dou.yml"
 
 jobs:
-  build:
-    name: 构建Vue项目
+  deploy:
+    name: 部署拼豆项目
     runs-on: ubuntu-latest
+
     steps:
-      - name: Deploy to Server
+      - name: 安装 SSH 工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sshpass
+
+      - name: 部署到服务器
         env:
           HOST: ${{ secrets.SERVER_HOST }}
           USER: root
           PASSWORD: ${{ secrets.SERVER_PASSWORD }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y sshpass
-
           sshpass -p "$PASSWORD" ssh \
             -o StrictHostKeyChecking=no \
-            $USER@$HOST << 'EOF'
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            "$USER@$HOST" << 'EOF'
 
-          cd /root/project/pingdou
+          set -e
 
-          git pull
+          PROJECT_DIR="/root/project/pingdou"
+          SERVICE_PORT="5173"
+          LOG_FILE="$PROJECT_DIR/start.log"
+          PID_FILE="$PROJECT_DIR/start.pid"
 
-          npm install
+          cd "$PROJECT_DIR"
 
-          npm run dev
+          echo "=============================="
+          echo "开始部署拼豆项目"
+          echo "项目目录：$PROJECT_DIR"
+          echo "=============================="
+
+          OLD_COMMIT=$(git rev-parse HEAD)
+
+          echo "当前版本：$OLD_COMMIT"
+          echo "拉取最新代码..."
+
+          git pull --ff-only
+
+          NEW_COMMIT=$(git rev-parse HEAD)
+
+          echo "最新版本：$NEW_COMMIT"
+
+          NEED_INSTALL=false
+
+          if [ "$OLD_COMMIT" != "$NEW_COMMIT" ]; then
+            CHANGED_FILES=$(git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT")
+
+            echo "本次修改文件："
+            echo "$CHANGED_FILES"
+
+            if echo "$CHANGED_FILES" | grep -Eq \
+              '^(package\.json|package-lock\.json)$'; then
+              NEED_INSTALL=true
+            fi
+          else
+            echo "没有检测到新的代码提交"
+          fi
+
+          if [ "$NEED_INSTALL" = true ]; then
+            echo "依赖文件发生变化，重新安装依赖..."
+
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              npm install
+            fi
+          fi
+
+          echo "停止旧服务..."
+
+          if [ -f "$PID_FILE" ]; then
+            OLD_PID=$(cat "$PID_FILE")
+
+            if kill -0 "$OLD_PID" >/dev/null 2>&1; then
+              echo "停止旧服务，PID：$OLD_PID"
+
+              kill "$OLD_PID" 2>/dev/null || true
+
+              for i in $(seq 1 10); do
+                if ! kill -0 "$OLD_PID" >/dev/null 2>&1; then
+                  break
+                fi
+
+                sleep 1
+              done
+
+              if kill -0 "$OLD_PID" >/dev/null 2>&1; then
+                echo "旧服务未正常退出，强制停止"
+                kill -9 "$OLD_PID" 2>/dev/null || true
+              fi
+            fi
+
+            rm -f "$PID_FILE"
+          fi
+
+          # 兜底：清理仍在运行的 npm run start 进程
+          pkill -f "npm run start" 2>/dev/null || true
+
+          sleep 1
+
+          echo "启动新服务..."
+
+          nohup npm run start \
+            > "$LOG_FILE" 2>&1 &
+
+          NEW_PID=$!
+          echo "$NEW_PID" > "$PID_FILE"
+
+          echo "新服务 PID：$NEW_PID"
+          echo "等待服务启动..."
+
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:$SERVICE_PORT" >/dev/null 2>&1; then
+              echo "=============================="
+              echo "服务启动成功"
+              echo "服务端口：$SERVICE_PORT"
+              echo "进程 PID：$NEW_PID"
+              echo "=============================="
+              exit 0
+            fi
+
+            if ! kill -0 "$NEW_PID" >/dev/null 2>&1; then
+              echo "服务进程已经退出"
+              echo "最近 100 行日志："
+              tail -n 100 "$LOG_FILE" || true
+              exit 1
+            fi
+
+            echo "第 $i/30 次检查，服务尚未就绪..."
+            sleep 2
+          done
+
+          echo "=============================="
+          echo "服务启动失败或等待超时"
+          echo "=============================="
+
+          echo "最近 100 行日志："
+          tail -n 100 "$LOG_FILE" || true
+
+          exit 1
 
           EOF
