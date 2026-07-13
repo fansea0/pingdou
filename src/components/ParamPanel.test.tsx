@@ -86,7 +86,7 @@ describe('ParamPanel', () => {
     );
     const activeDots = container.querySelectorAll('.grid-preset.active');
     expect(activeDots).toHaveLength(1);
-    const activeLabel = container.querySelector('.grid-progress-label.active');
-    expect(activeLabel?.textContent).toBe('50');
+    const valueBadge = container.querySelector('.grid-progress-value');
+    expect(valueBadge?.textContent).toBe('50');
   });
 });
