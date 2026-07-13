@@ -18,7 +18,7 @@
 /* === Progress Bar === */
 .grid-progress {
   position: relative;
-  height: 52px;
+  height: 32px;
   margin: var(--space-3) 0 var(--space-1);
   cursor: pointer;
   user-select: none;
@@ -27,7 +27,7 @@
 
 .grid-progress-track {
   position: absolute;
-  top: 10px;
+  top: 12px;
   left: 0;
   right: 0;
   height: 6px;
@@ -43,76 +43,62 @@
   transition: width 0.2s ease;
 }
 
-/* — Dots (no text inside) — */
+/* — Current value badge — */
+.grid-progress-value {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  transform: translateX(-50%);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 6px;
+  border-radius: 4px;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+  transition: left 0.15s ease;
+}
+
+/* — Tick marks at preset positions — */
 .grid-preset {
   position: absolute;
-  /* align vertical center with track */
-  top: 10px;
-  transform: translateX(-50%) translateY(-50%);
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--color-border);
-  background: var(--color-surface);
+  top: 12px;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  border: none;
+  background: var(--color-border);
   cursor: pointer;
   transition: all 0.15s ease;
   padding: 0;
   font-size: 0;
-  z-index: 1;
-  box-shadow: 0 1px 3px rgba(180, 130, 100, 0.15);
+  z-index: 2;
 }
 
 .grid-preset:hover:not(:disabled) {
-  border-color: var(--color-accent);
-  transform: translateX(-50%) translateY(-50%) scale(1.4);
-  z-index: 4;
+  background: var(--color-accent);
+  height: 10px;
 }
 
 .grid-preset.main {
-  width: 16px;
-  height: 16px;
-  border-color: var(--color-accent-soft);
-  background: var(--color-accent-soft);
+  height: 10px;
+  background: var(--color-border-strong);
 }
 
 .grid-preset.active {
-  width: 20px;
-  height: 20px;
+  height: 14px;
   background: var(--color-accent);
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 4px var(--color-accent-soft), 0 2px 6px rgba(224, 120, 86, 0.3);
+  box-shadow: 0 1px 3px rgba(224, 120, 86, 0.3);
   z-index: 3;
 }
 
 .grid-preset:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
-}
-
-/* — Labels — all in a single row below the track */
-.grid-progress-labels {
-  position: absolute;
-  top: 34px;
-  left: 0;
-  right: 0;
-  height: 16px;
-  pointer-events: none;
-}
-
-.grid-progress-label {
-  position: absolute;
-  transform: translateX(-50%);
-  font-size: 10px;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  font-weight: 500;
-  transition: color 0.15s;
-  line-height: 1;
-}
-
-.grid-progress-label.active {
-  color: var(--color-accent);
-  font-weight: 700;
 }
 
 /* === Bean Count === */

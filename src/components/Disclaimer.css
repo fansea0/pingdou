@@ -1,0 +1,51 @@
+/* === Disclaimer === */
+.disclaimer {
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  line-height: 1.7;
+}
+
+.disclaimer h3 {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--space-2);
+  letter-spacing: 0.5px;
+}
+
+.disclaimer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.disclaimer li {
+  position: relative;
+  padding-left: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.disclaimer li:last-child {
+  margin-bottom: 0;
+}
+
+.disclaimer li::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+  top: -2px;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  font-size: var(--text-base);
+  line-height: 1;
+}
+
+.disclaimer strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
