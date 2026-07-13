@@ -25,6 +25,8 @@ export function App() {
     [result, palette]
   );
 
+  const beanCount = result ? result.outW * result.outH : 0;
+
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
     if (sample && palette && status === 'idle') {
@@ -76,6 +78,7 @@ export function App() {
           <UploadZone onLoad={(data) => process(data, { gridSize, enableDither })} />
           <ParamPanel
             gridSize={gridSize}
+            beanCount={beanCount}
             onGridSizeChange={n => {
               setGridSize(n);
               reprocess({ gridSize: n, enableDither });
