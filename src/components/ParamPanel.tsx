@@ -1,15 +1,106 @@
+import './ParamPanel.css';
+
 interface Props {
   gridSize: number;
+  beanCount: number;
   onGridSizeChange: (n: number) => void;
   enableDither: boolean;
   onDitherChange: (b: boolean) => void;
   disabled?: boolean;
 }
 
-const PRESETS = [50, 75, 100, 150, 200, 300, 500];
+const GRID_PRESETS = [20, 30, 50, 75, 100, 150, 200, 300] as const;
+const MIN_PRESET = GRID_PRESETS[0];
+const MAX_PRESET = GRID_PRESETS[GRID_PRESETS.length - 1];
+
+const LOG_MIN = Math.log(MIN_PRESET);
+const LOG_MAX = Math.log(MAX_PRESET);
+const LOG_RANGE = LOG_MAX - LOG_MIN;
+
+function valueToRatio(v: number): number {
+  return (Math.log(v) - LOG_MIN) / LOG_RANGE;
+}
+
+function ratioToValue(ratio: number): number {
+  return Math.exp(LOG_MIN + LOG_RANGE * Math.max(0, Math.min(1, ratio)));
+}
+
+function nearestPreset(rawValue: number): number {
+  let nearest = GRID_PRESETS[0];
+  let minDiff = Math.abs(rawValue - nearest);
+  for (const p of GRID_PRESETS) {
+    const diff = Math.abs(rawValue - p);
+    if (diff < minDiff) {
+      minDiff = diff;
+      nearest = p;
+    }
+  }
+  return nearest;
+}
+
+function isMainPreset(p: number): boolean {
+  return p >= 20 && p <= 100;
+}
+
+function ProgressBar({
+  value,
+  presets,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  presets: readonly number[];
+  onChange: (n: number) => void;
+  disabled?: boolean;
+}) {
+  const onTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const rawValue = ratioToValue(ratio);
+    onChange(nearestPreset(rawValue));
+  };
+
+  return (
+    <div
+      className="grid-progress"
+      onClick={disabled ? undefined : onTrackClick}
+      role="slider"
+      aria-valuenow={value}
+      aria-valuemin={MIN_PRESET}
+      aria-valuemax={MAX_PRESET}
+    >
+      <div className="grid-progress-track">
+        <div
+          className="grid-progress-fill"
+          style={{ width: `${valueToRatio(value) * 100}%` }}
+        />
+      </div>
+      {presets.map(p => {
+        const isActive = p === value;
+        return (
+          <button
+            key={p}
+            type="button"
+            className={`grid-preset ${isActive ? 'active' : ''} ${isMainPreset(p) ? 'main' : ''}`}
+            style={{ left: `${valueToRatio(p) * 100}%` }}
+            onClick={e => {
+              e.stopPropagation();
+              onChange(p);
+            }}
+            aria-label={`网格 ${p}`}
+            disabled={disabled}
+          >
+            {p}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ParamPanel({
   gridSize,
+  beanCount,
   onGridSizeChange,
   enableDither,
   onDitherChange,
@@ -17,33 +108,19 @@ export function ParamPanel({
 }: Props) {
   return (
     <div className="param-panel">
-      <label>
-        网格大小（长边）
-        <input
-          type="range"
-          min={50}
-          max={500}
-          step={1}
-          value={gridSize}
-          onChange={e => onGridSizeChange(Number(e.target.value))}
-          disabled={disabled}
-        />
-        <span className="value">{gridSize} × {gridSize}</span>
-      </label>
+      <label className="grid-label">网格大小（长边豆子数）</label>
 
-      <div className="presets">
-        预设：
-        {PRESETS.map(p => (
-          <button
-            key={p}
-            className={p === gridSize ? 'preset active' : 'preset'}
-            onClick={() => onGridSizeChange(p)}
-            disabled={disabled}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
+      <ProgressBar
+        value={gridSize}
+        presets={GRID_PRESETS}
+        onChange={onGridSizeChange}
+        disabled={disabled}
+      />
+
+      <p className="bean-count">
+        {gridSize} × {gridSize}  ≈  <strong>{beanCount > 0 ? beanCount.toLocaleString() : '—'}</strong>  颗
+      </p>
+      <p className="hint">推荐 20-100 档位（普通图案常用范围）</p>
 
       <label className="checkbox">
         <input
