@@ -5,15 +5,22 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:server": "tsx watch server/index.ts",
     "build": "tsc && vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start": "npm run build && npm run build:server && node dist-server/server/index.js",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "lint": "eslint . --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit"
   },
   "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -21,12 +28,17 @@
     "@playwright/test": "^1.46.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/dotenv": "^6.1.1",
+    "@types/express": "^5.0.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "@vitest/ui": "^2.0.5",
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^25.0.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.3",
     "vite": "^5.4.1",
     "vitest": "^2.0.5"

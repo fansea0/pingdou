@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Product } from '@/types';
 import { useProducts } from '@/hooks/useProducts';
+import { trackProductClick } from '@/hooks/useTracking';
 import './ProductShowcase.css';
 
 export function ProductShowcase() {
@@ -58,6 +59,7 @@ function ProductCard({ product }: { product: Product }) {
       href={product.url}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={() => trackProductClick(product.id)}
     >
       <div className="product-image" data-fallback={product.name}>
         <img

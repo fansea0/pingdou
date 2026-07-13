@@ -67,7 +67,51 @@ tests/
 
 ## 部署
 
-构建产物在 `dist/`，可部署到任何静态托管（Vercel / Cloudflare Pages / GitHub Pages）。
+### 静态托管（仅前端，不含统计）
+
+```bash
+npm run build
+```
+
+`dist/` 可部署到 Vercel / Cloudflare Pages / GitHub Pages 等静态托管。
+
+### 含统计服务（Node.js）
+
+需要 Node.js 18+。同时提供前端 + `/statics` 后台。
+
+```bash
+cp .env.example .env  # 修改 STATICS_PASSWORD
+npm install
+npm run start         # 构建前端+服务端，启动 http://localhost:3000
+```
+
+访问 `http://localhost:3000/statics` 输入 `STATICS_PASSWORD` 查看统计。
+
+环境变量：
+- `STATICS_PASSWORD`（必填，至少 6 位）— `/statics` 后台登录密码
+- `PORT`（默认 3000）
+- `IP_HASH_SALT`（可选，未设置则启动时随机生成）
+- `STATS_DB_PATH`（默认 `data/stats.db`）
+
+## 统计功能
+
+后台 `/statics` 提供：
+
+- UV（独立访客，按 IP 哈希去重）
+- PV（页面浏览）
+- 商品链接点击数（按商品 ID 排名）
+- 图片导出次数
+- 按时间桶（日）聚合的事件总数（折线图）
+- 支持 1/7/30/90 天时间范围切换
+
+数据存储在本地 SQLite 文件 `data/stats.db`，**随服务器物理文件一起持久**，重启不丢失。
+
+API 端点：
+- `POST /api/track` — 上报事件（无需鉴权）
+- `POST /api/session/touch` — 刷新会话（UV 去重）
+- `POST /api/auth/login` — 登录
+- `GET /api/statics/summary?days=N` — 拉取汇总（需登录）
+- `GET /api/health` — 健康检查
 
 ## 高亮联动 + 合成导出
 

@@ -21,5 +21,6 @@
     }
   },
   "include": ["src", "tests/unit", "workers"],
+  "exclude": ["server", "dist", "dist-server"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

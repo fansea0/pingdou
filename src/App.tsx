@@ -9,7 +9,9 @@ import { ColorLegend } from '@/components/ColorLegend';
 import { ExportPanel } from '@/components/ExportPanel';
 import { MobileActionBar } from '@/components/MobileActionBar';
 import { ProductShowcase } from '@/components/ProductShowcase';
+import { Disclaimer } from '@/components/Disclaimer';
 import { computeLegend } from '@/pipeline/legend';
+import { usePageView, trackImageExport } from '@/hooks/useTracking';
 
 const PREVIEW_CELL_PX = 24;
 
@@ -20,6 +22,8 @@ export function App() {
   const [gridSize, setGridSize] = useState(100);
   const [enableDither, setEnableDither] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  usePageView();
 
   const legend = useMemo(
     () => (result && palette ? computeLegend(result.indices, palette) : []),
@@ -59,7 +63,10 @@ export function App() {
     if (!result || exporting) return;
     setExporting(true);
     try {
-      await exportMulti(32, []);
+      const out = await exportMulti(32, []);
+      if (out && out.success > 0) {
+        trackImageExport();
+      }
     } finally {
       setExporting(false);
     }
@@ -112,6 +119,8 @@ export function App() {
       </main>
 
       <ProductShowcase />
+
+      <Disclaimer />
 
       <MobileActionBar
         gridSize={gridSize}
