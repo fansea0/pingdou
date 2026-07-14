@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './MobileActionBar.css';
 
 const GRID_PRESETS = [20, 30, 50, 75, 100, 150, 200, 300] as const;
@@ -37,6 +37,7 @@ interface Props {
   onExport: () => void;
   canExport: boolean;
   exporting: boolean;
+  flash?: 'idle' | 'done';
 }
 
 export function MobileActionBar({
@@ -49,8 +50,36 @@ export function MobileActionBar({
   onExport,
   canExport,
   exporting,
+  flash,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState(0);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (exporting) {
+      setProgress(0);
+      const start = performance.now();
+      const tick = (now: number) => {
+        const t = Math.min(0.92, (now - start) / 1400);
+        setProgress(t);
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } else if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      if (progress > 0) {
+        setProgress(1);
+        window.setTimeout(() => setProgress(0), 600);
+      }
+    }
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // progress intentionally not in deps — only used in cleanup branch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exporting]);
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -98,6 +127,12 @@ export function MobileActionBar({
     document.addEventListener('pointerup', handleUp);
   }, [setValueFromPointer]);
 
+  const exportLabel = exporting
+    ? '生成中…'
+    : flash === 'done'
+    ? '已导出 ✓'
+    : '导出图片';
+
   return (
     <div className="mobile-action-bar">
       <input
@@ -143,23 +178,45 @@ export function MobileActionBar({
           checked={removeBackground}
           onChange={e => onRemoveBackgroundChange(e.target.checked)}
         />
-        去除纯色背景
+        自动去纯色背景
       </label>
 
       <div className="mobile-action-row">
         <p className="mobile-bean-count">
-          {beanCount > 0 ? `${beanCount.toLocaleString()} 颗` : '—'}
+          {beanCount > 0 ? (
+            <>
+              <strong>{beanCount.toLocaleString()}</strong> 颗
+              {removeBackground && <span className="bean-count-removed"> · 已去背景</span>}
+            </>
+          ) : (
+            '—'
+          )}
         </p>
         <div className="mobile-buttons">
-          <button className="primary" onClick={() => inputRef.current?.click()}>
-            上传图片
+          <button
+            className="primary mobile-icon-btn"
+            onClick={() => inputRef.current?.click()}
+            aria-label="上传图片"
+          >
+            <span aria-hidden>📷</span>
+            <span>上传</span>
           </button>
           <button
-            className="primary"
+            className={`primary mobile-icon-btn${exporting ? ' is-loading' : ''}${flash === 'done' ? ' is-done' : ''}`}
             disabled={!canExport || exporting}
             onClick={onExport}
           >
-            {exporting ? '导出中…' : '导出 1 张图'}
+            {progress > 0 && progress < 1 && (
+              <span
+                className="export-progress"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+                aria-hidden
+              />
+            )}
+            <span className="export-label">
+              <span aria-hidden>{flash === 'done' ? '🎉' : exporting ? '🎨' : '📦'}</span>
+              {exportLabel}
+            </span>
           </button>
         </div>
       </div>

@@ -6,7 +6,6 @@ interface RenderRequest {
   pixels: Uint8ClampedArray;
   width: number;
   height: number;
-  enableDither: boolean;
 }
 
 interface InitRequest {

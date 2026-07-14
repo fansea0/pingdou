@@ -34,7 +34,7 @@ export class Pipeline {
       const sampled = sampleImage(src, params.gridSize);
       if (myToken !== this.token) return;
 
-      const indices = quantizeWithCanvas2D(sampled, this.palette, params.enableDither);
+      const indices = quantizeWithCanvas2D(sampled, this.palette);
       if (myToken !== this.token) return;
 
       const outW = sampled.width;
@@ -106,7 +106,6 @@ export class Pipeline {
     currentResult: PipelineResult,
     exportCellPx: number,
     extraGridSizes: number[],
-    enableDither: boolean,
     removeBackground: boolean
   ): Promise<{ success: number; failed: number }> {
     if (!this.palette) throw new Error('Pipeline not initialized');
@@ -119,7 +118,7 @@ export class Pipeline {
       const gridSize = sizes[i];
       try {
         const sampled = sampleImage(src, gridSize);
-        const indices = quantizeWithCanvas2D(sampled, this.palette, enableDither);
+        const indices = quantizeWithCanvas2D(sampled, this.palette);
         const outW = sampled.width;
         const outH = sampled.height;
         const mask: BackgroundMask = new Uint8Array(outW * outH);

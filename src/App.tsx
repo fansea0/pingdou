@@ -20,9 +20,9 @@ export function App() {
   const { status, result, error, process, reprocess, exportMulti } = usePipeline(palette);
   const { imageData: sample } = useSampleImage();
   const [gridSize, setGridSize] = useState(100);
-  const [enableDither, setEnableDither] = useState(false);
   const [removeBackground, setRemoveBackground] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
 
   usePageView();
 
@@ -45,7 +45,7 @@ export function App() {
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
     if (sample && palette && status === 'idle') {
-      process(sample, { gridSize, enableDither, removeBackground });
+      process(sample, { gridSize, removeBackground });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample, palette, status]);
@@ -72,10 +72,13 @@ export function App() {
   const handleExport = async () => {
     if (!result || exporting) return;
     setExporting(true);
+    setExportFlash('idle');
     try {
       const out = await exportMulti(32, []);
       if (out && out.success > 0) {
         trackImageExport();
+        setExportFlash('done');
+        window.setTimeout(() => setExportFlash('idle'), 2400);
       }
     } finally {
       setExporting(false);
@@ -93,7 +96,7 @@ export function App() {
 
       <main className="layout-3col">
         <aside className="left">
-          <UploadZone onLoad={(data) => process(data, { gridSize, enableDither, removeBackground })} />
+          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground })} />
           <ParamPanel
             gridSize={gridSize}
             beanCount={beanCount}
@@ -101,22 +104,19 @@ export function App() {
             removeBackground={removeBackground}
             onGridSizeChange={n => {
               setGridSize(n);
-              reprocess({ gridSize: n, enableDither, removeBackground });
-            }}
-            enableDither={enableDither}
-            onDitherChange={b => {
-              setEnableDither(b);
-              reprocess({ gridSize, enableDither: b, removeBackground });
+              reprocess({ gridSize: n, removeBackground });
             }}
             onRemoveBackgroundChange={b => {
               setRemoveBackground(b);
-              reprocess({ gridSize, enableDither, removeBackground: b });
+              reprocess({ gridSize, removeBackground: b });
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
           <ExportPanel
             disabled={!result || exporting}
             onExport={handleExport}
+            exporting={exporting}
+            flash={exportFlash}
           />
         </aside>
 
@@ -144,21 +144,29 @@ export function App() {
         removeBackground={removeBackground}
         onGridSizeChange={n => {
           setGridSize(n);
-          reprocess({ gridSize: n, enableDither, removeBackground });
+          reprocess({ gridSize: n, removeBackground });
         }}
         onRemoveBackgroundChange={b => {
           setRemoveBackground(b);
-          reprocess({ gridSize, enableDither, removeBackground: b });
+          reprocess({ gridSize, removeBackground: b });
         }}
-        onLoad={(data) => process(data, { gridSize, enableDither, removeBackground })}
+        onLoad={(data) => process(data, { gridSize, removeBackground })}
         onExport={handleExport}
         canExport={!!result}
         exporting={exporting}
+        flash={exportFlash}
       />
 
       <footer className="app-footer">
         <p>© 拼豆图生成器 · 仅作手工参考 · 颜色归各品牌所有</p>
       </footer>
+
+      {exportFlash === 'done' && (
+        <div className="export-toast" role="status" aria-live="polite">
+          <span className="export-toast-emoji">🐰</span>
+          <span className="export-toast-text">导出成功！到下载文件夹找它吧～</span>
+        </div>
+      )}
     </div>
   );
 }

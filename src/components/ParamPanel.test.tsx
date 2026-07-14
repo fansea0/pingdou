@@ -7,9 +7,7 @@ const baseProps = () => ({
   beanCount: 10000,
   totalCells: 10000,
   removeBackground: false,
-  enableDither: false,
   onGridSizeChange: () => {},
-  onDitherChange: () => {},
   onRemoveBackgroundChange: () => {},
 });
 
@@ -57,10 +55,10 @@ describe('ParamPanel', () => {
     expect(valueBadge?.textContent).toBe('50');
   });
 
-  it('exposes a removeBackground checkbox', () => {
+  it('exposes a single removeBackground checkbox (no dither)', () => {
     const { container } = render(<ParamPanel {...baseProps()} />);
     const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes).toHaveLength(1);
   });
 
   it('toggling removeBackground fires onRemoveBackgroundChange', () => {
@@ -68,9 +66,9 @@ describe('ParamPanel', () => {
     const { container } = render(
       <ParamPanel {...baseProps()} onRemoveBackgroundChange={onChange} />
     );
-    const checkbox = container.querySelectorAll(
+    const checkbox = container.querySelector(
       'input[type="checkbox"]'
-    )[0] as HTMLInputElement;
+    ) as HTMLInputElement;
     fireEvent.click(checkbox);
     expect(onChange).toHaveBeenCalledWith(true);
   });
@@ -84,7 +82,7 @@ describe('ParamPanel', () => {
         totalCells={10000}
       />
     );
-    expect(container.textContent).toMatch(/已减去\s*3,000\s*颗背景/);
+    expect(container.textContent).toMatch(/已去\s*3,000\s*颗背景/);
   });
 
   it('hides removed count annotation when bg removal is off', () => {
@@ -96,6 +94,6 @@ describe('ParamPanel', () => {
         totalCells={10000}
       />
     );
-    expect(container.textContent).not.toMatch(/已减去/);
+    expect(container.textContent).not.toMatch(/已去/);
   });
 });

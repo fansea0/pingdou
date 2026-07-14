@@ -112,6 +112,51 @@ header .subtitle {
   .upload-zone {
     display: none;
   }
+
+  /* === Legend: collapsible on mobile (default collapsed) === */
+  .legend-wrap {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+  }
+  .legend-wrap.is-closed .legend-head {
+    margin-bottom: 0;
+  }
+  .legend-toggle {
+    display: inline-flex;
+  }
+  .legend-head {
+    cursor: pointer;
+    user-select: none;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    transition: border-color 0.15s;
+  }
+  .legend-head:hover {
+    border-color: var(--color-accent);
+  }
+  .legend-wrap.is-open .legend-head {
+    margin-bottom: var(--space-3);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .legend-wrap.is-open .legend-table {
+    border-top: none;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  .legend-title {
+    font-size: var(--text-sm);
+  }
+  .legend-subtitle {
+    font-size: 10px;
+  }
 }
 
 /* === Buttons === */
@@ -310,7 +355,7 @@ button.primary:disabled {
   font-size: var(--text-sm);
 }
 
-/* === Color Legend (static) === */
+/* === Color Legend (collapsible) === */
 .legend-wrap {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -322,15 +367,45 @@ button.primary:disabled {
   overflow-y: auto;
   box-shadow: var(--shadow-sm);
 }
+.legend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-3);
+  gap: var(--space-2);
+}
 .legend-title {
   font-size: var(--text-base);
   font-weight: 600;
-  margin-bottom: var(--space-1);
+  margin-bottom: 2px;
 }
 .legend-subtitle {
   font-size: var(--text-xs);
   color: var(--color-text-muted);
-  margin-bottom: var(--space-3);
+}
+.legend-subtitle strong {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.legend-toggle {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text);
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+}
+.legend-toggle:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 .legend-table {
   border: 1px solid var(--color-border);
@@ -341,18 +416,18 @@ button.primary:disabled {
 .legend-header,
 .legend-row {
   display: grid;
-  grid-template-columns: 60px 1fr 1fr 60px;
+  grid-template-columns: 54px 1fr 1fr 50px;
   align-items: center;
 }
 .legend-header {
   background: var(--color-surface-alt);
   font-weight: 600;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-2);
   border-bottom: 1px solid var(--color-border);
   color: var(--color-text-muted);
 }
 .legend-row {
-  padding: var(--space-2);
+  padding: 4px var(--space-2);
   border-bottom: 1px solid var(--color-border);
 }
 .legend-row:last-child { border-bottom: none; }
@@ -363,8 +438,8 @@ button.primary:disabled {
 }
 .legend-row .swatch {
   display: inline-block;
-  width: 28px;
-  height: 20px;
+  width: 24px;
+  height: 18px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(0, 0, 0, 0.08);
 }

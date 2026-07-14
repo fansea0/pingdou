@@ -10,7 +10,6 @@ export type Palette = ReadonlyArray<PaletteEntry>;
 
 export interface ProcessParams {
   readonly gridSize: number;
-  readonly enableDither: boolean;
   readonly removeBackground: boolean;
 }
 

@@ -1,5 +1,4 @@
 import type { Palette } from '@/types';
-import { floydSteinbergDither } from './ditherer';
 
 function nearestIdx(r: number, g: number, b: number, palette: Palette): number {
   let best = 0;
@@ -14,17 +13,12 @@ function nearestIdx(r: number, g: number, b: number, palette: Palette): number {
 
 /**
  * Quantize each pixel of ImageData to the nearest palette color.
- * If enableDither is true, applies Floyd-Steinberg before quantization.
  * Returns Uint8Array of indices (length = w*h).
  */
 export function quantizeWithCanvas2D(
   src: ImageData,
-  palette: Palette,
-  enableDither: boolean
+  palette: Palette
 ): Uint8Array {
-  if (enableDither) {
-    return floydSteinbergDither(src, palette);
-  }
   const { width: w, height: h, data } = src;
   const out = new Uint8Array(w * h);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {

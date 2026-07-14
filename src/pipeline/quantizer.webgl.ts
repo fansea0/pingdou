@@ -108,7 +108,7 @@ export class WebGLQuantizer {
     this.paletteSize = palette.length;
   }
 
-  quantize(src: ImageData, enableDither: boolean): Uint8Array {
+  quantize(src: ImageData): Uint8Array {
     const { width: w, height: h, data } = src;
     const gl = this.gl;
 
@@ -135,7 +135,6 @@ export class WebGLQuantizer {
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.uniform1i(gl.getUniformLocation(this.prog, 'u_src'), 0);
     gl.uniform1i(gl.getUniformLocation(this.prog, 'u_paletteSize'), this.paletteSize);
-    gl.uniform1i(gl.getUniformLocation(this.prog, 'u_enableDither'), enableDither ? 1 : 0);
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     const out = new Uint8Array(w * h * 4);

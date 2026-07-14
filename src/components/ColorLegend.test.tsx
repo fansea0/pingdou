@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { render, fireEvent } from '@testing-library/react';
 import { ColorLegend } from '@/components/ColorLegend';
 import type { LegendRow } from '@/pipeline/legend';
 
@@ -7,6 +7,25 @@ const legend: LegendRow[] = [
   { id: 'A01', name: '红', rgb: [255, 0, 0], count: 3, index: 0 },
   { id: 'A02', name: '绿', rgb: [0, 255, 0], count: 1, index: 1 },
 ];
+
+beforeAll(() => {
+  // jsdom default: no matchMedia. Stub it for mobile detection logic.
+  if (!window.matchMedia) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }),
+    });
+  }
+});
 
 describe('ColorLegend', () => {
   it('renders one row per legend entry', () => {
@@ -39,5 +58,19 @@ describe('ColorLegend', () => {
     const { container } = render(<ColorLegend legend={legend} />);
     const firstRow = container.querySelector('.legend-row')!;
     expect(firstRow.className).not.toMatch(/highlighted/);
+  });
+
+  it('starts in open state on desktop', () => {
+    const { container } = render(<ColorLegend legend={legend} />);
+    expect(container.querySelector('.legend-wrap')?.className).toMatch(/is-open/);
+    expect(container.querySelector('.legend-toggle')).toBeTruthy();
+  });
+
+  it('clicking the toggle collapses the table', () => {
+    const { container } = render(<ColorLegend legend={legend} />);
+    const head = container.querySelector('.legend-head') as HTMLElement;
+    fireEvent.click(head);
+    expect(container.querySelector('.legend-wrap')?.className).toMatch(/is-closed/);
+    expect(container.querySelector('.legend-row')).toBeNull();
   });
 });

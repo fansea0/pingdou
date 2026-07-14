@@ -6,8 +6,6 @@ interface Props {
   totalCells: number;
   removeBackground: boolean;
   onGridSizeChange: (n: number) => void;
-  enableDither: boolean;
-  onDitherChange: (b: boolean) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
   disabled?: boolean;
 }
@@ -111,8 +109,6 @@ export function ParamPanel({
   totalCells,
   removeBackground,
   onGridSizeChange,
-  enableDither,
-  onDitherChange,
   onRemoveBackgroundChange,
   disabled,
 }: Props) {
@@ -129,34 +125,31 @@ export function ParamPanel({
       />
 
       <p className="bean-count">
-        {gridSize} × {gridSize}  ≈  <strong>{beanCount > 0 ? beanCount.toLocaleString() : '—'}</strong>  颗
+        <strong>{beanCount > 0 ? beanCount.toLocaleString() : '—'}</strong> 颗
+        <span className="bean-count-grid">
+          {' '}
+          （{gridSize} × {gridSize} = {totalCells.toLocaleString()} 格）
+        </span>
         {removeBackground && removed > 0 && (
           <span className="bean-count-removed">
             {' '}
-            （已减去 {removed.toLocaleString()} 颗背景）
+            · 已去 {removed.toLocaleString()} 颗背景
           </span>
         )}
       </p>
       <p className="hint">推荐 20-100 档位（普通图案常用范围）</p>
 
-      <label className="checkbox">
+      <label className="checkbox param-toggle">
         <input
           type="checkbox"
           checked={removeBackground}
           onChange={e => onRemoveBackgroundChange(e.target.checked)}
           disabled={disabled}
         />
-        自动去除纯色背景（卡通插画适用）
-      </label>
-
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={enableDither}
-          onChange={e => onDitherChange(e.target.checked)}
-          disabled={disabled}
-        />
-        启用抖动（细节更平滑）
+        <span>
+          自动去背景
+          <span className="param-toggle-hint"> · 适合卡通插画</span>
+        </span>
       </label>
     </div>
   );

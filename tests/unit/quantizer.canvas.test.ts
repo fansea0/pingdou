@@ -19,19 +19,19 @@ function img(w: number, h: number, rgb: [number, number, number]): ImageData {
 describe('quantizeWithCanvas2D', () => {
   it('returns indices of length w*h', () => {
     const src = img(10, 10, [10, 10, 10]);
-    const idx = quantizeWithCanvas2D(src, palette, false);
+    const idx = quantizeWithCanvas2D(src, palette);
     expect(idx.length).toBe(100);
   });
 
   it('exact red maps to A02 (red)', () => {
     const src = img(2, 2, [255, 0, 0]);
-    const idx = quantizeWithCanvas2D(src, palette, false);
+    const idx = quantizeWithCanvas2D(src, palette);
     for (const v of idx) expect(v).toBe(1);
   });
 
   it('exact green maps to A03 (green)', () => {
     const src = img(2, 2, [0, 255, 0]);
-    const idx = quantizeWithCanvas2D(src, palette, false);
+    const idx = quantizeWithCanvas2D(src, palette);
     for (const v of idx) expect(v).toBe(2);
   });
 
@@ -40,7 +40,7 @@ describe('quantizeWithCanvas2D', () => {
   // correctly picks a non-black color in that tie scenario.
   it('mid gray maps to nearest (red or green in 3-color palette)', () => {
     const src = img(1, 1, [128, 128, 128]);
-    const idx = quantizeWithCanvas2D(src, palette, false);
+    const idx = quantizeWithCanvas2D(src, palette);
     // red [255,0,0] and green [0,255,0] tie at d²=48897, both nearer than black at 49152
     expect([1, 2]).toContain(idx[0]);
   });

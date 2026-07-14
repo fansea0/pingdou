@@ -9,7 +9,6 @@ export function usePipeline(palette: Palette | null) {
   const [status, setStatus] = useState<UIStatus>('idle');
   const [error, setError] = useState<Error | null>(null);
   const srcRef = useRef<ImageData | null>(null);
-  const ditherRef = useRef(false);
   const removeBgRef = useRef(false);
 
   useEffect(() => {
@@ -21,7 +20,6 @@ export function usePipeline(palette: Palette | null) {
   const throttledProcess = useThrottle(async (src: ImageData, params: ProcessParams) => {
     if (!pipelineRef.current) return;
     try {
-      ditherRef.current = params.enableDither;
       removeBgRef.current = params.removeBackground;
       await pipelineRef.current.process(src, params, setStatus, setResult);
       setError(null);
@@ -32,14 +30,12 @@ export function usePipeline(palette: Palette | null) {
 
   const process = useCallback((src: ImageData, params: ProcessParams) => {
     srcRef.current = src;
-    ditherRef.current = params.enableDither;
     removeBgRef.current = params.removeBackground;
     return throttledProcess(src, params);
   }, [throttledProcess]);
 
   const reprocess = useCallback((params: ProcessParams) => {
     if (srcRef.current) {
-      ditherRef.current = params.enableDither;
       removeBgRef.current = params.removeBackground;
       throttledProcess(srcRef.current, params);
     }
@@ -54,7 +50,6 @@ export function usePipeline(palette: Palette | null) {
         result,
         exportCellPx,
         extraGridSizes,
-        ditherRef.current,
         removeBgRef.current
       );
       return out;
