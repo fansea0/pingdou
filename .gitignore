@@ -11,3 +11,4 @@ test-results
 .env.local
 dist-server/
 data/*.db*
+package-lock.json
