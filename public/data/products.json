@@ -1,30 +1,30 @@
 [
   {
     "id": "p-128-set",
-    "name": "128 色 MARD 拼豆套装",
-    "image": "/products/128-set.jpg",
-    "price": 99.00,
+    "name": "拼豆笔",
+    "image": "/products/pencli.jpg",
+    "price": 13.00,
     "currency": "CNY",
     "description": "包含 MARD 全 128 色，每包约 1000 颗",
-    "url": "https://item.taobao.com/iid=REPLACE_ME_128",
+    "url": "https://mobile.yangkeduo.com/goods1.html?ps=t3L80VGitK",
     "badge": "热销"
   },
   {
     "id": "p-24-set",
     "name": "24 色入门套装",
-    "image": "/products/24-set.jpg",
-    "price": 29.90,
+    "image": "/products/daizuo.jpg",
+    "price": 19.90,
     "currency": "CNY",
     "description": "适合新手，颜色覆盖常用色",
-    "url": "https://item.taobao.com/iid=REPLACE_ME_24"
+    "url": "https://mobile.yangkeduo.com/goods1.html?ps=t3L80VGitK"
   },
   {
     "id": "p-tools",
     "name": "拼豆工具套装",
-    "image": "/products/tools.jpg",
-    "price": 19.90,
+    "image": "/products/taozhuang.jpg",
+    "price": 9.90,
     "currency": "CNY",
     "description": "折板 + 镊子 + 熨斗垫",
-    "url": "https://item.taobao.com/iid=REPLACE_ME_TOOLS"
+    "url": "https://mobile.yangkeduo.com/goods1.html?ps=t3L80VGitK"
   }
 ]
