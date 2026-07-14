@@ -1,17 +1,24 @@
-import type { Palette } from '@/types';
+import type { Palette, BackgroundMask } from '@/types';
 
 /**
  * Render an index matrix into a Canvas, using palette colors at cellPx per cell.
  * Canvas dimensions are outW × outH cells (rectangular grids supported).
  * Optional border color for grid lines; pass null to disable.
+ *
+ * Background cells (mask[i] === 1) are drawn as transparent (checkerboard) so
+ * the user can tell which cells will not consume beads.
  */
+const CHECK_LIGHT = '#f4f4f5';
+const CHECK_DARK = '#e4e4e7';
+
 export function renderPaletteImage(
   indices: Uint8Array,
   outW: number,
   outH: number,
   palette: Palette,
   cellPx: number,
-  borderColor: string | null = '#e5e7eb'
+  borderColor: string | null = '#e5e7eb',
+  mask: BackgroundMask | null = null
 ): HTMLCanvasElement {
   const w = outW * cellPx;
   const h = outH * cellPx;
@@ -20,12 +27,27 @@ export function renderPaletteImage(
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
 
+  if (mask) {
+    ctx.fillStyle = CHECK_LIGHT;
+    ctx.fillRect(0, 0, w, h);
+  }
+
   for (let y = 0; y < outH; y++) {
     for (let x = 0; x < outW; x++) {
-      const idx = indices[y * outW + x];
+      const i = y * outW + x;
+      const px = x * cellPx;
+      const py = y * cellPx;
+      if (mask && mask[i]) {
+        if ((x + y) & 1) {
+          ctx.fillStyle = CHECK_DARK;
+          ctx.fillRect(px, py, cellPx, cellPx);
+        }
+        continue;
+      }
+      const idx = indices[i];
       const [r, g, b] = palette[idx].rgb;
       ctx.fillStyle = `rgb(${r},${g},${b})`;
-      ctx.fillRect(x * cellPx, y * cellPx, cellPx, cellPx);
+      ctx.fillRect(px, py, cellPx, cellPx);
     }
   }
 

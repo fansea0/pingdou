@@ -95,6 +95,25 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* === Toggle row: compact switch === */
+  .mobile-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--color-text-muted);
+    height: 24px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .mobile-toggle-row input[type='checkbox'] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+  }
+
   /* === Action row: bean count + buttons === */
   .mobile-action-row {
     display: flex;
@@ -125,6 +144,6 @@
 
   /* prevent content from hiding behind fixed bar */
   .app {
-    padding-bottom: calc(var(--space-5) + 82px);
+    padding-bottom: calc(var(--space-5) + 110px);
   }
 }

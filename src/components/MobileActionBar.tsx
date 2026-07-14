@@ -30,7 +30,9 @@ function nearestPreset(rawValue: number): number {
 interface Props {
   gridSize: number;
   beanCount: number;
+  removeBackground: boolean;
   onGridSizeChange: (n: number) => void;
+  onRemoveBackgroundChange: (b: boolean) => void;
   onLoad: (imageData: ImageData) => void;
   onExport: () => void;
   canExport: boolean;
@@ -40,7 +42,9 @@ interface Props {
 export function MobileActionBar({
   gridSize,
   beanCount,
+  removeBackground,
   onGridSizeChange,
+  onRemoveBackgroundChange,
   onLoad,
   onExport,
   canExport,
@@ -132,6 +136,15 @@ export function MobileActionBar({
         </div>
         <span className="mobile-grid-value">{gridSize}</span>
       </div>
+
+      <label className="mobile-toggle-row">
+        <input
+          type="checkbox"
+          checked={removeBackground}
+          onChange={e => onRemoveBackgroundChange(e.target.checked)}
+        />
+        去除纯色背景
+      </label>
 
       <div className="mobile-action-row">
         <p className="mobile-bean-count">

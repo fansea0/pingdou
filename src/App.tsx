@@ -21,21 +21,31 @@ export function App() {
   const { imageData: sample } = useSampleImage();
   const [gridSize, setGridSize] = useState(100);
   const [enableDither, setEnableDither] = useState(false);
+  const [removeBackground, setRemoveBackground] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   usePageView();
 
   const legend = useMemo(
-    () => (result && palette ? computeLegend(result.indices, palette) : []),
+    () => (result && palette ? computeLegend(result.indices, palette, result.mask) : []),
     [result, palette]
   );
 
-  const beanCount = result ? result.outW * result.outH : 0;
+  const beanCount = useMemo(() => {
+    if (!result) return 0;
+    let drawn = 0;
+    for (let i = 0; i < result.mask.length; i++) {
+      if (!result.mask[i]) drawn++;
+    }
+    return drawn;
+  }, [result]);
+
+  const totalCells = result ? result.outW * result.outH : 0;
 
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
     if (sample && palette && status === 'idle') {
-      process(sample, { gridSize, enableDither });
+      process(sample, { gridSize, enableDither, removeBackground });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample, palette, status]);
@@ -83,18 +93,24 @@ export function App() {
 
       <main className="layout-3col">
         <aside className="left">
-          <UploadZone onLoad={(data) => process(data, { gridSize, enableDither })} />
+          <UploadZone onLoad={(data) => process(data, { gridSize, enableDither, removeBackground })} />
           <ParamPanel
             gridSize={gridSize}
             beanCount={beanCount}
+            totalCells={totalCells}
+            removeBackground={removeBackground}
             onGridSizeChange={n => {
               setGridSize(n);
-              reprocess({ gridSize: n, enableDither });
+              reprocess({ gridSize: n, enableDither, removeBackground });
             }}
             enableDither={enableDither}
             onDitherChange={b => {
               setEnableDither(b);
-              reprocess({ gridSize, enableDither: b });
+              reprocess({ gridSize, enableDither: b, removeBackground });
+            }}
+            onRemoveBackgroundChange={b => {
+              setRemoveBackground(b);
+              reprocess({ gridSize, enableDither, removeBackground: b });
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
@@ -125,11 +141,16 @@ export function App() {
       <MobileActionBar
         gridSize={gridSize}
         beanCount={beanCount}
+        removeBackground={removeBackground}
         onGridSizeChange={n => {
           setGridSize(n);
-          reprocess({ gridSize: n, enableDither });
+          reprocess({ gridSize: n, enableDither, removeBackground });
         }}
-        onLoad={(data) => process(data, { gridSize, enableDither })}
+        onRemoveBackgroundChange={b => {
+          setRemoveBackground(b);
+          reprocess({ gridSize, enableDither, removeBackground: b });
+        }}
+        onLoad={(data) => process(data, { gridSize, enableDither, removeBackground })}
         onExport={handleExport}
         canExport={!!result}
         exporting={exporting}

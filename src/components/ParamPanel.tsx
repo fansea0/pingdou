@@ -3,9 +3,12 @@ import './ParamPanel.css';
 interface Props {
   gridSize: number;
   beanCount: number;
+  totalCells: number;
+  removeBackground: boolean;
   onGridSizeChange: (n: number) => void;
   enableDither: boolean;
   onDitherChange: (b: boolean) => void;
+  onRemoveBackgroundChange: (b: boolean) => void;
   disabled?: boolean;
 }
 
@@ -105,11 +108,15 @@ function ProgressBar({
 export function ParamPanel({
   gridSize,
   beanCount,
+  totalCells,
+  removeBackground,
   onGridSizeChange,
   enableDither,
   onDitherChange,
+  onRemoveBackgroundChange,
   disabled,
 }: Props) {
+  const removed = totalCells > 0 ? totalCells - beanCount : 0;
   return (
     <div className="param-panel">
       <label className="grid-label">网格大小（长边豆子数）</label>
@@ -123,8 +130,24 @@ export function ParamPanel({
 
       <p className="bean-count">
         {gridSize} × {gridSize}  ≈  <strong>{beanCount > 0 ? beanCount.toLocaleString() : '—'}</strong>  颗
+        {removeBackground && removed > 0 && (
+          <span className="bean-count-removed">
+            {' '}
+            （已减去 {removed.toLocaleString()} 颗背景）
+          </span>
+        )}
       </p>
       <p className="hint">推荐 20-100 档位（普通图案常用范围）</p>
+
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={removeBackground}
+          onChange={e => onRemoveBackgroundChange(e.target.checked)}
+          disabled={disabled}
+        />
+        自动去除纯色背景（卡通插画适用）
+      </label>
 
       <label className="checkbox">
         <input

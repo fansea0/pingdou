@@ -48,4 +48,14 @@ describe('computeLegend', () => {
     expect(a03.index).toBe(2);
     expect(a01.index).toBe(0);
   });
+
+  it('skips cells where mask===1', () => {
+    const indices = new Uint8Array([0, 0, 1, 2]);
+    const mask = new Uint8Array([1, 0, 0, 0]);
+    const legend = computeLegend(indices, palette, mask);
+    const a01 = legend.find(r => r.id === 'A01')!;
+    expect(a01.count).toBe(1);
+    expect(legend.find(r => r.id === 'A02')?.count).toBe(1);
+    expect(legend.find(r => r.id === 'A03')?.count).toBe(1);
+  });
 });

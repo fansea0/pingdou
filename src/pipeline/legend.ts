@@ -1,4 +1,4 @@
-import type { Palette } from '@/types';
+import type { Palette, BackgroundMask } from '@/types';
 
 export interface LegendRow {
   readonly id: string;
@@ -10,14 +10,20 @@ export interface LegendRow {
 
 /**
  * Derive legend rows from a quantization result.
- * - Counts occurrences of each palette index.
+ * - Counts occurrences of each palette index among NON-BACKGROUND cells.
  * - Sorts rows by count descending.
  * - Skips colors with count === 0.
  */
-export function computeLegend(indices: Uint8Array, palette: Palette): LegendRow[] {
+export function computeLegend(
+  indices: Uint8Array,
+  palette: Palette,
+  mask: BackgroundMask | null = null
+): LegendRow[] {
   const counts = new Map<number, number>();
-  for (const i of indices) {
-    counts.set(i, (counts.get(i) ?? 0) + 1);
+  for (let i = 0; i < indices.length; i++) {
+    if (mask && mask[i]) continue;
+    const idx = indices[i];
+    counts.set(idx, (counts.get(idx) ?? 0) + 1);
   }
 
   const rows: LegendRow[] = [];

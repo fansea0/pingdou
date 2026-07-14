@@ -3,7 +3,14 @@ import { quantizeWithCanvas2D } from './quantizer.canvas';
 import { renderPaletteImage } from './renderer';
 import { renderComposite, DEFAULT_COMPOSITE_OPTIONS } from './composite';
 import { canvasToBlob, triggerDownload } from './exporter';
-import type { Palette, ProcessParams, PipelineResult, UIStatus } from '@/types';
+import { buildBackgroundMask, detectBackground } from './bgRemover';
+import type {
+  Palette,
+  ProcessParams,
+  PipelineResult,
+  UIStatus,
+  BackgroundMask,
+} from '@/types';
 
 export class Pipeline {
   private token = 0;
@@ -30,13 +37,31 @@ export class Pipeline {
       const indices = quantizeWithCanvas2D(sampled, this.palette, params.enableDither);
       if (myToken !== this.token) return;
 
+      const outW = sampled.width;
+      const outH = sampled.height;
+      const n = outW * outH;
+      const mask: BackgroundMask = new Uint8Array(n);
+
+      if (params.removeBackground) {
+        const detected = detectBackground(src);
+        if (detected) {
+          const { mask: bgMask } = buildBackgroundMask(sampled, detected.bg);
+          bgMask.forEach((v, i) => {
+            mask[i] = v;
+          });
+        }
+      }
+
+      if (myToken !== this.token) return;
+
       onStatus('ready');
       onResult({
         indices,
-        gridSize: sampled.width,
-        outW: sampled.width,
-        outH: sampled.height,
+        gridSize: outW,
+        outW,
+        outH,
         token: myToken,
+        mask,
       });
     } catch (err) {
       onStatus('ready');
@@ -49,11 +74,11 @@ export class Pipeline {
    */
   async exportComposite(result: PipelineResult): Promise<void> {
     if (!this.palette) throw new Error('Pipeline not initialized');
-    const { indices, outW, outH } = result;
+    const { indices, outW, outH, mask } = result;
 
     const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
-    });
+    }, mask);
     const blob = await canvasToBlob(canvas);
     triggerDownload(blob, `pingdou-${outW}x${outH}-composite.png`);
   }
@@ -66,7 +91,8 @@ export class Pipeline {
       result.outH,
       this.palette,
       cellPx,
-      null
+      null,
+      result.mask
     );
   }
 
@@ -80,7 +106,8 @@ export class Pipeline {
     currentResult: PipelineResult,
     exportCellPx: number,
     extraGridSizes: number[],
-    enableDither: boolean
+    enableDither: boolean,
+    removeBackground: boolean
   ): Promise<{ success: number; failed: number }> {
     if (!this.palette) throw new Error('Pipeline not initialized');
 
@@ -93,15 +120,28 @@ export class Pipeline {
       try {
         const sampled = sampleImage(src, gridSize);
         const indices = quantizeWithCanvas2D(sampled, this.palette, enableDither);
+        const outW = sampled.width;
+        const outH = sampled.height;
+        const mask: BackgroundMask = new Uint8Array(outW * outH);
+        if (removeBackground) {
+          const detected = detectBackground(src);
+          if (detected) {
+            const { mask: bgMask } = buildBackgroundMask(sampled, detected.bg);
+            bgMask.forEach((v, j) => {
+              mask[j] = v;
+            });
+          }
+        }
         const compositeCanvas = renderComposite(
           indices,
-          sampled.width,
-          sampled.height,
+          outW,
+          outH,
           this.palette,
-          { cellPx: exportCellPx }
+          { cellPx: exportCellPx },
+          mask
         );
         const blob = await canvasToBlob(compositeCanvas);
-        triggerDownload(blob, `pingdou-${sampled.width}x${sampled.height}.png`);
+        triggerDownload(blob, `pingdou-${outW}x${outH}.png`);
         success++;
         if (i < sizes.length - 1) {
           await new Promise(r => setTimeout(r, 100));

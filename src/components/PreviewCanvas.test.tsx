@@ -14,6 +14,7 @@ const result: PipelineResult = {
   outW: 2,
   outH: 2,
   token: 1,
+  mask: new Uint8Array([0, 0, 0, 0]),
 };
 
 describe('PreviewCanvas (empty state)', () => {

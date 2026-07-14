@@ -111,6 +111,10 @@
   color: var(--color-accent);
   font-weight: 700;
 }
+.bean-count-removed {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
 
 .hint {
   color: var(--color-text-muted);

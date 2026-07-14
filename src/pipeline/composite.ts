@@ -1,4 +1,4 @@
-import type { Palette } from '@/types';
+import type { Palette, BackgroundMask } from '@/types';
 import { renderAnnotatedImage } from './annotator';
 
 export interface CompositeOptions {
@@ -26,16 +26,26 @@ interface InternalRow {
   readonly count: number;
 }
 
-function buildRows(indices: Uint8Array, palette: Palette): InternalRow[] {
+function buildRows(
+  indices: Uint8Array,
+  palette: Palette,
+  mask: BackgroundMask | null
+): { rows: InternalRow[]; bodyTotal: number } {
   const counts = new Map<number, number>();
-  for (const i of indices) counts.set(i, (counts.get(i) ?? 0) + 1);
+  let bodyTotal = 0;
+  for (let i = 0; i < indices.length; i++) {
+    if (mask && mask[i]) continue;
+    const idx = indices[i];
+    counts.set(idx, (counts.get(idx) ?? 0) + 1);
+    bodyTotal++;
+  }
   const rows: InternalRow[] = [];
   for (const [idx, count] of counts) {
     const { id, name, rgb } = palette[idx];
     rows.push({ id, name, rgb, count });
   }
   rows.sort((a, b) => b.count - a.count);
-  return rows;
+  return { rows, bodyTotal };
 }
 
 /**
@@ -51,13 +61,15 @@ function buildRows(indices: Uint8Array, palette: Palette): InternalRow[] {
  *   legendY = floor((canvasH - legendH) / 2)
  *
  * Supports non-square bead grids (outW × outH).
+ * 传入 mask 后，背景格子不参与豆子数合计；右侧 legend 表也只统计主体。
  */
 export function renderComposite(
   indices: Uint8Array,
   outW: number,
   outH: number,
   palette: Palette,
-  options?: Partial<CompositeOptions>
+  options?: Partial<CompositeOptions>,
+  mask: BackgroundMask | null = null
 ): HTMLCanvasElement {
   const opts: CompositeOptions = { ...DEFAULT_COMPOSITE_OPTIONS, ...options };
 
@@ -67,12 +79,13 @@ export function renderComposite(
     outH,
     palette,
     opts.cellPx,
-    opts.fontPx
+    opts.fontPx,
+    mask
   );
   const beadW = beadCanvas.width;
   const beadH = beadCanvas.height;
 
-  const rows = buildRows(indices, palette);
+  const { rows, bodyTotal } = buildRows(indices, palette, mask);
   const legendRowsCount = 1 + rows.length + 1;
   const labelColW = 100;
   const nameColW = 100;
@@ -153,7 +166,7 @@ export function renderComposite(
   ctx.fillStyle = '#1a1a1a';
   ctx.fillText('合计', colXs[0] + 8, rowY);
   ctx.textAlign = 'right';
-  ctx.fillText(String(indices.length), colXs[3] + countColW - 8, rowY);
+  ctx.fillText(String(bodyTotal), colXs[3] + countColW - 8, rowY);
   ctx.textAlign = 'left';
 
   return canvas;

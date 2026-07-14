@@ -11,7 +11,14 @@ export type Palette = ReadonlyArray<PaletteEntry>;
 export interface ProcessParams {
   readonly gridSize: number;
   readonly enableDither: boolean;
+  readonly removeBackground: boolean;
 }
+
+/**
+ * 1 表示被识别为背景的格子，对应位置不绘制 + 不计入豆子数。
+ * length = outW * outH。当 removeBackground 关闭时为全零数组。
+ */
+export type BackgroundMask = Uint8Array;
 
 export interface PipelineResult {
   readonly indices: Uint8Array;
@@ -19,6 +26,7 @@ export interface PipelineResult {
   readonly outW: number;
   readonly outH: number;
   readonly token: number;
+  readonly mask: BackgroundMask;
 }
 
 export type UIStatus = 'idle' | 'loading' | 'ready' | 'recomputing' | 'exporting';
