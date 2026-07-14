@@ -129,4 +129,92 @@ describe('detectBackground + buildBackgroundMask integration', () => {
     const img = new ImageData(arr, 20, 20);
     expect(detectBackground(img)).toBeNull();
   });
+
+  it('detects background in a realistic cartoon-style image (subject in center, 4-corner solid bg)', () => {
+    // 200×200 image: white background with a 50×50 red square centered at (75..125, 75..125)
+    const W = 200, H = 200;
+    const arr = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const inSubject = x >= 75 && x < 125 && y >= 75 && y < 125;
+        arr[i]     = inSubject ? 220 : 255;
+        arr[i + 1] = inSubject ? 40  : 255;
+        arr[i + 2] = inSubject ? 40  : 255;
+        arr[i + 3] = 255;
+      }
+    }
+    const img = new ImageData(arr, W, H);
+    const detected = detectBackground(img);
+    expect(detected).not.toBeNull();
+    expect(detected?.bg).toEqual([255, 255, 255]);
+  });
+
+  it('masks only background cells when applied to a real-shape cartoon image', () => {
+    const W = 200, H = 200;
+    const arr = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const inSubject = x >= 75 && x < 125 && y >= 75 && y < 125;
+        arr[i]     = inSubject ? 220 : 255;
+        arr[i + 1] = inSubject ? 40  : 255;
+        arr[i + 2] = inSubject ? 40  : 255;
+        arr[i + 3] = 255;
+      }
+    }
+    const src = new ImageData(arr, W, H);
+    const detected = detectBackground(src);
+    expect(detected).not.toBeNull();
+    const sampled = new ImageData(arr, W, H); // identity "sampling"
+    const { mask, bgCount } = buildBackgroundMask(sampled, detected!.bg);
+    // subject is 50*50 = 2500 cells, total = 40000
+    expect(bgCount).toBe(40000 - 2500);
+    // spot-check a few mask entries
+    expect(mask[0]).toBe(1); // top-left bg
+    expect(mask[100 * W + 100]).toBe(0); // inside subject
+  });
+
+  it('detects near-white background despite light JPEG-style noise (±2 variance)', () => {
+    // Real world: JPEG compression adds ±2-3 luminance noise on flat areas.
+    const W = 200, H = 200;
+    const arr = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const inSubject = x >= 75 && x < 125 && y >= 75 && y < 125;
+        arr[i]     = inSubject ? 220 : 254 + (x * y) % 4;
+        arr[i + 1] = inSubject ? 40  : 254 + (y + 1) % 4;
+        arr[i + 2] = inSubject ? 40  : 254 + (x + 2) % 4;
+        arr[i + 3] = 255;
+      }
+    }
+    const img = new ImageData(arr, W, H);
+    const detected = detectBackground(img);
+    expect(detected).not.toBeNull();
+    expect(detected?.bg[0]).toBeGreaterThan(250);
+  });
+
+  it('REGRESSION: when subject touches 3 corners (no clean bg), detection returns null (expected behaviour)', () => {
+    const W = 100, H = 100;
+    const arr = new Uint8ClampedArray(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        const inSubject =
+          (x < 60 && y < 60) ||        // TL corner
+          (x >= 40 && y >= 40 && x < 60 && y < 80) || // wraps
+          (x >= 70 && y >= 70) ||       // BR corner
+          (x >= 40 && y < 60 && x < 80 && y >= 30); // center
+        arr[i]     = inSubject ? 200 : 250;
+        arr[i + 1] = inSubject ? 50  : 250;
+        arr[i + 2] = inSubject ? 50  : 250;
+        arr[i + 3] = 255;
+      }
+    }
+    const img = new ImageData(arr, W, H);
+    // Subject hits multiple corners → no clean 3-corner bg → returns null.
+    // That means mask stays empty, which is the correct fail-safe behaviour.
+    expect(detectBackground(img)).toBeNull();
+  });
 });

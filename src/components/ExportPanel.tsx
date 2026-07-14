@@ -58,12 +58,7 @@ export function ExportPanel({ onExport, disabled, exporting, flash }: Props) {
             aria-hidden
           />
         )}
-        <span className="export-label">
-          <span className="export-emoji" aria-hidden>
-            {flash === 'done' ? '🎉' : exporting ? '🎨' : '📦'}
-          </span>
-          {label}
-        </span>
+        <span className="export-label">{label}</span>
       </button>
       <p className="hint">默认 32px 一格，可直接打印或分享</p>
     </div>
