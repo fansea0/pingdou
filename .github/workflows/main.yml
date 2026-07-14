@@ -54,6 +54,25 @@ jobs:
           echo "项目目录：$PROJECT_DIR"
           echo "=============================="
 
+          # ============================================
+          # 新增：重置本地修改，避免冲突
+          # ============================================
+          echo "重置本地仓库状态..."
+
+          # 1. 丢弃所有本地未提交的修改（包括新增文件）
+          git reset --hard HEAD
+
+          # 2. 删除所有未被 Git 跟踪的文件和目录（如 node_modules、.env 等不会被删除，因为它们在 .gitignore 中）
+          #    注意：这不会删除 .gitignore 中列出的文件
+          git clean -fd
+
+          # 3. 可选：如果你希望彻底清理包括 .gitignore 中的文件，使用 -x 参数
+          #    但注意这会删除 node_modules，需要重新安装
+          # git clean -fdx
+
+          echo "本地仓库已重置，开始拉取最新代码..."
+          # ============================================
+
           OLD_COMMIT=$(git rev-parse HEAD)
 
           echo "当前版本：$OLD_COMMIT"
@@ -81,8 +100,16 @@ jobs:
             echo "没有检测到新的代码提交"
           fi
 
+          # ============================================
+          # 修改：如果使用 git clean -fd，node_modules 不会被删除，无需重新安装
+          # 如果使用 git clean -fdx，node_modules 会被删除，必须重新安装
+          # 这里保持原有逻辑，仅在 package.json 变化时重新安装
+          # ============================================
           if [ "$NEED_INSTALL" = true ]; then
             echo "依赖文件发生变化，重新安装依赖..."
+
+            # 清理旧依赖（可选，确保干净）
+            rm -rf node_modules 2>/dev/null || true
 
             if [ -f package-lock.json ]; then
               npm ci
