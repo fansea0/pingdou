@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import {
+  initDb,
   trackEvent,
   touchSession,
   querySummary,
@@ -216,6 +217,8 @@ if (existsSync(distDir)) {
 }
 
 async function start() {
+  await initDb();
+
   const requested = PORT;
   const actual = await findFreePort(requested);
   if (actual !== requested) {

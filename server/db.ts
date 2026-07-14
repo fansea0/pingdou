@@ -1,55 +1,124 @@
-import Database from 'better-sqlite3';
-import { mkdirSync } from 'node:fs';
+import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 const DB_PATH = process.env.STATS_DB_PATH ?? resolve(process.cwd(), 'data/stats.db');
+const WASM_PATH = resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm');
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
-export const db = new Database(DB_PATH);
+let SQL: SqlJsStatic | null = null;
+let db: Database | null = null;
+let dirty = false;
+let saveTimer: NodeJS.Timeout | null = null;
 
-db.pragma('journal_mode = WAL');
-db.pragma('synchronous = NORMAL');
-db.pragma('foreign_keys = ON');
+const SAVE_DEBOUNCE_MS = 500;
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind TEXT NOT NULL,
-    ref TEXT,
-    created_at INTEGER NOT NULL,
-    day TEXT NOT NULL,
-    ip_hash TEXT
-  );
+export async function initDb(): Promise<void> {
+  SQL = await initSqlJs({
+    locateFile: (file: string) => {
+      if (file.endsWith('.wasm')) return WASM_PATH;
+      return resolve(dirname(WASM_PATH), file);
+    },
+  });
 
-  CREATE INDEX IF NOT EXISTS idx_events_kind_created ON events(kind, created_at);
-  CREATE INDEX IF NOT EXISTS idx_events_day ON events(day);
-  CREATE INDEX IF NOT EXISTS idx_events_ref ON events(ref);
-`);
+  if (existsSync(DB_PATH)) {
+    const buf = readFileSync(DB_PATH);
+    db = new SQL.Database(new Uint8Array(buf));
+  } else {
+    db = new SQL.Database();
+  }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    ip_hash TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    last_seen_at INTEGER NOT NULL,
-    day TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_sessions_day ON sessions(day);
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      ref TEXT,
+      created_at INTEGER NOT NULL,
+      day TEXT NOT NULL,
+      ip_hash TEXT
+    );
 
-const insertStmt = db.prepare(`
-  INSERT INTO events (kind, ref, created_at, day, ip_hash)
-  VALUES (?, ?, ?, ?, ?)
-`);
+    CREATE INDEX IF NOT EXISTS idx_events_kind_created ON events(kind, created_at);
+    CREATE INDEX IF NOT EXISTS idx_events_day ON events(day);
+    CREATE INDEX IF NOT EXISTS idx_events_ref ON events(ref);
 
-const upsertSessionStmt = db.prepare(`
-  INSERT INTO sessions (id, ip_hash, created_at, last_seen_at, day)
-  VALUES (?, ?, ?, ?, ?)
-  ON CONFLICT(id) DO UPDATE SET
-    last_seen_at = excluded.last_seen_at,
-    day = excluded.day
-`);
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      ip_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      day TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_day ON sessions(day);
+  `);
+
+  flushNow();
+
+  process.on('beforeExit', () => {
+    flushNow();
+  });
+  process.on('SIGINT', () => {
+    flushNow();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    flushNow();
+    process.exit(0);
+  });
+}
+
+function requireDb(): Database {
+  if (!db) throw new Error('database not initialized; call initDb() first');
+  return db;
+}
+
+function markDirty(): void {
+  dirty = true;
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    flushNow();
+  }, SAVE_DEBOUNCE_MS);
+}
+
+export function flushNow(): void {
+  if (!db || !dirty) return;
+  try {
+    const data = db.export();
+    writeFileSync(DB_PATH, Buffer.from(data));
+    dirty = false;
+  } catch (e) {
+    console.error('[db] flush failed:', e);
+  }
+}
+
+function runStmt(sql: string, params: (number | string | null)[]): void {
+  const stmt = requireDb().prepare(sql);
+  try {
+    stmt.run(params);
+  } finally {
+    stmt.free();
+  }
+  markDirty();
+}
+
+function queryAll<T = Record<string, unknown>>(
+  sql: string,
+  params: (number | string | null)[] = [],
+): T[] {
+  const stmt = requireDb().prepare(sql);
+  const rows: T[] = [];
+  try {
+    stmt.bind(params);
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject() as T);
+    }
+  } finally {
+    stmt.free();
+  }
+  return rows;
+}
 
 export function trackEvent(opts: {
   kind: 'page-view' | 'product-click' | 'image-export';
@@ -59,9 +128,19 @@ export function trackEvent(opts: {
 }): void {
   const now = Date.now();
   const day = isoDay(now);
-  insertStmt.run(opts.kind, opts.ref ?? null, now, day, opts.ipHash);
+  runStmt(
+    `INSERT INTO events (kind, ref, created_at, day, ip_hash) VALUES (?, ?, ?, ?, ?)`,
+    [opts.kind, opts.ref ?? null, now, day, opts.ipHash],
+  );
   if (opts.sid) {
-    upsertSessionStmt.run(opts.sid, opts.ipHash, now, now, day);
+    runStmt(
+      `INSERT INTO sessions (id, ip_hash, created_at, last_seen_at, day)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         last_seen_at = excluded.last_seen_at,
+         day = excluded.day`,
+      [opts.sid, opts.ipHash, now, now, day],
+    );
   }
 }
 
@@ -71,7 +150,14 @@ export function touchSession(opts: {
 }): { day: string } {
   const now = Date.now();
   const day = isoDay(now);
-  upsertSessionStmt.run(opts.sid, opts.ipHash, now, now, day);
+  runStmt(
+    `INSERT INTO sessions (id, ip_hash, created_at, last_seen_at, day)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       last_seen_at = excluded.last_seen_at,
+       day = excluded.day`,
+    [opts.sid, opts.ipHash, now, now, day],
+  );
   return { day };
 }
 
@@ -115,56 +201,53 @@ export function querySummary(days: number): SummaryResult {
   const now = Date.now();
   const fromTs = now - days * 24 * 60 * 60 * 1000;
 
-  const perDayStmt = db.prepare(`
-    SELECT day, COUNT(*) AS total
-    FROM events
-    WHERE created_at >= ?
-    GROUP BY day
-    ORDER BY day ASC
-  `);
-  const perDayRaw = perDayStmt.all(fromTs) as { day: string; total: number }[];
-
+  const perDayRows = queryAll<{ day: string; total: number }>(
+    `SELECT day, COUNT(*) AS total
+     FROM events
+     WHERE created_at >= ?
+     GROUP BY day
+     ORDER BY day ASC`,
+    [fromTs],
+  );
   const perDayMap = new Map<string, number>();
-  for (const row of perDayRaw) {
-    perDayMap.set(row.day, row.total);
-  }
+  for (const row of perDayRows) perDayMap.set(row.day, row.total);
   const allDays = dayRange(fromTs, now);
   const perDay: BucketSummary[] = allDays.map(day => ({
     day,
     total: perDayMap.get(day) ?? 0,
   }));
 
-  const totalStmt = db.prepare(`
-    SELECT kind, COUNT(*) AS total FROM events
-    WHERE created_at >= ?
-    GROUP BY kind
-  `);
-  const totalRows = totalStmt.all(fromTs) as { kind: string; total: number }[];
+  const totalRows = queryAll<{ kind: string; total: number }>(
+    `SELECT kind, COUNT(*) AS total FROM events
+     WHERE created_at >= ?
+     GROUP BY kind`,
+    [fromTs],
+  );
   const totalMap = new Map<string, number>();
   for (const r of totalRows) totalMap.set(r.kind, r.total);
 
-  const uvStmt = db.prepare(`
-    SELECT COUNT(DISTINCT ip_hash) AS uv
-    FROM sessions
-    WHERE last_seen_at >= ?
-  `);
-  const uvRow = uvStmt.get(fromTs) as { uv: number };
+  const uvRows = queryAll<{ uv: number }>(
+    `SELECT COUNT(DISTINCT ip_hash) AS uv
+     FROM sessions
+     WHERE last_seen_at >= ?`,
+    [fromTs],
+  );
 
-  const productClickStmt = db.prepare(`
-    SELECT ref, COUNT(*) AS total
-    FROM events
-    WHERE kind = 'product-click' AND created_at >= ?
-    GROUP BY ref
-    ORDER BY total DESC
-  `);
-  const productClicks = productClickStmt.all(fromTs) as ProductClickSummary[];
+  const productClicks = queryAll<ProductClickSummary>(
+    `SELECT ref, COUNT(*) AS total
+     FROM events
+     WHERE kind = 'product-click' AND created_at >= ?
+     GROUP BY ref
+     ORDER BY total DESC`,
+    [fromTs],
+  );
 
   return {
     totals: {
       pageView: totalMap.get('page-view') ?? 0,
       productClick: totalMap.get('product-click') ?? 0,
       imageExport: totalMap.get('image-export') ?? 0,
-      uv: uvRow?.uv ?? 0,
+      uv: uvRows[0]?.uv ?? 0,
     },
     perDay,
     productClicks,
