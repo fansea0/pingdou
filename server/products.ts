@@ -13,9 +13,17 @@ export interface Product {
   badge?: string;
 }
 
-function dataDir(): string { return resolve(process.cwd(), 'public/data'); }
-function productsJsonPath(): string { return join(dataDir(), 'products.json'); }
-function productsDir(): string { return resolve(process.cwd(), 'public/products'); }
+function productsJsonPath(): string {
+  if (process.env.PRODUCTS_JSON_PATH) return resolve(process.env.PRODUCTS_JSON_PATH);
+  return join(resolve(process.cwd(), 'public/data'), 'products.json');
+}
+function dataDir(): string {
+  return resolve(productsJsonPath(), '..');
+}
+function productsDir(): string {
+  if (process.env.PRODUCTS_IMAGES_DIR) return resolve(process.env.PRODUCTS_IMAGES_DIR);
+  return resolve(process.cwd(), 'public/products');
+}
 
 let cache: Product[] | null = null;
 
