@@ -217,3 +217,43 @@ code {
 .statics-table tr:last-child td {
   border-bottom: none;
 }
+.statics-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.statics-tabs button {
+  background: transparent;
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.statics-tabs button.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+.statics-greeting {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  margin-right: var(--space-2);
+}
+.statics-card input[type="text"],
+.statics-card input[type="password"] {
+  display: block;
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+.statics-card .primary {
+  background: var(--color-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.statics-card .primary:disabled { opacity: 0.55; cursor: not-allowed; }
