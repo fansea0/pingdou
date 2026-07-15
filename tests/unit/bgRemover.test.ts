@@ -27,10 +27,16 @@ function maskCount(m: Uint8Array): number {
   return n;
 }
 
+function detect(img: ImageData): ReturnType<typeof detectBackground> {
+  // Pass the same image as both src and sampled so the tiered strategy runs
+  // through every possible detection pathway.
+  return detectBackground(img, img);
+}
+
 describe('detectBackground', () => {
   it('detects solid color background from a uniform image', () => {
     const img = makeImageData(20, 20, [255, 255, 255, 255]);
-    const r = detectBackground(img);
+    const r = detect(img);
     expect(r).not.toBeNull();
     expect(r?.bg).toEqual([255, 255, 255]);
   });
@@ -44,7 +50,7 @@ describe('detectBackground', () => {
       arr[i + 3] = 255;
     }
     const img = new ImageData(arr, 20, 20);
-    const r = detectBackground(img);
+    const r = detect(img);
     expect(r?.bg).toEqual([200, 50, 60]);
   });
 
@@ -60,13 +66,37 @@ describe('detectBackground', () => {
       }
     }
     const img = new ImageData(arr, 20, 20);
-    expect(detectBackground(img)).toBeNull();
+    expect(detect(img)).toBeNull();
   });
 
-  it('detects background even on tiny images (clamped patch)', () => {
+  it('detects background on tiny images (passes a same-sized "sampled")', () => {
     const img = makeImageData(2, 2, [128, 128, 128, 255]);
-    const r = detectBackground(img);
+    const r = detect(img);
     expect(r?.bg).toEqual([128, 128, 128]);
+  });
+
+  it('tiered strategy prefers sampled even if src differs wildly', () => {
+    // Sampled is clean (subject on white), src is noisy → detection should
+    // still succeed because we run on sampled first.
+    const W = 200, H = 200;
+    const sampled = makeImageData(W, H, [255, 255, 255, 255]);
+    for (let y = 75; y < 125; y++) {
+      for (let x = 75; x < 125; x++) {
+        const i = (y * W + x) * 4;
+        sampled.data[i]     = 220;
+        sampled.data[i + 1] = 40;
+        sampled.data[i + 2] = 40;
+      }
+    }
+    const noisySrc = makeImageData(W, H, [255, 255, 255, 255]);
+    // overwrite with random noise
+    for (let i = 0; i < noisySrc.data.length; i += 4) {
+      noisySrc.data[i]     = (i * 7) % 256;
+      noisySrc.data[i + 1] = (i * 13) % 256;
+      noisySrc.data[i + 2] = (i * 19) % 256;
+    }
+    const r = detectBackground(noisySrc, sampled);
+    expect(r?.bg).toEqual([255, 255, 255]);
   });
 });
 
@@ -108,30 +138,7 @@ describe('buildBackgroundMask', () => {
 });
 
 describe('detectBackground + buildBackgroundMask integration', () => {
-  it('detects bg then masks only that colour on a sampled grid', () => {
-    const src = makeImageData(50, 50, [255, 255, 255, 255]);
-    const detected = detectBackground(src);
-    expect(detected).not.toBeNull();
-    const sampled = makeImageData(10, 10, [255, 255, 255, 255]);
-    const { mask, bgCount } = buildBackgroundMask(sampled, detected!.bg);
-    expect(maskCount(mask)).toBe(100);
-    expect(bgCount).toBe(100);
-  });
-
-  it('returns no mask when source is not a solid-bg image', () => {
-    const arr = new Uint8ClampedArray(20 * 20 * 4);
-    for (let i = 0; i < arr.length; i += 4) {
-      arr[i] = (i / 4) % 256;
-      arr[i + 1] = (i / 2) % 256;
-      arr[i + 2] = (i * 3) % 256;
-      arr[i + 3] = 255;
-    }
-    const img = new ImageData(arr, 20, 20);
-    expect(detectBackground(img)).toBeNull();
-  });
-
-  it('detects background in a realistic cartoon-style image (subject in center, 4-corner solid bg)', () => {
-    // 200×200 image: white background with a 50×50 red square centered at (75..125, 75..125)
+  it('masks only background cells in a realistic cartoon (subject centered, 4-corner solid bg)', () => {
     const W = 200, H = 200;
     const arr = new Uint8ClampedArray(W * H * 4);
     for (let y = 0; y < H; y++) {
@@ -145,38 +152,16 @@ describe('detectBackground + buildBackgroundMask integration', () => {
       }
     }
     const img = new ImageData(arr, W, H);
-    const detected = detectBackground(img);
+    const detected = detect(img);
     expect(detected).not.toBeNull();
     expect(detected?.bg).toEqual([255, 255, 255]);
-  });
-
-  it('masks only background cells when applied to a real-shape cartoon image', () => {
-    const W = 200, H = 200;
-    const arr = new Uint8ClampedArray(W * H * 4);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const i = (y * W + x) * 4;
-        const inSubject = x >= 75 && x < 125 && y >= 75 && y < 125;
-        arr[i]     = inSubject ? 220 : 255;
-        arr[i + 1] = inSubject ? 40  : 255;
-        arr[i + 2] = inSubject ? 40  : 255;
-        arr[i + 3] = 255;
-      }
-    }
-    const src = new ImageData(arr, W, H);
-    const detected = detectBackground(src);
-    expect(detected).not.toBeNull();
-    const sampled = new ImageData(arr, W, H); // identity "sampling"
-    const { mask, bgCount } = buildBackgroundMask(sampled, detected!.bg);
-    // subject is 50*50 = 2500 cells, total = 40000
+    const { mask, bgCount } = buildBackgroundMask(img, detected!.bg);
     expect(bgCount).toBe(40000 - 2500);
-    // spot-check a few mask entries
     expect(mask[0]).toBe(1); // top-left bg
     expect(mask[100 * W + 100]).toBe(0); // inside subject
   });
 
-  it('detects near-white background despite light JPEG-style noise (±2 variance)', () => {
-    // Real world: JPEG compression adds ±2-3 luminance noise on flat areas.
+  it('tolerates light JPEG-style background noise (±2)', () => {
     const W = 200, H = 200;
     const arr = new Uint8ClampedArray(W * H * 4);
     for (let y = 0; y < H; y++) {
@@ -190,22 +175,20 @@ describe('detectBackground + buildBackgroundMask integration', () => {
       }
     }
     const img = new ImageData(arr, W, H);
-    const detected = detectBackground(img);
+    const detected = detect(img);
     expect(detected).not.toBeNull();
     expect(detected?.bg[0]).toBeGreaterThan(250);
   });
 
-  it('REGRESSION: when subject touches 3 corners (no clean bg), detection returns null (expected behaviour)', () => {
+  it('REGRESSION: subject touching multiple corners → returns null (correct fail-safe)', () => {
     const W = 100, H = 100;
     const arr = new Uint8ClampedArray(W * H * 4);
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
         const inSubject =
-          (x < 60 && y < 60) ||        // TL corner
-          (x >= 40 && y >= 40 && x < 60 && y < 80) || // wraps
-          (x >= 70 && y >= 70) ||       // BR corner
-          (x >= 40 && y < 60 && x < 80 && y >= 30); // center
+          (x < 60 && y < 60) ||
+          (x >= 70 && y >= 70);
         arr[i]     = inSubject ? 200 : 250;
         arr[i + 1] = inSubject ? 50  : 250;
         arr[i + 2] = inSubject ? 50  : 250;
@@ -213,8 +196,6 @@ describe('detectBackground + buildBackgroundMask integration', () => {
       }
     }
     const img = new ImageData(arr, W, H);
-    // Subject hits multiple corners → no clean 3-corner bg → returns null.
-    // That means mask stays empty, which is the correct fail-safe behaviour.
-    expect(detectBackground(img)).toBeNull();
+    expect(detect(img)).toBeNull();
   });
 });
