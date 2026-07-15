@@ -51,6 +51,38 @@ export async function initDb(): Promise<void> {
       day TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_day ON sessions(day);
+
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin','merchant')),
+      disabled INTEGER NOT NULL DEFAULT 0,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
+      expires_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS product_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      assigned_at INTEGER NOT NULL,
+      revoked_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_active_assignment
+      ON product_assignments(product_id) WHERE revoked_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_assignments_user_active
+      ON product_assignments(user_id, revoked_at);
+
+    CREATE TABLE IF NOT EXISTS auth_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
   `);
 
   flushNow();
@@ -103,7 +135,7 @@ function runStmt(sql: string, params: (number | string | null)[]): void {
   markDirty();
 }
 
-function queryAll<T = Record<string, unknown>>(
+export function queryAll<T = Record<string, unknown>>(
   sql: string,
   params: (number | string | null)[] = [],
 ): T[] {
@@ -118,6 +150,19 @@ function queryAll<T = Record<string, unknown>>(
     stmt.free();
   }
   return rows;
+}
+
+export function runInTransaction<T>(fn: () => T): T {
+  const database = requireDb();
+  database.exec('BEGIN');
+  try {
+    const result = fn();
+    database.exec('COMMIT');
+    return result;
+  } catch (err) {
+    try { database.exec('ROLLBACK'); } catch {}
+    throw err;
+  }
 }
 
 export function trackEvent(opts: {
