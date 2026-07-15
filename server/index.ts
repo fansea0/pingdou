@@ -405,7 +405,7 @@ export async function start(): Promise<void> {
   });
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   start().catch(err => {
     console.error('[pingdou-server] failed to start:', err);
     process.exit(1);
