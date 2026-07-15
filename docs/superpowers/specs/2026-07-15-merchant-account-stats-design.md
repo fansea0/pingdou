@@ -2,7 +2,7 @@
 
 ## Goal
 
-Replace the single shared admin password with a per-user account system on the `/statics` page. Each merchant gets their own account bound to one or more products; when they log in they see their own product click data and the site's total PV. The system admin (a single `root` account) keeps the original full-fleet analytics view and adds a user-management panel.
+Replace the single shared admin password with a per-user account system on the `/statics` page. Each merchant gets their own account bound to one or more products; when they log in they see their own product click data and the site's total PV, and they can edit the products currently assigned to them. The system admin (a single `root` account) keeps the original full-fleet analytics view and adds a user-management panel and full product CRUD.
 
 Out of scope (YAGNI): multi-admin, email/SMS reset, password-strength enforcement beyond a minimum length, self-service "forgot password" flow, audit logging, data export.
 
@@ -21,12 +21,14 @@ After successful login the page routes by role:
   - Header: greeting + "修改密码" button.
   - Cards: "我的商品点击" (sum across assigned products in the current assignment window), "站点总 PV" (global, not filtered), "我的商品数".
   - Day chart: per-day `product-click` count for assigned products in the current window.
-  - Table: per-product breakdown (product id → clicks).
+  - Table: per-product breakdown (product id → clicks). Each row has an "编辑" button opening the product-edit modal.
   - No user-management UI, no view of other merchants' data.
 
 ### First-login password change
 
 When a merchant is created the admin enters a temporary password and `must_change_password = 1` is set on the row. On the merchant's first successful login, the page renders a password-change modal that **cannot be dismissed** until the password is updated. After change, `must_change_password = 0`.
+
+In the modal the merchant enters the temporary password as "current password" plus a new password. After save `must_change_password = 0` and the modal closes.
 
 Admin accounts do not go through this flow; their passwords are set by the admin directly.
 
@@ -225,24 +227,86 @@ If a product has been reassigned, the new merchant sees only events with `create
 | POST | `/admin/users/:id/reset-password` | `{newPassword}` | `{ok}` (deletes user's tokens) |
 
 Constraints enforced server-side:
-- Username must be unique (DB unique index).
+- Username must be unique (DB unique index, case-sensitive).
 - Cannot delete the only remaining admin (`root`): returns 409.
 - Cannot demote `root` to merchant.
-- `productIds` must reference products that exist in `public/data/products.json` (server reads this file once on boot).
+- `productIds` must reference products that exist in `public/data/products.json` (server reads this file once on boot, then re-reads on every product-write endpoint).
+
+#### PATCH `productIds` semantics
+
+When the admin PATCHes a merchant's `productIds`, the server reconciles against the merchant's currently active assignments (rows where `revoked_at IS NULL`):
+
+- For every product in the **new** `productIds` list that is **not** in the old active list: insert a new assignment row with `assigned_at = now`, `revoked_at = NULL`.
+- For every product in the **old** active list that is **not** in the new list: set `revoked_at = now` on the existing row (do **not** delete — historical isolation must be preserved).
+- Products present in both lists: untouched.
+
+This reconciliation is performed in a single SQLite transaction. If `productIds` is omitted from the PATCH body, assignments are unchanged.
+
+### Product editing (admin + merchant)
+
+Admins and merchants can both edit product information. **Scope**: a merchant may only edit a product currently assigned to them. The admin may edit any product.
+
+Editable fields: `name`, `description`, `price`, `url`, `badge` (any of these can be `null` / empty for badge). Image is handled via a separate upload endpoint, not embedded in the JSON body.
+
+`products.json` remains the source of truth for product data. The server reads and writes this file under `public/data/products.json`. Image files live under `public/products/`.
+
+| Method | Path | Role | Body | Returns |
+|---|---|---|---|---|
+| GET | `/api/products` | any | — | `[{id, name, image, price, currency, description, url, badge?}]`. For merchants, only products currently assigned to them (active assignment, `revoked_at IS NULL`). |
+| PUT | `/api/products/:id` | admin or owner-merchant | `{name?, description?, price?, url?, badge?}` | full updated product row. Returns 403 if merchant is not currently assigned to the product. |
+| POST | `/api/products/:id/image` | admin or owner-merchant | multipart/form-data with field `file` (image/jpeg, image/png, image/webp; ≤ 5 MB) | `{image: "/products/<filename>"}` (new path). Returns 403 if merchant is not currently assigned to the product. |
+| POST | `/api/products` | admin only | `{id, name, image, price, currency, description, url, badge?}` | full new product row. Validates `id` is unique and matches `^[a-z0-9-]+$`. Writes a placeholder image if `image` is missing. A new product is **not assigned** to any merchant; the admin assigns it later via `PATCH /admin/users/:id {productIds: [...]}` or by including it on user creation. Until assigned, only the admin sees it. |
+| DELETE | `/api/products/:id` | admin only | — | `{ok}`. Also deletes the image file from disk and revokes all current assignments. Historical events for the product stay in the events table (so admin's full-fleet stats remain intact) but no longer surface to any merchant. |
+
+#### Image upload semantics
+
+1. Server validates content-type and size. Rejects with 400 on mismatch.
+2. Generates a unique filename: `<product-id>-<randomHex>.<ext>`. The `<product-id>` prefix keeps the directory tidy (one image per product).
+3. Saves the uploaded file under `public/products/`.
+4. **If the product already has an image file** (i.e., `image` field is non-empty AND resolves to an existing file under `public/products/`), deletes the old file after the new one is safely written. Failures to delete the old file are logged but do not fail the request.
+5. Updates the `image` field in `products.json` to the new path.
+6. Persists `products.json` atomically (write to `products.json.tmp`, then `rename`).
+
+#### `products.json` write atomicity
+
+Every write to `products.json` is performed as:
+
+1. Read current file.
+2. Apply mutation in memory.
+3. Write to `products.json.tmp`.
+4. `rename` tmp → real path (atomic on POSIX).
+
+On startup the server reads `products.json` once and caches the parsed JSON in memory; subsequent product-write endpoints read+write through this cache so concurrent edits don't clobber each other. The cache is reloaded on a 1-second debounce after a write.
+
+For this scale (3-5 merchants, low write frequency) the cache + atomic write is sufficient; no need for a database table for products.
+
+#### Authorization helper
+
+A small helper `requireProductAccess(req, productId)` checks:
+
+- If `req.user.role === 'admin'`: allow.
+- Else: query `product_assignments` for active row with `(product_id = productId, user_id = req.user.id, revoked_at IS NULL)`. Allow if found, else 403.
+
+This is the single chokepoint used by every product-edit endpoint.
 
 ## Frontend structure
 
 ```
-src/pages/StaticsPage.tsx         — orchestrator: fetches /me, routes by role
-src/pages/admin/AdminDashboard.tsx — wraps stats + users tabs
-src/pages/admin/UsersTab.tsx       — user table + new-user modal + edit modal
-src/pages/admin/StatsTab.tsx       — current StaticsPage dashboard body
-src/pages/merchant/MerchantDashboard.tsx — merchant view
-src/components/ChangePasswordModal.tsx — used by both admin (self) and merchant (forced on first login)
-src/components/PasswordConfirmModal.tsx — small wrapper for "enter current password" before sensitive actions
+src/pages/StaticsPage.tsx                  — orchestrator: fetches /me, routes by role
+src/pages/admin/AdminDashboard.tsx         — wraps stats + users + products tabs
+src/pages/admin/UsersTab.tsx               — user table + new-user modal + edit modal
+src/pages/admin/StatsTab.tsx               — current StaticsPage dashboard body
+src/pages/admin/ProductsTab.tsx            — full product table + create/delete (admin only)
+src/pages/merchant/MerchantDashboard.tsx   — merchant view + product table (own only)
+src/components/ProductEditModal.tsx        — shared product-edit form (text fields + image upload)
+src/components/ChangePasswordModal.tsx     — used by both admin (self) and merchant (forced on first login)
 ```
 
-Reuse `src/api/statics.ts` for fetch wrappers; add new functions (`adminListUsers`, `adminCreateUser`, etc.).
+The product-edit modal handles both text-field updates (`PUT /api/products/:id`) and image upload (`POST /api/products/:id/image`) with a single Save button.
+
+For image upload: a `<input type="file" accept="image/*">` triggers `POST /api/products/:id/image` with FormData. On success, the modal re-fetches the product row and updates its preview thumbnail.
+
+Reuse `src/api/statics.ts` for fetch wrappers; add new functions (`adminListUsers`, `adminCreateUser`, `listProducts`, `updateProduct`, `uploadProductImage`, etc.).
 
 When `mustChangePassword = true` after login, the page renders `<ChangePasswordModal required>` over the dashboard with a backdrop that doesn't close on click-outside.
 
@@ -254,7 +318,10 @@ When `mustChangePassword = true` after login, the page renders `<ChangePasswordM
 - Self-service "forgot password" link.
 - Audit log of admin actions.
 - Data export (CSV download of stats).
-- Backups of `data/stats.db`.
+- Backups of `data/stats.db` or `public/data/products.json`. (Operational concern; we mention it but do not implement scheduled backups.)
+- Image cropping / resizing server-side. We trust the merchant to upload reasonable images; recommend ≤ 1 MB.
+- CDN / external image hosting. All images stay in `public/products/`.
+- Multi-image per product. One product ↔ one image.
 
 ## Migration notes
 
@@ -263,14 +330,23 @@ Existing deployments:
 1. Existing `STATICS_PASSWORD` env var is **no longer read** for auth. Remove it from `.bashrc` / `.env` to avoid confusion.
 2. The legacy `/api/auth/login` body `{password}` is replaced with `{username, password}`.
 3. The legacy cookie names (`statics_token`, `statics_token_expires`) stay the same, so existing browsers will just be logged out once.
+4. `public/data/products.json` and `public/products/` are read+written by the new endpoints; the existing files stay the source of truth until the first edit.
+5. The product images on disk remain valid; the file-naming convention is now `<product-id>-<randomHex>.<ext>` for new uploads.
 
 The existing `events` and `sessions` tables are untouched; only `users`, `product_assignments`, and `auth_tokens` are new.
 
 ## Testing strategy
 
-- Unit: scrypt hash + verify; token generation; assignment-window filter SQL; disabled-account rejection; expired-account rejection.
+- Unit: scrypt hash + verify; token generation; assignment-window filter SQL; disabled-account rejection; expired-account rejection; product authorization helper.
 - Integration: full login → /me → summary → logout flow for both roles via the actual Express routes + sqlite test DB.
-- Manual smoke: log in as root, create a merchant with 2 products, log out, log in as merchant, confirm they see only their products' data and the site PV. Reassign one product to a second merchant, confirm second merchant does not see pre-reassignment events for that product.
+- Integration: product-edit endpoints — admin can edit any product; merchant can edit only their own; image upload writes to disk, deletes the old file, and updates `products.json`; concurrent edits do not clobber each other (atomic write).
+- Manual smoke:
+  - Log in as root, create a merchant with 2 products, log out.
+  - Log in as merchant, confirm they see only their products' data and the site PV.
+  - As merchant, edit product name → reload homepage → name changed.
+  - As merchant, upload a new image → reload homepage → image changed AND old file removed from `public/products/`.
+  - As merchant, try to PUT a product not assigned to them → 403.
+  - Reassign one product to a second merchant, confirm second merchant does not see pre-reassignment events for that product.
 
 ## Open questions
 
