@@ -200,16 +200,13 @@
     gap: 4px;
   }
 
-  .mobile-icon-btn.is-loading .export-label > span:first-child {
-    animation: mb-export-spin 1.6s ease-in-out infinite;
-    display: inline-block;
+  .mobile-icon-btn.is-loading .export-label {
+    animation: mb-export-pulse 1.2s ease-in-out infinite;
   }
 
-  @keyframes mb-export-spin {
-    0%, 100% { transform: rotate(0deg)   scale(1);   }
-    25%      { transform: rotate(-12deg) scale(1.1); }
-    50%      { transform: rotate(0deg)   scale(1.2); }
-    75%      { transform: rotate(12deg)  scale(1.1); }
+  @keyframes mb-export-pulse {
+    0%, 100% { opacity: 1;   }
+    50%      { opacity: 0.6; }
   }
 
   .mobile-icon-btn.is-done:not(:disabled) {

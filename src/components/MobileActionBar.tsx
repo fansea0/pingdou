@@ -198,7 +198,6 @@ export function MobileActionBar({
             onClick={() => inputRef.current?.click()}
             aria-label="上传图片"
           >
-            <span aria-hidden>📷</span>
             <span>上传</span>
           </button>
           <button
@@ -213,10 +212,7 @@ export function MobileActionBar({
                 aria-hidden
               />
             )}
-            <span className="export-label">
-              <span aria-hidden>{flash === 'done' ? '🎉' : exporting ? '🎨' : '📦'}</span>
-              {exportLabel}
-            </span>
+            <span className="export-label">{exportLabel}</span>
           </button>
         </div>
       </div>

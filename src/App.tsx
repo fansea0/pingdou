@@ -163,7 +163,6 @@ export function App() {
 
       {exportFlash === 'done' && (
         <div className="export-toast" role="status" aria-live="polite">
-          <span className="export-toast-emoji">🐰</span>
           <span className="export-toast-text">导出成功！到下载文件夹找它吧～</span>
         </div>
       )}

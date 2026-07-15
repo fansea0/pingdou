@@ -43,12 +43,20 @@ export class Pipeline {
       const mask: BackgroundMask = new Uint8Array(n);
 
       if (params.removeBackground) {
-        const detected = detectBackground(src);
+        const detected = detectBackground(src, sampled);
         if (detected) {
-          const { mask: bgMask } = buildBackgroundMask(sampled, detected.bg);
+          const { mask: bgMask, bgCount } = buildBackgroundMask(sampled, detected.bg);
           bgMask.forEach((v, i) => {
             mask[i] = v;
           });
+          console.info(
+            `[pingdou] bg detected = rgb(${detected.bg.join(',')}), ` +
+              `removed ${bgCount}/${n} cells`
+          );
+        } else {
+          console.warn(
+            `[pingdou] 自动去背景：未能识别纯色背景。请确保四角为同色背景，或关闭此开关。`
+          );
         }
       }
 
@@ -123,12 +131,20 @@ export class Pipeline {
         const outH = sampled.height;
         const mask: BackgroundMask = new Uint8Array(outW * outH);
         if (removeBackground) {
-          const detected = detectBackground(src);
+          const detected = detectBackground(src, sampled);
           if (detected) {
-            const { mask: bgMask } = buildBackgroundMask(sampled, detected.bg);
+            const { mask: bgMask, bgCount } = buildBackgroundMask(sampled, detected.bg);
             bgMask.forEach((v, j) => {
               mask[j] = v;
             });
+            console.info(
+              `[pingdou] bg detected = rgb(${detected.bg.join(',')}), ` +
+                `removed ${bgCount}/${outW * outH} cells (gridSize=${gridSize})`
+            );
+          } else {
+            console.warn(
+              `[pingdou] 自动去背景：未能识别纯色背景 (gridSize=${gridSize})。`
+            );
           }
         }
         const compositeCanvas = renderComposite(

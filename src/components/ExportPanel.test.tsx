@@ -46,13 +46,10 @@ describe('ExportPanel', () => {
     expect(btn.disabled).toBe(true);
   });
 
-  it('contains a 📦 emoji in idle label and 🎨 while loading', () => {
-    const idle = render(<ExportPanel onExport={() => {}} disabled={false} />);
-    expect(idle.container.textContent).toMatch(/📦/);
-    idle.unmount();
-    const loading = render(
-      <ExportPanel onExport={() => {}} disabled={false} exporting={true} />
-    );
-    expect(loading.container.textContent).toMatch(/🎨/);
+  it('does not contain any emoji in the button label', () => {
+    const { container } = render(<ExportPanel onExport={() => {}} disabled={false} />);
+    const btn = container.querySelector('button.primary');
+    const text = btn?.textContent ?? '';
+    expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
 });

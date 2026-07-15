@@ -45,25 +45,6 @@
   gap: 6px;
 }
 
-.export-emoji {
-  display: inline-block;
-  font-size: 16px;
-  line-height: 1;
-}
-
-.export-btn.is-loading .export-emoji {
-  animation: export-spin 1.6s ease-in-out infinite;
-  transform-origin: 50% 50%;
-}
-
-@keyframes export-spin {
-  0%   { transform: rotate(0deg)   scale(1);   }
-  25%  { transform: rotate(-12deg) scale(1.1); }
-  50%  { transform: rotate(0deg)   scale(1.2); }
-  75%  { transform: rotate(12deg)  scale(1.1); }
-  100% { transform: rotate(0deg)   scale(1);   }
-}
-
 .export-btn.is-done:not(:disabled) {
   background: linear-gradient(135deg, var(--color-mint), #7cc596);
   animation: export-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -98,18 +79,12 @@
 
 .export-toast-emoji {
   font-size: 18px;
-  animation: export-bounce 1s ease-in-out infinite;
   display: inline-block;
 }
 
 @keyframes export-toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(20px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0);    }
-}
-
-@keyframes export-bounce {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-4px); }
 }
 
 @media (min-width: 901px) {
