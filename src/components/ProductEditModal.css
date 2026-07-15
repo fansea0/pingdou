@@ -1,0 +1,20 @@
+.modal-card.product-edit { width: 460px; }
+.modal-card textarea {
+  min-height: 60px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  resize: vertical;
+}
+.product-edit-thumb {
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+.product-edit-upload input[type="file"] { font-size: var(--text-sm); }
