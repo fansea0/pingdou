@@ -125,7 +125,7 @@ export function flushNow(): void {
   }
 }
 
-function runStmt(sql: string, params: (number | string | null)[]): void {
+export function runStmt(sql: string, params: (number | string | null)[]): void {
   const stmt = requireDb().prepare(sql);
   try {
     stmt.run(params);
