@@ -1,61 +1,104 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import { runStmt, queryAll } from './db.js';
+import { getUserById, type UserRow } from './users.js';
 
-const TOKEN_TTL_MS = 1000 * 60 * 60 * 12;
+export const TOKEN_TTL_MS = 1000 * 60 * 60 * 12;
 
-interface TokenRow {
+export interface AuthedUser {
+  id: number;
+  username: string;
+  role: 'admin' | 'merchant';
+  mustChangePassword: number;
+  expiresAt: number | null;
+}
+
+export interface IssuedToken {
   token: string;
-  expires_at: number;
+  expiresAt: number;
 }
 
-export function getAdminPassword(): string | null {
-  return process.env.STATICS_PASSWORD ?? null;
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
-export function hashIp(ip: string, salt: string): string {
-  return createHash('sha256').update(`${salt}::${ip}`).digest('hex').slice(0, 16);
+export function issueSession(userId: number): IssuedToken {
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = Date.now() + TOKEN_TTL_MS;
+  runStmt(
+    `INSERT INTO auth_tokens (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`,
+    [hashToken(token), userId, expiresAt, Date.now()]
+  );
+  return { token, expiresAt };
 }
 
-export function isPasswordConfigured(): boolean {
-  const pw = getAdminPassword();
-  return typeof pw === 'string' && pw.length >= 4;
-}
-
-export function constantTimeEquals(a: string, b: string): boolean {
-  const aBuf = Buffer.from(a);
-  const bBuf = Buffer.from(b);
-  if (aBuf.length !== bBuf.length) return false;
-  return timingSafeEqual(aBuf, bBuf);
-}
-
-export function verifyPassword(input: string): boolean {
-  const expected = getAdminPassword();
-  if (!expected) return false;
-  return constantTimeEquals(input, expected);
-}
-
-export function newSessionToken(): string {
-  return randomBytes(32).toString('hex');
-}
-
-export function newTokenExpiry(): number {
-  return Date.now() + TOKEN_TTL_MS;
-}
-
-export function isTokenValid(token: string, expiresAt: number): boolean {
-  if (Date.now() > expiresAt) return false;
-  if (typeof token !== 'string' || token.length < 32) return false;
-  return true;
-}
-
-export function extractToken(cookieHeader?: string): TokenRow | null {
+function extract(req: { headers?: { cookie?: string } }): { token: string; expiresAt: number } | null {
+  const cookieHeader = req.headers?.cookie;
   if (!cookieHeader) return null;
   const cookies = cookieHeader.split(';').map(c => c.trim());
+  let token: string | null = null;
+  let expiresAt = 0;
   for (const c of cookies) {
-    const [k, v] = c.split('=');
-    if (k === 'statics_token' && v) {
-      const expires = parseInt(cookieHeader.match(/statics_token_expires=(\d+)/)?.[1] ?? '0', 10);
-      return { token: decodeURIComponent(v), expires_at: expires };
-    }
+    const eq = c.indexOf('=');
+    if (eq === -1) continue;
+    const k = c.slice(0, eq);
+    const v = c.slice(eq + 1);
+    if (k === 'statics_token' && v) token = decodeURIComponent(v);
+    if (k === 'statics_token_expires' && v) expiresAt = parseInt(v, 10) || 0;
   }
-  return null;
+  if (!token) return null;
+  return { token, expiresAt };
+}
+
+export function verifySessionFromRequest(req: { headers?: { cookie?: string } }): AuthedUser | null {
+  const t = extract(req);
+  if (!t) return null;
+  if (Date.now() > t.expiresAt) return null;
+  const rows = queryAll<{ user_id: number; expires_at: number }>(
+    `SELECT user_id, expires_at FROM auth_tokens WHERE token_hash = ?`,
+    [hashToken(t.token)]
+  );
+  const row = rows[0];
+  if (!row) return null;
+  if (Date.now() > row.expires_at) return null;
+  const u: UserRow | null = getUserById(row.user_id);
+  if (!u) return null;
+  if (u.disabled) return null;
+  if (u.expiresAt != null && Date.now() > u.expiresAt) return null;
+  return {
+    id: u.id,
+    username: u.username,
+    role: u.role,
+    mustChangePassword: u.mustChangePassword,
+    expiresAt: u.expiresAt,
+  };
+}
+
+export function clearSessionForCurrentToken(req: { headers?: { cookie?: string } }): void {
+  const t = extract(req);
+  if (!t) return;
+  runStmt(`DELETE FROM auth_tokens WHERE token_hash = ?`, [hashToken(t.token)]);
+}
+
+export function clearSessionForUser(userId: number): void {
+  runStmt(`DELETE FROM auth_tokens WHERE user_id = ?`, [userId]);
+}
+
+export const COOKIE_NAME = 'statics_token';
+export const COOKIE_EXPIRES = 'statics_token_expires';
+
+export function setAuthCookies(res: { cookie: (n: string, v: string, opts: object) => void }, issued: IssuedToken): void {
+  const opts = {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: issued.expiresAt - Date.now(),
+    path: '/',
+  };
+  res.cookie(COOKIE_NAME, issued.token, opts);
+  res.cookie(COOKIE_EXPIRES, String(issued.expiresAt), opts);
+}
+
+export function clearAuthCookies(res: { clearCookie: (n: string, opts: object) => void }): void {
+  res.clearCookie(COOKIE_NAME, { path: '/' });
+  res.clearCookie(COOKIE_EXPIRES, { path: '/' });
 }
