@@ -24,6 +24,24 @@ describe('homepage SEO contract', () => {
       '在线上传图片生成拼豆图纸，并提供 MARD 色号对照。',
     );
     expect(indexHtml).toContain('rel="canonical" href="https://拼豆.xyz/"');
+    expect(document.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe(
+      'https://拼豆.xyz/samples/rabbit.jpg',
+    );
+    expect(document.querySelector('meta[property="og:image:width"]')?.getAttribute('content')).toBe(
+      '1260',
+    );
+    expect(document.querySelector('meta[property="og:image:height"]')?.getAttribute('content')).toBe(
+      '1258',
+    );
+    expect(document.querySelector('meta[property="og:image:alt"]')?.getAttribute('content')).toBe(
+      '拼豆图生成器示例：兔子拼豆图纸预览',
+    );
+    expect(document.querySelector('meta[name="twitter:image"]')?.getAttribute('content')).toBe(
+      'https://拼豆.xyz/samples/rabbit.jpg',
+    );
+    expect(document.querySelector('meta[name="twitter:url"]')?.getAttribute('content')).toBe(
+      'https://拼豆.xyz/',
+    );
     expect(indexHtml).toContain('application/ld+json');
     expect(indexHtml).toContain('拼豆图纸在线生成');
 
