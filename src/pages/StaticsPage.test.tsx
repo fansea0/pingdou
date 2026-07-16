@@ -29,7 +29,10 @@ describe('StaticsPage', () => {
     expect(usernameInput).toBeTruthy();
     expect(usernameInput.closest('.statics-field')).toBeTruthy();
     expect(usernameInput.classList.contains('statics-field__input')).toBe(true);
-    expect(screen.getByPlaceholderText(/密码/)).toBeTruthy();
+    const passwordInput = screen.getByPlaceholderText(/密码/);
+    expect(passwordInput).toBeTruthy();
+    expect(passwordInput.closest('.statics-field')).toBeTruthy();
+    expect(passwordInput.classList.contains('statics-field__input')).toBe(true);
   });
 
   it('renders admin dashboard when me.role=admin', async () => {
