@@ -126,24 +126,30 @@ function CreateUserModal({ products, onClose, onCreated }: { products: Product[]
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <form className="modal-card" onClick={e => e.stopPropagation()} onSubmit={submit}>
+      <form className="modal-card modal-card--account" onClick={e => e.stopPropagation()} onSubmit={submit}>
         <button type="button" className="modal-close" aria-label="close" onClick={onClose}>×</button>
         <h3>创建新账号</h3>
-        <label>账号<input value={username} onChange={e => setUsername(e.target.value)} disabled={busy} /></label>
-        <label>初始密码<input type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></label>
-        <label>角色
-          <select value={role} onChange={e => setRole(e.target.value as 'admin' | 'merchant')} disabled={busy}>
-            <option value="merchant">商家</option>
-            <option value="admin">管理员</option>
-          </select>
-        </label>
-        <label>
-          <input type="checkbox" checked={mustChange} onChange={e => setMustChange(e.target.checked)} disabled={busy} />
-          首次登录需修改密码
-        </label>
+        <fieldset className="modal-form-section">
+          <legend>账号信息</legend>
+          <label>账号<input value={username} onChange={e => setUsername(e.target.value)} disabled={busy} /></label>
+          <label>初始密码<input type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy} /></label>
+        </fieldset>
+        <fieldset className="modal-form-section">
+          <legend>权限设置</legend>
+          <label>角色
+            <select value={role} onChange={e => setRole(e.target.value as 'admin' | 'merchant')} disabled={busy}>
+              <option value="merchant">商家</option>
+              <option value="admin">管理员</option>
+            </select>
+          </label>
+          <label className="modal-checkbox-label">
+            <input type="checkbox" checked={mustChange} onChange={e => setMustChange(e.target.checked)} disabled={busy} />
+            首次登录需修改密码
+          </label>
+        </fieldset>
         {role === 'merchant' && (
-          <fieldset className="users-tab-products">
-            <legend>分配商品</legend>
+          <fieldset className="modal-form-section users-tab-products">
+            <legend>商品分配</legend>
             {products.length === 0 && <p className="statics-empty">暂无商品</p>}
             {products.map(p => (
               <label key={p.id} className="users-tab-product-row">
@@ -157,7 +163,10 @@ function CreateUserModal({ products, onClose, onCreated }: { products: Product[]
           </fieldset>
         )}
         {error && <p className="modal-error">{error}</p>}
-        <button type="submit" className="primary" disabled={busy || username.length === 0 || password.length < 4}>{busy ? '创建中...' : '创建'}</button>
+        <div className="modal-actions">
+          <button type="button" onClick={onClose} disabled={busy}>取消</button>
+          <button type="submit" className="primary" disabled={busy || username.length === 0 || password.length < 4}>{busy ? '创建中...' : '创建'}</button>
+        </div>
       </form>
     </div>
   );
