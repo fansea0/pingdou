@@ -25,5 +25,9 @@ describe('UsersTab', () => {
     await waitFor(() => screen.getByText('root'));
     fireEvent.click(screen.getByRole('button', { name: /新建账号/i }));
     expect(screen.getByText(/创建新账号/i)).toBeTruthy();
+    expect(screen.getByRole('group', { name: '账号信息' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: '权限设置' })).toBeTruthy();
+    expect(screen.getByRole('group', { name: '商品分配' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
   });
 });

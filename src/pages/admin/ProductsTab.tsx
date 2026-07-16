@@ -91,18 +91,31 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <form className="modal-card" onClick={e => e.stopPropagation()} onSubmit={submit}>
-        <button type="button" className="modal-close" aria-label="close" onClick={onClose}>×</button>
+    <div className="modal-backdrop modal-backdrop--product" onClick={onClose}>
+      <form className="modal-card modal-card--product" onClick={e => e.stopPropagation()} onSubmit={submit}>
+        <button type="button" className="modal-close" aria-label="close" onClick={onClose} disabled={busy}>×</button>
         <h3>新建商品</h3>
-        <label>ID (小写字母数字与连字符)<input value={id} onChange={e => setId(e.target.value)} disabled={busy} /></label>
-        <label>名称<input value={name} onChange={e => setName(e.target.value)} disabled={busy} /></label>
-        <label>价格<input value={price} onChange={e => setPrice(e.target.value)} disabled={busy} inputMode="decimal" /></label>
-        <label>币种<input value={currency} onChange={e => setCurrency(e.target.value)} disabled={busy} /></label>
-        <label>链接<input value={url} onChange={e => setUrl(e.target.value)} disabled={busy} /></label>
-        <label>介绍<textarea value={description} onChange={e => setDescription(e.target.value)} disabled={busy} /></label>
+        <fieldset className="modal-form-section">
+          <legend>基础信息</legend>
+          <div className="modal-form-grid">
+            <label className="modal-form-field">ID (小写字母数字与连字符)<input value={id} onChange={e => setId(e.target.value)} disabled={busy} /></label>
+            <label className="modal-form-field">名称<input value={name} onChange={e => setName(e.target.value)} disabled={busy} /></label>
+          </div>
+        </fieldset>
+        <fieldset className="modal-form-section">
+          <legend>商品详情</legend>
+          <div className="modal-form-grid">
+            <label className="modal-form-field">价格<input value={price} onChange={e => setPrice(e.target.value)} disabled={busy} inputMode="decimal" /></label>
+            <label className="modal-form-field">币种<input value={currency} onChange={e => setCurrency(e.target.value)} disabled={busy} /></label>
+            <label className="modal-form-field modal-form-field--wide">链接<input value={url} onChange={e => setUrl(e.target.value)} disabled={busy} /></label>
+            <label className="modal-form-field modal-form-field--wide">介绍<textarea value={description} onChange={e => setDescription(e.target.value)} disabled={busy} /></label>
+          </div>
+        </fieldset>
         {error && <p className="modal-error">{error}</p>}
-        <button type="submit" className="primary" disabled={busy || !/^[a-z0-9-]+$/.test(id) || name.length === 0}>{busy ? '创建中...' : '创建'}</button>
+        <div className="modal-actions">
+          <button type="button" onClick={onClose} disabled={busy}>取消</button>
+          <button type="submit" className="primary" disabled={busy || !/^[a-z0-9-]+$/.test(id) || name.length === 0}>{busy ? '创建中...' : '创建'}</button>
+        </div>
       </form>
     </div>
   );

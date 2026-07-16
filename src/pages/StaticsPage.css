@@ -28,7 +28,7 @@
   margin-bottom: var(--space-3);
 }
 
-.statics-card input[type="password"] {
+.statics-card:not(.statics-card--login) input[type="password"] {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
@@ -196,6 +196,13 @@
   color: var(--color-text);
   font-family: inherit;
   min-width: 0;
+}
+
+.statics-card--login .statics-field__input {
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
 }
 
 .statics-field input::placeholder {
@@ -476,8 +483,8 @@ code {
   color: var(--color-text-muted);
   margin-right: var(--space-2);
 }
-.statics-card input[type="text"],
-.statics-card input[type="password"] {
+.statics-card:not(.statics-card--login) input[type="text"],
+.statics-card:not(.statics-card--login) input[type="password"] {
   display: block;
   width: 100%;
   margin-bottom: var(--space-3);
@@ -492,3 +499,291 @@ code {
   cursor: pointer;
 }
 .statics-card .primary:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* === Shared dialogs === */
+.modal-backdrop--account {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal-card--account {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(100%, 420px);
+  max-height: calc(100vh - var(--space-6));
+  margin: auto;
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.modal-card--account { width: min(100%, 640px); }
+
+.modal-card--account h3 {
+  padding-right: var(--space-5);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.modal-card--account .modal-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-card--account .modal-form-section {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.modal-card--account .modal-form-section legend {
+  padding: 0 var(--space-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.modal-card--account .modal-form-section label,
+.modal-card--account > label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.modal-card--account input:not([type="checkbox"]),
+.modal-card--account select {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.modal-card--account input:focus,
+.modal-card--account select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.modal-card--account .modal-checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  color: var(--color-text) !important;
+}
+
+.modal-card--account .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.modal-card--account .modal-actions button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.modal-card--account .modal-actions .primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.modal-card--account .modal-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+@media (max-width: 600px) {
+  .modal-backdrop--account { align-items: flex-start; padding: var(--space-2); }
+  .modal-card--account { max-height: calc(100vh - var(--space-4)); padding: var(--space-4); }
+  .modal-card--account .modal-actions { flex-direction: column-reverse; }
+  .modal-card--account .modal-actions button { width: 100%; }
+}
+
+/* === Create product dialog === */
+.modal-backdrop--product {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal-card--product {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(100%, 680px);
+  max-height: calc(100vh - var(--space-6));
+  margin: auto;
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.modal-card--product h3 {
+  padding-right: var(--space-5);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.modal-card--product .modal-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-card--product .modal-form-section {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.modal-card--product .modal-form-section legend {
+  padding: 0 var(--space-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.modal-card--product .modal-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.modal-card--product .modal-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.modal-card--product .modal-form-field--wide {
+  grid-column: 1 / -1;
+}
+
+.modal-card--product input,
+.modal-card--product textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.modal-card--product textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.modal-card--product input:focus,
+.modal-card--product textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.modal-card--product .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.modal-card--product .modal-actions button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.modal-card--product .modal-actions .primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.modal-card--product .modal-actions button:disabled,
+.modal-card--product .modal-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width: 600px) {
+  .modal-backdrop--product {
+    align-items: flex-start;
+    padding: var(--space-2);
+  }
+
+  .modal-card--product {
+    max-height: calc(100vh - var(--space-4));
+    padding: var(--space-4);
+  }
+
+  .modal-card--product .modal-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-card--product .modal-form-field--wide {
+    grid-column: auto;
+  }
+
+  .modal-card--product .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal-card--product .modal-actions button {
+    width: 100%;
+  }
+}

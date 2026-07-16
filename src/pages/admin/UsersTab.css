@@ -11,5 +11,5 @@
 .users-tab-actions button:hover { border-color: var(--color-accent); color: var(--color-accent); }
 .users-tab-actions button.danger { color: var(--color-error-fg); border-color: var(--color-error-fg); }
 .users-tab-table th:nth-child(6), .users-tab-table td:nth-child(6) { white-space: nowrap; }
-.users-tab-products { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-2); }
+.users-tab-products { display: flex; flex-direction: column; gap: 4px; max-height: 180px; overflow-y: auto; }
 .users-tab-product-row { display: flex; gap: 6px; align-items: center; }
