@@ -112,7 +112,7 @@ jobs:
             rm -rf node_modules 2>/dev/null || true
 
             if [ -f package-lock.json ]; then
-              npm ci
+              npm install
             else
               npm install
             fi
