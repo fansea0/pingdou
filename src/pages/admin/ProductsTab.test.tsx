@@ -18,8 +18,8 @@ describe('ProductsTab', () => {
 
     expect(screen.getByRole('group', { name: '基础信息' })).toBeTruthy();
     expect(screen.getByRole('group', { name: '商品详情' })).toBeTruthy();
-    expect(screen.getByRole('group', { name: '介绍' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: '介绍' }).closest('.modal-form-field--wide')).toBeTruthy();
+    expect(screen.getByLabelText('介绍').closest('fieldset')).toBe(screen.getByRole('group', { name: '商品详情' }));
     expect(screen.getByRole('button', { name: '取消' })).toBeTruthy();
   });
 });

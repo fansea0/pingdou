@@ -108,11 +108,6 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
             <label className="modal-form-field">价格<input value={price} onChange={e => setPrice(e.target.value)} disabled={busy} inputMode="decimal" /></label>
             <label className="modal-form-field">币种<input value={currency} onChange={e => setCurrency(e.target.value)} disabled={busy} /></label>
             <label className="modal-form-field modal-form-field--wide">链接<input value={url} onChange={e => setUrl(e.target.value)} disabled={busy} /></label>
-          </div>
-        </fieldset>
-        <fieldset className="modal-form-section">
-          <legend>介绍</legend>
-          <div className="modal-form-grid">
             <label className="modal-form-field modal-form-field--wide">介绍<textarea value={description} onChange={e => setDescription(e.target.value)} disabled={busy} /></label>
           </div>
         </fieldset>
