@@ -501,7 +501,7 @@ code {
 .statics-card .primary:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* === Shared dialogs === */
-.modal-backdrop {
+.modal-backdrop--account {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -513,7 +513,7 @@ code {
   background: rgba(0, 0, 0, 0.45);
 }
 
-.modal-card {
+.modal-card--account {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -530,13 +530,13 @@ code {
 
 .modal-card--account { width: min(100%, 640px); }
 
-.modal-card h3 {
+.modal-card--account h3 {
   padding-right: var(--space-5);
   font-size: var(--text-base);
   font-weight: 600;
 }
 
-.modal-close {
+.modal-card--account .modal-close {
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
@@ -549,7 +549,7 @@ code {
   cursor: pointer;
 }
 
-.modal-form-section {
+.modal-card--account .modal-form-section {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
@@ -558,15 +558,15 @@ code {
   border-radius: var(--radius-sm);
 }
 
-.modal-form-section legend {
+.modal-card--account .modal-form-section legend {
   padding: 0 var(--space-1);
   color: var(--color-text);
   font-size: var(--text-sm);
   font-weight: 600;
 }
 
-.modal-form-section label,
-.modal-card > label {
+.modal-card--account .modal-form-section label,
+.modal-card--account > label {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -574,8 +574,8 @@ code {
   font-size: var(--text-sm);
 }
 
-.modal-card input:not([type="checkbox"]),
-.modal-card select {
+.modal-card--account input:not([type="checkbox"]),
+.modal-card--account select {
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
@@ -585,25 +585,25 @@ code {
   font: inherit;
 }
 
-.modal-card input:focus,
-.modal-card select:focus {
+.modal-card--account input:focus,
+.modal-card--account select:focus {
   outline: none;
   border-color: var(--color-accent);
 }
 
-.modal-checkbox-label {
+.modal-card--account .modal-checkbox-label {
   flex-direction: row !important;
   align-items: center;
   color: var(--color-text) !important;
 }
 
-.modal-actions {
+.modal-card--account .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
 }
 
-.modal-actions button {
+.modal-card--account .modal-actions button {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
@@ -614,17 +614,17 @@ code {
   cursor: pointer;
 }
 
-.modal-actions .primary {
+.modal-card--account .modal-actions .primary {
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: #fff;
 }
 
-.modal-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
+.modal-card--account .modal-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 @media (max-width: 600px) {
-  .modal-backdrop { align-items: flex-start; padding: var(--space-2); }
-  .modal-card { max-height: calc(100vh - var(--space-4)); padding: var(--space-4); }
-  .modal-actions { flex-direction: column-reverse; }
-  .modal-actions button { width: 100%; }
+  .modal-backdrop--account { align-items: flex-start; padding: var(--space-2); }
+  .modal-card--account { max-height: calc(100vh - var(--space-4)); padding: var(--space-4); }
+  .modal-card--account .modal-actions { flex-direction: column-reverse; }
+  .modal-card--account .modal-actions button { width: 100%; }
 }

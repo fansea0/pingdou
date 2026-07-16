@@ -125,7 +125,7 @@ function CreateUserModal({ products, onClose, onCreated }: { products: Product[]
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop modal-backdrop--account" onClick={onClose}>
       <form className="modal-card modal-card--account" onClick={e => e.stopPropagation()} onSubmit={submit}>
         <button type="button" className="modal-close" aria-label="close" onClick={onClose}>×</button>
         <h3>创建新账号</h3>
