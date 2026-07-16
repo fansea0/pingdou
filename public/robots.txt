@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /statics
+
+Sitemap: https://拼豆.xyz/sitemap.xml
