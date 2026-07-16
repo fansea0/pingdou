@@ -194,14 +194,14 @@ export function MobileActionBar({
         </p>
         <div className="mobile-buttons">
           <button
-            className="primary mobile-icon-btn"
+            className="primary mobile-icon-btn mobile-action-button"
             onClick={() => inputRef.current?.click()}
             aria-label="上传图片"
           >
-            <span>上传</span>
+            <span>上传图片</span>
           </button>
           <button
-            className={`primary mobile-icon-btn${exporting ? ' is-loading' : ''}${flash === 'done' ? ' is-done' : ''}`}
+            className={`primary mobile-icon-btn mobile-action-button${exporting ? ' is-loading' : ''}${flash === 'done' ? ' is-done' : ''}`}
             disabled={!canExport || exporting}
             onClick={onExport}
           >

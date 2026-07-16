@@ -149,11 +149,12 @@
     flex-shrink: 0;
   }
 
-  .mobile-icon-btn {
+  button.primary.mobile-action-button {
     position: relative;
     overflow: hidden;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
     font-size: 12px;
     padding: 8px 12px;
