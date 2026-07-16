@@ -13,9 +13,36 @@ describe('homepage SEO contract', () => {
       '<title>拼豆图生成器｜在线生成拼豆图纸与 MARD 色号对照</title>',
     );
     expect(indexHtml).toContain('name="description"');
+    const descriptionMatch = indexHtml.match(
+      /<meta\s+name="description"\s+content="([^"]+)"\s*\/?\s*>/,
+    );
+    expect(descriptionMatch).not.toBeNull();
+    expect(descriptionMatch?.[1]).toBe(
+      '在线上传图片生成拼豆图纸，并提供 MARD 色号对照。',
+    );
     expect(indexHtml).toContain('rel="canonical" href="https://拼豆.xyz/"');
     expect(indexHtml).toContain('application/ld+json');
     expect(indexHtml).toContain('拼豆图纸在线生成');
+
+    const jsonLdMatch = indexHtml.match(
+      /<script\s+type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/,
+    );
+    expect(jsonLdMatch).not.toBeNull();
+    const jsonLd = JSON.parse(jsonLdMatch?.[1] ?? '');
+
+    expect(jsonLd['@context']).toBe('https://schema.org');
+    expect(jsonLd['@graph']).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          '@type': 'WebSite',
+          url: 'https://拼豆.xyz/',
+        }),
+        expect.objectContaining({
+          '@type': 'WebApplication',
+          url: 'https://拼豆.xyz/',
+        }),
+      ]),
+    );
   });
 
   it('allows crawling while publishing the sitemap location', () => {
