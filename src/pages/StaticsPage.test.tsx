@@ -25,7 +25,10 @@ describe('StaticsPage', () => {
   it('renders login form when /me 401s', async () => {
     render(<StaticsPage />);
     await waitFor(() => screen.getByRole('button', { name: /登录/ }));
-    expect(screen.getByPlaceholderText(/账号/)).toBeTruthy();
+    const usernameInput = screen.getByPlaceholderText(/账号/);
+    expect(usernameInput).toBeTruthy();
+    expect(usernameInput.closest('.statics-field')).toBeTruthy();
+    expect(usernameInput.classList.contains('statics-field__input')).toBe(true);
     expect(screen.getByPlaceholderText(/密码/)).toBeTruthy();
   });
 

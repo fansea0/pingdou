@@ -86,6 +86,7 @@ export function StaticsPage() {
               </svg>
             </span>
             <input
+              className="statics-field__input"
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
@@ -104,6 +105,7 @@ export function StaticsPage() {
               </svg>
             </span>
             <input
+              className="statics-field__input"
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={e => setPassword(e.target.value)}
