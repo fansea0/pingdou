@@ -43,7 +43,7 @@ jobs:
           set -e
 
           PROJECT_DIR="/root/project/pingdou"
-          SERVICE_PORT="5173"
+          SERVICE_PORT="3000"
           LOG_FILE="$PROJECT_DIR/start.log"
           PID_FILE="$PROJECT_DIR/start.pid"
 
@@ -52,26 +52,13 @@ jobs:
           echo "=============================="
           echo "开始部署拼豆项目"
           echo "项目目录：$PROJECT_DIR"
+          echo "服务端口：$SERVICE_PORT"
           echo "=============================="
 
-          # ============================================
-          # 新增：重置本地修改，避免冲突
-          # ============================================
           echo "重置本地仓库状态..."
 
-          # 1. 丢弃所有本地未提交的修改（包括新增文件）
           git reset --hard HEAD
-
-          # 2. 删除所有未被 Git 跟踪的文件和目录（如 node_modules、.env 等不会被删除，因为它们在 .gitignore 中）
-          #    注意：这不会删除 .gitignore 中列出的文件
           git clean -fd
-
-          # 3. 可选：如果你希望彻底清理包括 .gitignore 中的文件，使用 -x 参数
-          #    但注意这会删除 node_modules，需要重新安装
-          # git clean -fdx
-
-          echo "本地仓库已重置，开始拉取最新代码..."
-          # ============================================
 
           OLD_COMMIT=$(git rev-parse HEAD)
 
@@ -85,6 +72,11 @@ jobs:
           echo "最新版本：$NEW_COMMIT"
 
           NEED_INSTALL=false
+
+          if [ ! -d "node_modules" ]; then
+            echo "node_modules 不存在，需要安装依赖"
+            NEED_INSTALL=true
+          fi
 
           if [ "$OLD_COMMIT" != "$NEW_COMMIT" ]; then
             CHANGED_FILES=$(git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT")
@@ -100,59 +92,69 @@ jobs:
             echo "没有检测到新的代码提交"
           fi
 
-          # ============================================
-          # 修改：如果使用 git clean -fd，node_modules 不会被删除，无需重新安装
-          # 如果使用 git clean -fdx，node_modules 会被删除，必须重新安装
-          # 这里保持原有逻辑，仅在 package.json 变化时重新安装
-          # ============================================
           if [ "$NEED_INSTALL" = true ]; then
-            echo "依赖文件发生变化，重新安装依赖..."
-
-            # 清理旧依赖（可选，确保干净）
-            rm -rf node_modules 2>/dev/null || true
-
-            if [ -f package-lock.json ]; then
-              npm install
-            else
-              npm install
-            fi
+            echo "开始安装依赖..."
+            npm i
+          else
+            echo "依赖未发生变化，跳过安装"
           fi
 
           echo "停止旧服务..."
 
+          # 根据 PID 文件停止旧服务
           if [ -f "$PID_FILE" ]; then
-            OLD_PID=$(cat "$PID_FILE")
+            OLD_PID=$(cat "$PID_FILE" 2>/dev/null || true)
 
-            if kill -0 "$OLD_PID" >/dev/null 2>&1; then
-              echo "停止旧服务，PID：$OLD_PID"
-
-              kill "$OLD_PID" 2>/dev/null || true
-
-              for i in $(seq 1 10); do
-                if ! kill -0 "$OLD_PID" >/dev/null 2>&1; then
-                  break
-                fi
-
-                sleep 1
-              done
-
-              if kill -0 "$OLD_PID" >/dev/null 2>&1; then
-                echo "旧服务未正常退出，强制停止"
-                kill -9 "$OLD_PID" 2>/dev/null || true
-              fi
+            if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" >/dev/null 2>&1; then
+              echo "强制停止旧服务，PID：$OLD_PID"
+              kill -9 "$OLD_PID" 2>/dev/null || true
             fi
 
             rm -f "$PID_FILE"
           fi
 
-          # 兜底：清理仍在运行的 npm run start 进程
-          pkill -f "npm run start" 2>/dev/null || true
+          # 兜底：停止 npm run start 进程
+          pkill -9 -f "npm run start" 2>/dev/null || true
+
+          echo "检查 ${SERVICE_PORT} 端口占用..."
+
+          ss -lntp | grep ":${SERVICE_PORT}" || true
+
+          # 从 ss 输出中提取占用 3000 端口的 PID
+          PORT_PIDS=$(
+            ss -lntp 2>/dev/null |
+            grep ":${SERVICE_PORT}" |
+            grep -o 'pid=[0-9]*' |
+            cut -d= -f2 |
+            sort -u || true
+          )
+
+          if [ -n "$PORT_PIDS" ]; then
+            echo "${SERVICE_PORT} 端口被以下进程占用："
+            echo "$PORT_PIDS"
+
+            for PID in $PORT_PIDS; do
+              echo "执行 kill -9 $PID"
+              kill -9 "$PID" 2>/dev/null || true
+            done
+          else
+            echo "${SERVICE_PORT} 端口未被占用"
+          fi
 
           sleep 1
 
+          echo "再次检查 ${SERVICE_PORT} 端口..."
+
+          if ss -lntp | grep -q ":${SERVICE_PORT}"; then
+            echo "错误：${SERVICE_PORT} 端口仍然被占用"
+            ss -lntp | grep ":${SERVICE_PORT}" || true
+            exit 1
+          fi
+
+          echo "${SERVICE_PORT} 端口已释放"
           echo "启动新服务..."
 
-          nohup npm run start \
+          nohup npm run start -- --port "$SERVICE_PORT" --strictPort \
             > "$LOG_FILE" 2>&1 &
 
           NEW_PID=$!
@@ -162,7 +164,7 @@ jobs:
           echo "等待服务启动..."
 
           for i in $(seq 1 30); do
-            if curl -fsS "http://127.0.0.1:3000" >/dev/null 2>&1; then
+            if curl -fsS "http://127.0.0.1:${SERVICE_PORT}" >/dev/null 2>&1; then
               echo "=============================="
               echo "服务启动成功"
               echo "服务端口：$SERVICE_PORT"
@@ -186,9 +188,13 @@ jobs:
           echo "服务启动失败或等待超时"
           echo "=============================="
 
+          echo "当前端口占用："
+          ss -lntp | grep ":${SERVICE_PORT}" || true
+
           echo "最近 100 行日志："
           tail -n 100 "$LOG_FILE" || true
 
           exit 1
 
           EOF
+
