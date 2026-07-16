@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { JSDOM } from 'jsdom';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,7 +11,7 @@ const readProjectFile = (relativePath: string) =>
 describe('homepage SEO contract', () => {
   it('publishes the required homepage metadata and structured data', () => {
     const indexHtml = readProjectFile('index.html');
-    const document = new JSDOM(indexHtml).window.document;
+    const document = new DOMParser().parseFromString(indexHtml, 'text/html');
 
     expect(indexHtml).toContain(
       '<title>拼豆图生成器｜在线生成拼豆图纸与 MARD 色号对照</title>',
