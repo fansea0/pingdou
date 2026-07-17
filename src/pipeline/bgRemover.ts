@@ -176,3 +176,68 @@ export function detectBackground(
     null
   );
 }
+
+/**
+ * Keep only the background-mask pixels that belong to an 8-connected
+ * component touching any of the four image borders.
+ *
+ * Use case: when a subject has internal white regions (eyes, clothing,
+ * negative space) on a solid-color background, `buildBackgroundMask`
+ * catches those interior pixels because they share the bg color. This
+ * filter keeps only the OUTER (border-touching) component so the
+ * interior pixels are correctly treated as foreground.
+ *
+ * Pure function: never mutates `mask`. O(W * H) via 8-connected BFS.
+ */
+export function filterMaskByBorderConnectivity(
+  mask: Uint8Array,
+  width: number,
+  height: number
+): Uint8Array {
+  const out = new Uint8Array(mask.length);
+  if (mask.length === 0 || width === 0 || height === 0) return out;
+
+  const visited = new Uint8Array(mask.length);
+  const queue: number[] = [];
+
+  const pushIfMasked = (idx: number): void => {
+    if (mask[idx] === 1 && !visited[idx]) {
+      visited[idx] = 1;
+      out[idx] = 1;
+      queue.push(idx);
+    }
+  };
+  for (let x = 0; x < width; x++) {
+    pushIfMasked(x);
+    pushIfMasked((height - 1) * width + x);
+  }
+  for (let y = 0; y < height; y++) {
+    pushIfMasked(y * width);
+    pushIfMasked(y * width + (width - 1));
+  }
+
+  const DIRS = [
+    [-1, -1], [0, -1], [1, -1],
+    [-1, 0],           [1, 0],
+    [-1, 1],  [0, 1],  [1, 1],
+  ];
+
+  let head = 0;
+  while (head < queue.length) {
+    const idx = queue[head++];
+    const cx = idx % width;
+    const cy = (idx - cx) / width;
+    for (const [dx, dy] of DIRS) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const nIdx = ny * width + nx;
+      if (visited[nIdx] || mask[nIdx] !== 1) continue;
+      visited[nIdx] = 1;
+      out[nIdx] = 1;
+      queue.push(nIdx);
+    }
+  }
+
+  return out;
+}

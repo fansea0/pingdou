@@ -3,6 +3,7 @@ import {
   buildBackgroundMask,
   detectBackground,
   DEFAULT_TOLERANCE,
+  filterMaskByBorderConnectivity,
 } from '@/pipeline/bgRemover';
 import type { BackgroundMask } from '@/types';
 
@@ -197,5 +198,69 @@ describe('detectBackground + buildBackgroundMask integration', () => {
     }
     const img = new ImageData(arr, W, H);
     expect(detect(img)).toBeNull();
+  });
+});
+
+describe('filterMaskByBorderConnectivity', () => {
+  it('keeps all when mask is fully 1', () => {
+    const m = new Uint8Array(5 * 5).fill(1);
+    const out = filterMaskByBorderConnectivity(m, 5, 5);
+    expect(Array.from(out)).toEqual(Array.from(m));
+  });
+
+  it('clears interior isolated island (no border contact)', () => {
+    const m = new Uint8Array(5 * 5);
+    m[2 * 5 + 2] = 1;
+    const out = filterMaskByBorderConnectivity(m, 5, 5);
+    expect(out.every(v => v === 0)).toBe(true);
+  });
+
+  it('keeps border-connected ring, clears interior island', () => {
+    const m = new Uint8Array(6 * 6);
+    for (let i = 0; i < 6; i++) {
+      m[i] = 1;
+      m[5 * 6 + i] = 1;
+      m[i * 6] = 1;
+      m[i * 6 + 5] = 1;
+    }
+    m[3 * 6 + 3] = 1;
+    const out = filterMaskByBorderConnectivity(m, 6, 6);
+    expect(out[0]).toBe(1);
+    expect(out[5 * 6 + 5]).toBe(1);
+    expect(out[3 * 6 + 0]).toBe(1);
+    expect(out[0 * 6 + 3]).toBe(1);
+    expect(out[3 * 6 + 3]).toBe(0);
+  });
+
+  it('handles empty mask', () => {
+    const m = new Uint8Array(0);
+    const out = filterMaskByBorderConnectivity(m, 0, 0);
+    expect(out.length).toBe(0);
+  });
+
+  it('handles 1×1 mask (single pixel is itself on the border)', () => {
+    const m = new Uint8Array([1]);
+    const out = filterMaskByBorderConnectivity(m, 1, 1);
+    expect(Array.from(out)).toEqual([1]);
+  });
+
+  it('handles 1×N row: every pixel touches the degenerate column border', () => {
+    // In a 1×N image the left column equals the right column, so every
+    // pixel touches that border. The function keeps all masked pixels.
+    const m = new Uint8Array([1, 0, 0, 0]);
+    const out = filterMaskByBorderConnectivity(m, 1, 4);
+    expect(Array.from(out)).toEqual([1, 0, 0, 0]);
+    const m2 = new Uint8Array([0, 0, 1, 0]);
+    const out2 = filterMaskByBorderConnectivity(m2, 1, 4);
+    expect(Array.from(out2)).toEqual([0, 0, 1, 0]);
+  });
+
+  it('returns a new Uint8Array (does not mutate input)', () => {
+    const m = new Uint8Array(2 * 2);
+    m[0] = 1;
+    const copy = new Uint8Array(m);
+    const out = filterMaskByBorderConnectivity(m, 2, 2);
+    expect(Array.from(m)).toEqual(Array.from(copy));
+    expect(out === m).toBe(false);
   });
 });
