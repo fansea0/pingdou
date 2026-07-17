@@ -29,7 +29,7 @@ pipeline.ts
         → triggerDownload()
 ```
 
-`filterMaskByBorderConnectivity` 在 `buildBackgroundMask` 返回后、`forEach` 覆盖 `result.mask` 之前调用。`applyWatermark` 在 `renderComposite` 返回 canvas 后、`canvasToBlob` 之前调用。两条变更都改 `pipeline.ts` 中的两处（`process` 和 `exportMulti`）。
+`filterMaskByBorderConnectivity` 在 `buildBackgroundMask` 返回后、`forEach` 覆盖 `result.mask` 之前调用。`applyWatermark` 在 `renderComposite` 返回 canvas 后、`canvasToBlob` 之前调用。两条变更都改 `pipeline.ts` 中的两处（`process` 和 `exportMulti`）。`exportComposite` 是未使用的死代码，不动。
 
 ## Components
 
@@ -94,7 +94,7 @@ PipelineResult
   → triggerDownload(blob, filename)
 ```
 
-`pipeline.ts` 在 `exportComposite()` 和 `exportMulti()` 的 `renderComposite(...) → canvasToBlob(...)` 之间插入 `applyWatermark(canvas)`。
+`pipeline.ts` 在 `exportMulti()` 的 `renderComposite(...) → canvasToBlob(...)` 之间插入 `applyWatermark(canvas)`。
 
 ## Error handling
 
