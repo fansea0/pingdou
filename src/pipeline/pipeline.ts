@@ -8,6 +8,7 @@ import {
   detectBackground,
   filterMaskByBorderConnectivity,
 } from './bgRemover';
+import { applyWatermark } from './watermark';
 import type {
   Palette,
   ProcessParams,
@@ -165,6 +166,7 @@ export class Pipeline {
           { cellPx: exportCellPx },
           mask
         );
+        applyWatermark(compositeCanvas);
         const blob = await canvasToBlob(compositeCanvas);
         triggerDownload(blob, `pingdou-${outW}x${outH}.png`);
         success++;
