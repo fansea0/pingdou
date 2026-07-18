@@ -241,3 +241,49 @@ export function filterMaskByBorderConnectivity(
 
   return out;
 }
+
+/**
+ * Downsample a source-resolution bg mask to grid resolution using AND
+ * semantics: an output cell is bg (1) ONLY if every source pixel inside
+ * the cell's source-area is bg (1).
+ *
+ * Why: a sampled cell (e.g. 20×20 source pixels) box-averages colors, so
+ * a 1-pixel black outline gets diluted to mid-grey and falls within bg
+ * tolerance. The sampled-grid mask then has NO outline, and an interior
+ * white region "leaks" through the diluted outline into the bg. Building
+ * the mask at source resolution keeps outline pixels at their true black,
+ * and AND-downsampling guarantees that any cell with even one non-bg
+ * source pixel (the outline) is treated as foreground at grid scale.
+ *
+ * Use together with `buildBackgroundMask(src, bg)` to get a clean
+ * grid-resolution mask suitable for `filterMaskByBorderConnectivity`.
+ */
+export function downsampleMaskByAll(
+  srcMask: Uint8Array,
+  srcW: number,
+  srcH: number,
+  outW: number,
+  outH: number
+): Uint8Array {
+  const out = new Uint8Array(outW * outH);
+  if (outW === 0 || outH === 0) return out;
+  const xScale = srcW / outW;
+  const yScale = srcH / outH;
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      const x0 = Math.floor(x * xScale);
+      const y0 = Math.floor(y * yScale);
+      const x1 = Math.min(srcW, Math.ceil((x + 1) * xScale));
+      const y1 = Math.min(srcH, Math.ceil((y + 1) * yScale));
+      let allBg = true;
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) {
+          if (srcMask[sy * srcW + sx] !== 1) { allBg = false; break; }
+        }
+        if (!allBg) break;
+      }
+      out[y * outW + x] = allBg ? 1 : 0;
+    }
+  }
+  return out;
+}

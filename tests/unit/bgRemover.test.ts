@@ -4,6 +4,7 @@ import {
   detectBackground,
   DEFAULT_TOLERANCE,
   filterMaskByBorderConnectivity,
+  downsampleMaskByAll,
 } from '@/pipeline/bgRemover';
 import type { BackgroundMask } from '@/types';
 
@@ -262,5 +263,34 @@ describe('filterMaskByBorderConnectivity', () => {
     const out = filterMaskByBorderConnectivity(m, 2, 2);
     expect(Array.from(m)).toEqual(Array.from(copy));
     expect(out === m).toBe(false);
+  });
+});
+
+describe('downsampleMaskByAll', () => {
+  it('keeps cell as bg only if every source pixel in its area is bg', () => {
+    // 6x6 source → 3x3 grid (each cell = 2x2 source pixels).
+    // Cell 0: all bg → kept as bg.
+    // Cell 1: 1 of 4 source pixels is not bg → NOT bg.
+    // Cell 4 (center): all bg → kept as bg.
+    const srcMask = new Uint8Array(36).fill(1);
+    srcMask[1 * 6 + 3] = 0; // one non-bg pixel in cell 1's area (rows 2-3, cols 2-3)
+    const out = downsampleMaskByAll(srcMask, 6, 6, 3, 3);
+    expect(out[0 * 3 + 0]).toBe(1); // cell 0: all bg
+    expect(out[0 * 3 + 1]).toBe(0); // cell 1: 1 non-bg pixel → AND = 0
+    expect(out[1 * 3 + 1]).toBe(1); // cell 4 (center): all bg
+  });
+
+  it('handles empty output dimensions', () => {
+    expect(downsampleMaskByAll(new Uint8Array(0), 0, 0, 0, 0).length).toBe(0);
+  });
+
+  it('returns all-zero when source mask is all-zero', () => {
+    const out = downsampleMaskByAll(new Uint8Array(100), 10, 10, 5, 5);
+    expect(out.every(v => v === 0)).toBe(true);
+  });
+
+  it('returns all-one when source mask is all-one', () => {
+    const out = downsampleMaskByAll(new Uint8Array(100).fill(1), 10, 10, 5, 5);
+    expect(out.every(v => v === 1)).toBe(true);
   });
 });
