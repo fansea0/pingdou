@@ -3,7 +3,11 @@ import { quantizeWithCanvas2D } from './quantizer.canvas';
 import { renderPaletteImage } from './renderer';
 import { renderComposite, DEFAULT_COMPOSITE_OPTIONS } from './composite';
 import { canvasToBlob, triggerDownload } from './exporter';
-import { buildBackgroundMask, detectBackground } from './bgRemover';
+import {
+  buildBackgroundMask,
+  detectBackground,
+  filterMaskByBorderConnectivity,
+} from './bgRemover';
 import type {
   Palette,
   ProcessParams,
@@ -46,12 +50,15 @@ export class Pipeline {
         const detected = detectBackground(src, sampled);
         if (detected) {
           const { mask: bgMask, bgCount } = buildBackgroundMask(sampled, detected.bg);
-          bgMask.forEach((v, i) => {
+          const filtered = filterMaskByBorderConnectivity(bgMask, outW, outH);
+          let kept = 0;
+          filtered.forEach((v, i) => {
+            if (v) kept++;
             mask[i] = v;
           });
           console.info(
             `[pingdou] bg detected = rgb(${detected.bg.join(',')}), ` +
-              `removed ${bgCount}/${n} cells`
+              `kept ${kept}/${n} border-connected cells (raw ${bgCount}/${n})`
           );
         } else {
           console.warn(
@@ -134,12 +141,15 @@ export class Pipeline {
           const detected = detectBackground(src, sampled);
           if (detected) {
             const { mask: bgMask, bgCount } = buildBackgroundMask(sampled, detected.bg);
-            bgMask.forEach((v, j) => {
+            const filtered = filterMaskByBorderConnectivity(bgMask, outW, outH);
+            let kept = 0;
+            filtered.forEach((v, j) => {
+              if (v) kept++;
               mask[j] = v;
             });
             console.info(
               `[pingdou] bg detected = rgb(${detected.bg.join(',')}), ` +
-                `removed ${bgCount}/${outW * outH} cells (gridSize=${gridSize})`
+                `kept ${kept}/${outW * outH} border-connected cells (raw ${bgCount}/${outW * outH}, gridSize=${gridSize})`
             );
           } else {
             console.warn(

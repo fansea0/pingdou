@@ -102,3 +102,43 @@ describe('Pipeline.process — auto background removal', () => {
     }
   });
 });
+
+describe('Pipeline.process — internal-white preservation', () => {
+  it('keeps an internal white region inside the subject (eyes/negative space)', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    const W = 200, H = 200;
+    const arr = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < arr.length; i += 4) {
+      arr[i] = 255; arr[i + 1] = 255; arr[i + 2] = 255; arr[i + 3] = 255;
+    }
+    for (let y = 50; y < 150; y++) {
+      for (let x = 50; x < 150; x++) {
+        const i = (y * W + x) * 4;
+        arr[i] = 220; arr[i + 1] = 40; arr[i + 2] = 40;
+      }
+    }
+    for (let y = 90; y < 110; y++) {
+      for (let x = 90; x < 110; x++) {
+        const i = (y * W + x) * 4;
+        arr[i] = 255; arr[i + 1] = 255; arr[i + 2] = 255;
+      }
+    }
+    const src = new ImageData(arr, W, H);
+
+    const r = await runProcess(pipeline, src, true);
+
+    const cellIdx = (cy: number, cx: number): number => cy * r.outW + cx;
+    const cellAtImg = (imgX: number, imgY: number): { gx: number; gy: number } => ({
+      gx: Math.floor((imgX / W) * r.outW),
+      gy: Math.floor((imgY / H) * r.outH),
+    });
+    const eye = cellAtImg(100, 100);
+    const body = cellAtImg(60, 60);
+    const outerBg = cellAtImg(5, 5);
+
+    expect(r.mask[cellIdx(eye.gy, eye.gx)]).toBe(0);
+    expect(r.mask[cellIdx(body.gy, body.gx)]).toBe(0);
+    expect(r.mask[cellIdx(outerBg.gy, outerBg.gx)]).toBe(1);
+  });
+});
