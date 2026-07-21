@@ -132,15 +132,15 @@ function renderCompositeFromBoardWithOptions(
   canvas.height = canvasH;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvasW, canvasH);
-
   const beadX = 0;
   const beadY = Math.floor((canvasH - beadH) / 2);
   ctx.drawImage(beadCanvas, beadX, beadY);
 
   const legendTop = Math.floor((canvasH - legendH) / 2);
   const legendLeft = beadW + opts.cellGap;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(legendLeft, legendTop, legendW, legendH);
 
   ctx.strokeStyle = '#e5e5e5';
   ctx.lineWidth = 1;

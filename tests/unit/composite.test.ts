@@ -51,6 +51,23 @@ describe('renderComposite', () => {
     ]);
   });
 
+  it('keeps square-board padding transparent while giving the legend an opaque background', () => {
+    const boardCanvas = document.createElement('canvas');
+    boardCanvas.width = 128;
+    boardCanvas.height = 128;
+    const boardCtx = boardCanvas.getContext('2d')!;
+    boardCtx.fillStyle = 'rgb(255,0,0)';
+    boardCtx.fillRect(16, 16, 96, 96);
+
+    const canvas = renderCompositeFromBoard(boardCanvas, new Uint8Array([0]), palette, null);
+    const ctx = canvas.getContext('2d')!;
+    const boardTop = Math.floor((canvas.height - boardCanvas.height) / 2);
+    const legendLeft = boardCanvas.width + DEFAULT_COMPOSITE_OPTIONS.cellGap;
+
+    expect(ctx.getImageData(8, boardTop - 1, 1, 1).data[3]).toBe(0);
+    expect(ctx.getImageData(legendLeft + 8, 8, 1, 1).data[3]).toBe(255);
+  });
+
   it('canvas width = beadW + cellGap + legendW', () => {
     const indices = new Uint8Array([0, 1, 2, 0, 1, 2, 0, 1, 2]);
     const canvas = renderComposite(indices, 3, 3, palette, { cellPx: 32 });
