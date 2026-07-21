@@ -31,8 +31,8 @@ export function renderSquareBoard(
   const x = Math.floor((boardPx - source.width) / 2);
   const y = Math.floor((boardPx - source.height) / 2);
   ctx.drawImage(source, x, y);
-  ctx.strokeStyle = '#333';
+  ctx.strokeStyle = 'rgb(51,51,51)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, boardPx - 1, boardPx - 1);
+  ctx.strokeRect(0, 0, boardPx, boardPx);
   return canvas;
 }

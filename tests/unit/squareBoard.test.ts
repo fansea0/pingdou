@@ -23,7 +23,9 @@ describe('renderSquareBoard', () => {
     expect(canvas.height).toBe(96);
 
     const ctx = canvas.getContext('2d')!;
-    expect(ctx.getImageData(0, 0, 1, 1).data[3]).toBeGreaterThan(0);
+    for (const [x, y] of [[0, 0], [95, 0], [0, 95], [95, 95]]) {
+      expect([...ctx.getImageData(x, y, 1, 1).data]).toEqual([51, 51, 51, 255]);
+    }
     expect(ctx.getImageData(10, 10, 1, 1).data[3]).toBe(0);
     expect(ctx.getImageData(25, 37, 1, 1).data[3]).toBe(255);
   });
