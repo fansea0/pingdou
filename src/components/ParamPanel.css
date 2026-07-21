@@ -15,6 +15,41 @@
   font-weight: 500;
 }
 
+.board-size-shortcuts {
+  margin-bottom: var(--space-3);
+}
+.board-size-label {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  margin-bottom: var(--space-2);
+}
+.board-size-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.board-size-option {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 6px 10px;
+}
+.board-size-option:hover:not(:disabled),
+.board-size-option.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.board-size-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* === Progress Bar === */
 .grid-progress {
   position: relative;
@@ -121,6 +156,11 @@
   font-size: var(--text-xs);
   font-weight: 500;
   margin-left: 4px;
+}
+.assembly-time {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
 }
 .param-toggle {
   background: var(--color-surface-alt);

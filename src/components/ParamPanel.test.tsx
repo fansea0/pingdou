@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, within } from '@testing-library/react';
 import { ParamPanel } from '@/components/ParamPanel';
 
 const baseProps = () => ({
@@ -95,5 +95,27 @@ describe('ParamPanel', () => {
       />
     );
     expect(container.textContent).not.toMatch(/已去/);
+  });
+
+  it('offers board-size shortcuts that select the matching grid size', () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <ParamPanel {...baseProps()} onGridSizeChange={onChange} estimateLabel="约 4.0 小时" />
+    );
+    const shortcuts = within(container.querySelector('[aria-label="快捷板子尺寸"]')!);
+
+    fireEvent.click(shortcuts.getByRole('button', { name: '78 × 78 板子' }));
+
+    expect(onChange).toHaveBeenCalledWith(78);
+  });
+
+  it('highlights the selected board size and renders its estimate', () => {
+    const { container } = render(
+      <ParamPanel {...baseProps()} gridSize={52} estimateLabel="约 4.0 小时" />
+    );
+    const shortcuts = within(container.querySelector('[aria-label="快捷板子尺寸"]')!);
+
+    expect(shortcuts.getByRole('button', { name: '52 × 52 板子' }).classList.contains('active')).toBe(true);
+    expect(within(container).getByText(/约 4\.0 小时/)).toBeTruthy();
   });
 });

@@ -1,9 +1,11 @@
 import './ParamPanel.css';
+import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
 
 interface Props {
   gridSize: number;
   beanCount: number;
   totalCells: number;
+  estimateLabel: string | null;
   removeBackground: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
@@ -107,6 +109,7 @@ export function ParamPanel({
   gridSize,
   beanCount,
   totalCells,
+  estimateLabel,
   removeBackground,
   onGridSizeChange,
   onRemoveBackgroundChange,
@@ -115,6 +118,25 @@ export function ParamPanel({
   const removed = totalCells > 0 ? totalCells - beanCount : 0;
   return (
     <div className="param-panel">
+      <div className="board-size-shortcuts" aria-label="快捷板子尺寸">
+        <span className="board-size-label">快捷板子尺寸</span>
+        <div className="board-size-options">
+          {BOARD_SIZE_PRESETS.map(size => (
+            <button
+              key={size}
+              type="button"
+              className={`board-size-option ${gridSize === size ? 'active' : ''}`}
+              aria-label={`${size} × ${size} 板子`}
+              aria-pressed={gridSize === size}
+              disabled={disabled}
+              onClick={() => onGridSizeChange(size)}
+            >
+              {size} × {size}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <label className="grid-label">网格大小（长边豆子数）</label>
 
       <ProgressBar
@@ -130,6 +152,7 @@ export function ParamPanel({
           {' '}
           （{gridSize} × {gridSize} = {totalCells.toLocaleString()} 格）
         </span>
+        {estimateLabel && <span className="assembly-time"> · {estimateLabel}</span>}
         {removeBackground && removed > 0 && (
           <span className="bean-count-removed">
             {' '}
