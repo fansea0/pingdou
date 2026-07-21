@@ -6,8 +6,8 @@ export function sampleImage(src: ImageData, gridSize: number): ImageData {
   if (gridSize < 1) throw new Error('gridSize must be >= 1');
 
   const aspect = src.height / src.width;
-  const outW = aspect >= 1 ? gridSize : Math.max(1, Math.round(gridSize / aspect));
-  const outH = aspect >= 1 ? Math.max(1, Math.round(gridSize * aspect)) : gridSize;
+  const outW = aspect >= 1 ? Math.max(1, Math.round(gridSize / aspect)) : gridSize;
+  const outH = aspect >= 1 ? gridSize : Math.max(1, Math.round(gridSize * aspect));
 
   const dst = new Uint8ClampedArray(outW * outH * 4);
   const xScale = src.width / outW;

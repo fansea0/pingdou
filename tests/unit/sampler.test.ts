@@ -19,10 +19,17 @@ describe('sampleImage', () => {
     expect(out.data[1]).toBe(100);
   });
 
-  it('handles aspect ratio difference', () => {
+  it('uses gridSize as the longest edge for a landscape image', () => {
     const src = makeImageData(200, 100, [128, 128, 128, 255]);
     const out = sampleImage(src, 50);
-    expect(out.width).toBe(100);
+    expect(out.width).toBe(50);
+    expect(out.height).toBe(25);
+  });
+
+  it('uses gridSize as the longest edge for a portrait image', () => {
+    const src = makeImageData(100, 200, [128, 128, 128, 255]);
+    const out = sampleImage(src, 50);
+    expect(out.width).toBe(25);
     expect(out.height).toBe(50);
   });
 
