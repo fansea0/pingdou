@@ -82,6 +82,36 @@ export function renderComposite(
     opts.fontPx,
     mask
   );
+
+  return renderCompositeFromBoardWithOptions(beadCanvas, indices, palette, mask, opts);
+}
+
+/**
+ * Render an existing bead board alongside the default legend table.
+ * 传入 mask 后，背景格子不参与豆子数合计；右侧 legend 表也只统计主体。
+ */
+export function renderCompositeFromBoard(
+  beadCanvas: HTMLCanvasElement,
+  indices: Uint8Array,
+  palette: Palette,
+  mask: BackgroundMask | null
+): HTMLCanvasElement {
+  return renderCompositeFromBoardWithOptions(
+    beadCanvas,
+    indices,
+    palette,
+    mask,
+    DEFAULT_COMPOSITE_OPTIONS
+  );
+}
+
+function renderCompositeFromBoardWithOptions(
+  beadCanvas: HTMLCanvasElement,
+  indices: Uint8Array,
+  palette: Palette,
+  mask: BackgroundMask | null,
+  opts: CompositeOptions
+): HTMLCanvasElement {
   const beadW = beadCanvas.width;
   const beadH = beadCanvas.height;
 

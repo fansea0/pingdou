@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { renderComposite, DEFAULT_COMPOSITE_OPTIONS } from '@/pipeline/composite';
+import {
+  renderComposite,
+  renderCompositeFromBoard,
+  DEFAULT_COMPOSITE_OPTIONS,
+} from '@/pipeline/composite';
 import type { Palette } from '@/types';
 
 const palette: Palette = [
@@ -23,6 +27,30 @@ function countRedPixels(
 }
 
 describe('renderComposite', () => {
+  it('places an existing board left of the default legend', () => {
+    const boardCanvas = document.createElement('canvas');
+    boardCanvas.width = 128;
+    boardCanvas.height = 128;
+    const boardCtx = boardCanvas.getContext('2d')!;
+    boardCtx.fillStyle = 'rgb(255,0,0)';
+    boardCtx.fillRect(0, 0, boardCanvas.width, boardCanvas.height);
+    const indices = new Uint8Array([0]);
+
+    const canvas = renderCompositeFromBoard(boardCanvas, indices, palette, null);
+    const ctx = canvas.getContext('2d')!;
+    const boardTop = Math.floor((canvas.height - boardCanvas.height) / 2);
+
+    expect(canvas.width).toBe(
+      boardCanvas.width + DEFAULT_COMPOSITE_OPTIONS.cellGap + 372
+    );
+    expect(canvas.height).toBeGreaterThanOrEqual(boardCanvas.height);
+    expect(Array.from(ctx.getImageData(8, boardTop + 8, 1, 1).data.slice(0, 3))).toEqual([
+      255,
+      0,
+      0,
+    ]);
+  });
+
   it('canvas width = beadW + cellGap + legendW', () => {
     const indices = new Uint8Array([0, 1, 2, 0, 1, 2, 0, 1, 2]);
     const canvas = renderComposite(indices, 3, 3, palette, { cellPx: 32 });
