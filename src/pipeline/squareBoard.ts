@@ -33,6 +33,6 @@ export function renderSquareBoard(
   ctx.drawImage(source, x, y);
   ctx.strokeStyle = 'rgb(51,51,51)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(0, 0, boardPx, boardPx);
+  ctx.strokeRect(0.5, 0.5, boardPx - 1, boardPx - 1);
   return canvas;
 }
