@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { canvasToBlob, triggerDownload } = vi.hoisted(() => ({
-  canvasToBlob: vi.fn(async () => new Blob(['board'], { type: 'image/png' })),
+const { applyWatermark, canvasToBlob, triggerDownload } = vi.hoisted(() => ({
+  applyWatermark: vi.fn(),
+  canvasToBlob: vi.fn<(canvas: HTMLCanvasElement) => Promise<Blob>>(
+    async () => new Blob(['board'], { type: 'image/png' })
+  ),
   triggerDownload: vi.fn(),
 }));
 
@@ -9,6 +12,8 @@ vi.mock('@/pipeline/exporter', () => ({
   canvasToBlob,
   triggerDownload,
 }));
+
+vi.mock('@/pipeline/watermark', () => ({ applyWatermark }));
 
 import { Pipeline } from '@/pipeline/pipeline';
 import type { Palette } from '@/types';
@@ -25,14 +30,21 @@ describe('Pipeline.exportMulti', () => {
   beforeEach(() => {
     canvasToBlob.mockClear();
     triggerDownload.mockClear();
+    applyWatermark.mockClear();
   });
 
-  it('exports the selected square board size instead of PipelineResult.gridSize', async () => {
+  it('exports the selected square board with its legend and watermark', async () => {
     const pipeline = new Pipeline();
     pipeline.init(palette);
     await pipeline.exportMulti(source(40, 20), 24, 4, [], false);
 
-    expect(canvasToBlob).toHaveBeenCalledWith(expect.objectContaining({ width: 96, height: 96 }));
+    const compositeCanvas = canvasToBlob.mock.calls[0][0];
+    expect(compositeCanvas).toEqual(expect.objectContaining({ width: expect.any(Number) }));
+    expect(compositeCanvas.width).toBeGreaterThan(96);
+    expect(applyWatermark).toHaveBeenCalledWith(compositeCanvas);
+    expect(applyWatermark.mock.invocationCallOrder[0]).toBeLessThan(
+      canvasToBlob.mock.invocationCallOrder[0]
+    );
     expect(triggerDownload).toHaveBeenCalledWith(expect.any(Blob), 'pingdou-4x4.png');
   });
 });

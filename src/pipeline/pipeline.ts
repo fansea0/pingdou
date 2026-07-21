@@ -1,9 +1,14 @@
 import { sampleImage } from './sampler';
 import { quantizeWithCanvas2D } from './quantizer.canvas';
 import { renderPaletteImage } from './renderer';
-import { renderComposite, DEFAULT_COMPOSITE_OPTIONS } from './composite';
+import {
+  renderComposite,
+  renderCompositeFromBoard,
+  DEFAULT_COMPOSITE_OPTIONS,
+} from './composite';
 import { renderSquareBoard } from './squareBoard';
 import { canvasToBlob, triggerDownload } from './exporter';
+import { applyWatermark } from './watermark';
 import {
   buildBackgroundMask,
   detectBackground,
@@ -195,7 +200,14 @@ export class Pipeline {
           12,
           mask
         );
-        const blob = await canvasToBlob(boardCanvas);
+        const compositeCanvas = renderCompositeFromBoard(
+          boardCanvas,
+          indices,
+          this.palette,
+          mask
+        );
+        applyWatermark(compositeCanvas);
+        const blob = await canvasToBlob(compositeCanvas);
         triggerDownload(blob, `pingdou-${gridSize}x${gridSize}.png`);
         success++;
         if (i < sizes.length - 1) {
