@@ -48,3 +48,30 @@ describe('Pipeline.exportMulti', () => {
     expect(triggerDownload).toHaveBeenCalledWith(expect.any(Blob), 'pingdou-4x4.png');
   });
 });
+
+describe('Pipeline.exportComposite', () => {
+  beforeEach(() => {
+    canvasToBlob.mockClear();
+    triggerDownload.mockClear();
+    applyWatermark.mockClear();
+  });
+
+  it('applies the watermark before serializing the composite', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    await pipeline.exportComposite({
+      indices: new Uint8Array([0]),
+      gridSize: 1,
+      outW: 1,
+      outH: 1,
+      token: 1,
+      mask: new Uint8Array(1),
+    });
+
+    const compositeCanvas = canvasToBlob.mock.calls[0][0];
+    expect(applyWatermark).toHaveBeenCalledWith(compositeCanvas);
+    expect(applyWatermark.mock.invocationCallOrder[0]).toBeLessThan(
+      canvasToBlob.mock.invocationCallOrder[0]
+    );
+  });
+});

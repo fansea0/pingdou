@@ -116,6 +116,7 @@ export class Pipeline {
     const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
     }, mask);
+    applyWatermark(canvas);
     const blob = await canvasToBlob(canvas);
     triggerDownload(blob, `pingdou-${outW}x${outH}-composite.png`);
   }
