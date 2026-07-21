@@ -179,15 +179,21 @@ export function detectBackground(
 
 /**
  * Keep only the background-mask pixels that belong to an 8-connected
- * component touching any of the four image borders.
+ * component connected to one of the four image corners.
  *
  * Use case: when a subject has internal white regions (eyes, clothing,
  * negative space) on a solid-color background, `buildBackgroundMask`
  * catches those interior pixels because they share the bg color. This
- * filter keeps only the OUTER (border-touching) component so the
+ * filter keeps only the OUTER (corner-connected) component so the
  * interior pixels are correctly treated as foreground.
+ * Starting from corners rather than every border pixel also preserves a
+ * white subject region that reaches a cropped image edge behind its outline.
  *
- * Pure function: never mutates `mask`. O(W * H) via 8-connected BFS.
+ * We use 4-connectivity deliberately: with diagonal connectivity, a
+ * background-colored interior can leak through the corners of a diagonal
+ * outline and be removed with the outer background.
+ *
+ * Pure function: never mutates `mask`. O(W * H) via 4-connected BFS.
  */
 export function filterMaskByBorderConnectivity(
   mask: Uint8Array,
@@ -196,6 +202,7 @@ export function filterMaskByBorderConnectivity(
 ): Uint8Array {
   const out = new Uint8Array(mask.length);
   if (mask.length === 0 || width === 0 || height === 0) return out;
+  if (width === 1 || height === 1) return new Uint8Array(mask);
 
   const visited = new Uint8Array(mask.length);
   const queue: number[] = [];
@@ -207,19 +214,15 @@ export function filterMaskByBorderConnectivity(
       queue.push(idx);
     }
   };
-  for (let x = 0; x < width; x++) {
-    pushIfMasked(x);
-    pushIfMasked((height - 1) * width + x);
-  }
-  for (let y = 0; y < height; y++) {
-    pushIfMasked(y * width);
-    pushIfMasked(y * width + (width - 1));
-  }
+  pushIfMasked(0);
+  pushIfMasked(width - 1);
+  pushIfMasked((height - 1) * width);
+  pushIfMasked(height * width - 1);
 
   const DIRS = [
-    [-1, -1], [0, -1], [1, -1],
-    [-1, 0],           [1, 0],
-    [-1, 1],  [0, 1],  [1, 1],
+    [0, -1],
+    [-1, 0], [1, 0],
+    [0, 1],
   ];
 
   let head = 0;

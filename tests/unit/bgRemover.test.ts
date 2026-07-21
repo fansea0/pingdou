@@ -233,6 +233,36 @@ describe('filterMaskByBorderConnectivity', () => {
     expect(out[3 * 6 + 3]).toBe(0);
   });
 
+  it('keeps an interior region enclosed by a diagonal outline', () => {
+    // A one-pixel diamond outline has diagonal edges. Treating diagonal
+    // background cells as connected lets the outer background leak through
+    // the outline's corners and incorrectly removes the white interior.
+    const m = new Uint8Array(5 * 5).fill(1);
+    for (const [x, y] of [[2, 0], [1, 1], [3, 1], [0, 2], [4, 2], [1, 3], [3, 3], [2, 4]]) {
+      m[y * 5 + x] = 0;
+    }
+
+    const out = filterMaskByBorderConnectivity(m, 5, 5);
+
+    expect(out[2 * 5 + 2]).toBe(0);
+    expect(out[0 * 5 + 0]).toBe(1);
+  });
+
+  it('keeps a white subject region that reaches an image edge behind an outline', () => {
+    // The white shirt reaches the cropped bottom edge, but dark jacket edges
+    // separate it from the outer background. Seeding every edge cell treats
+    // the shirt as background before connectivity can distinguish it.
+    const m = new Uint8Array(7 * 7).fill(1);
+    for (const [x, y] of [[1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [1, 5], [5, 5], [1, 6], [5, 6]]) {
+      m[y * 7 + x] = 0;
+    }
+
+    const out = filterMaskByBorderConnectivity(m, 7, 7);
+
+    expect(out[5 * 7 + 3]).toBe(0);
+    expect(out[0]).toBe(1);
+  });
+
   it('handles empty mask', () => {
     const m = new Uint8Array(0);
     const out = filterMaskByBorderConnectivity(m, 0, 0);
