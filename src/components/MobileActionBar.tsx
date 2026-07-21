@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './MobileActionBar.css';
+import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
 
 const GRID_PRESETS = [20, 30, 50, 75, 100, 150, 200, 300] as const;
 const LOG_MIN = Math.log(GRID_PRESETS[0]);
@@ -30,6 +31,7 @@ function nearestPreset(rawValue: number): number {
 interface Props {
   gridSize: number;
   beanCount: number;
+  estimateLabel?: string | null;
   removeBackground: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
@@ -43,6 +45,7 @@ interface Props {
 export function MobileActionBar({
   gridSize,
   beanCount,
+  estimateLabel,
   removeBackground,
   onGridSizeChange,
   onRemoveBackgroundChange,
@@ -172,6 +175,21 @@ export function MobileActionBar({
         <span className="mobile-grid-value">{gridSize}</span>
       </div>
 
+      <div className="mobile-board-size-options" aria-label="快捷板子尺寸">
+        {BOARD_SIZE_PRESETS.map(size => (
+          <button
+            key={size}
+            type="button"
+            className={`mobile-board-size-option ${gridSize === size ? 'active' : ''}`}
+            aria-label={`${size} × ${size} 板子`}
+            aria-pressed={gridSize === size}
+            onClick={() => onGridSizeChange(size)}
+          >
+            {size} × {size}
+          </button>
+        ))}
+      </div>
+
       <label className="mobile-toggle-row">
         <input
           type="checkbox"
@@ -186,6 +204,7 @@ export function MobileActionBar({
           {beanCount > 0 ? (
             <>
               <strong>{beanCount.toLocaleString()}</strong> 颗
+              {estimateLabel && <span className="mobile-assembly-time"> · {estimateLabel}</span>}
               {removeBackground && <span className="bean-count-removed"> · 已去背景</span>}
             </>
           ) : (

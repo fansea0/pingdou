@@ -97,6 +97,29 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .mobile-board-size-options {
+    display: flex;
+    gap: 6px;
+    padding-left: 30px;
+  }
+
+  .mobile-board-size-option {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface-alt);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 7px;
+  }
+
+  .mobile-board-size-option.active {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+  }
+
   /* === Toggle row: switch with hint === */
   .mobile-toggle-row {
     display: flex;
@@ -141,6 +164,10 @@
     color: var(--color-accent);
     font-size: 10px;
     margin-left: 2px;
+  }
+  .mobile-assembly-time {
+    color: var(--color-text-muted);
+    font-size: 10px;
   }
 
   .mobile-buttons {

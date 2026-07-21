@@ -11,6 +11,7 @@ import { MobileActionBar } from '@/components/MobileActionBar';
 import { ProductShowcase } from '@/components/ProductShowcase';
 import { Disclaimer } from '@/components/Disclaimer';
 import { computeLegend } from '@/pipeline/legend';
+import { estimateAssemblyHours, formatAssemblyHours } from '@/pipeline/timeEstimate';
 import { usePageView, trackImageExport } from '@/hooks/useTracking';
 
 const PREVIEW_CELL_PX = 24;
@@ -41,6 +42,10 @@ export function App() {
   }, [result]);
 
   const totalCells = result ? result.outW * result.outH : 0;
+  const estimateLabel = useMemo(
+    () => formatAssemblyHours(estimateAssemblyHours(beanCount)),
+    [beanCount]
+  );
 
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
@@ -101,6 +106,7 @@ export function App() {
             gridSize={gridSize}
             beanCount={beanCount}
             totalCells={totalCells}
+            estimateLabel={estimateLabel}
             removeBackground={removeBackground}
             onGridSizeChange={n => {
               setGridSize(n);
@@ -141,6 +147,7 @@ export function App() {
       <MobileActionBar
         gridSize={gridSize}
         beanCount={beanCount}
+        estimateLabel={estimateLabel}
         removeBackground={removeBackground}
         onGridSizeChange={n => {
           setGridSize(n);

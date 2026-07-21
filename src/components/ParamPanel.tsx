@@ -5,7 +5,7 @@ interface Props {
   gridSize: number;
   beanCount: number;
   totalCells: number;
-  estimateLabel: string | null;
+  estimateLabel?: string | null;
   removeBackground: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
