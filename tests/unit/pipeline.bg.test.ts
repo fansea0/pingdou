@@ -102,3 +102,86 @@ describe('Pipeline.process — auto background removal', () => {
     }
   });
 });
+
+describe('Pipeline.process — internal-white preservation', () => {
+  it('keeps an internal white region inside the subject (eyes/negative space)', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    const W = 200, H = 200;
+    const arr = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < arr.length; i += 4) {
+      arr[i] = 255; arr[i + 1] = 255; arr[i + 2] = 255; arr[i + 3] = 255;
+    }
+    for (let y = 50; y < 150; y++) {
+      for (let x = 50; x < 150; x++) {
+        const i = (y * W + x) * 4;
+        arr[i] = 220; arr[i + 1] = 40; arr[i + 2] = 40;
+      }
+    }
+    for (let y = 90; y < 110; y++) {
+      for (let x = 90; x < 110; x++) {
+        const i = (y * W + x) * 4;
+        arr[i] = 255; arr[i + 1] = 255; arr[i + 2] = 255;
+      }
+    }
+    const src = new ImageData(arr, W, H);
+
+    const r = await runProcess(pipeline, src, true);
+
+    const cellIdx = (cy: number, cx: number): number => cy * r.outW + cx;
+    const cellAtImg = (imgX: number, imgY: number): { gx: number; gy: number } => ({
+      gx: Math.floor((imgX / W) * r.outW),
+      gy: Math.floor((imgY / H) * r.outH),
+    });
+    const eye = cellAtImg(100, 100);
+    const body = cellAtImg(60, 60);
+    const outerBg = cellAtImg(5, 5);
+
+    expect(r.mask[cellIdx(eye.gy, eye.gx)]).toBe(0);
+    expect(r.mask[cellIdx(body.gy, body.gx)]).toBe(0);
+    expect(r.mask[cellIdx(outerBg.gy, outerBg.gx)]).toBe(1);
+  });
+});
+
+describe('Pipeline.process — thin outline preservation', () => {
+  it('keeps a white interior when the outline is thinner than one sampled cell', async () => {
+    // Reproduces a real cartoon: 1-pixel black outline around a white interior,
+    // on a white background. At gridSize=30 on a 600x600 source, each sampled
+    // cell is 20x20 source pixels. The 1px outline occupies 1 row of one
+    // sampled cell. Box-averaging on the sampled grid dilutes the outline to
+    // ~242 grey, which is still within tolerance of white bg — so the
+    // sampled-grid mask has NO outline at all and the white interior is
+    // border-connected through the leak.
+    //
+    // The fix: build the mask at source resolution where the outline pixels
+    // stay black, then downsample with "all pixels must be bg" logic so the
+    // outline cells stay non-bg and break the connectivity.
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    const W = 600, H = 600;
+    const arr = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < arr.length; i += 4) {
+      arr[i] = 255; arr[i + 1] = 255; arr[i + 2] = 255; arr[i + 3] = 255; // white bg + white interior
+    }
+    // 1-pixel black outline at 200..400 x 200..400 (top, bottom, left, right)
+    for (let i = 200; i < 400; i++) {
+      const top = (200 * W + i) * 4;
+      const bot = (399 * W + i) * 4;
+      const lft = (i * W + 200) * 4;
+      const rgt = (i * W + 399) * 4;
+      for (const p of [top, bot, lft, rgt]) {
+        arr[p] = 0; arr[p + 1] = 0; arr[p + 2] = 0;
+      }
+    }
+    const src = new ImageData(arr, W, H);
+
+    const r = await runProcess(pipeline, src, true);
+
+    // Center of the white interior should NOT be masked.
+    const cx = Math.floor(r.outW / 2);
+    const cy = Math.floor(r.outH / 2);
+    expect(r.mask[cy * r.outW + cx]).toBe(0);
+    // Outer bg (corner) should still be masked.
+    expect(r.mask[0]).toBe(1);
+  });
+});

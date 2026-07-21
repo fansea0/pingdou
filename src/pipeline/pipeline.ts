@@ -3,7 +3,13 @@ import { quantizeWithCanvas2D } from './quantizer.canvas';
 import { renderPaletteImage } from './renderer';
 import { renderComposite, DEFAULT_COMPOSITE_OPTIONS } from './composite';
 import { canvasToBlob, triggerDownload } from './exporter';
-import { buildBackgroundMask, detectBackground } from './bgRemover';
+import {
+  buildBackgroundMask,
+  detectBackground,
+  downsampleMaskByAll,
+  filterMaskByBorderConnectivity,
+} from './bgRemover';
+import { applyWatermark } from './watermark';
 import type {
   Palette,
   ProcessParams,
@@ -45,13 +51,31 @@ export class Pipeline {
       if (params.removeBackground) {
         const detected = detectBackground(src, sampled);
         if (detected) {
-          const { mask: bgMask, bgCount } = buildBackgroundMask(sampled, detected.bg);
-          bgMask.forEach((v, i) => {
+          // Build mask at source resolution so thin outlines (1-2 px) keep
+          // their true dark color. Then AND-downsample to grid: a cell is
+          // bg only if EVERY source pixel in its area is bg, so any cell
+          // touching the outline stays non-bg and breaks the leak.
+          const { mask: srcMask, bgCount: srcBgCount } = buildBackgroundMask(
+            src,
+            detected.bg
+          );
+          const gridMask = downsampleMaskByAll(
+            srcMask,
+            src.width,
+            src.height,
+            outW,
+            outH
+          );
+          const filtered = filterMaskByBorderConnectivity(gridMask, outW, outH);
+          let kept = 0;
+          filtered.forEach((v, i) => {
+            if (v) kept++;
             mask[i] = v;
           });
           console.info(
             `[pingdou] bg detected = rgb(${detected.bg.join(',')}), ` +
-              `removed ${bgCount}/${n} cells`
+              `kept ${kept}/${n} border-connected cells ` +
+              `(src ${srcBgCount}/${src.width * src.height} → grid ${gridMask.reduce((s, v) => s + v, 0)}/${n})`
           );
         } else {
           console.warn(
@@ -133,13 +157,27 @@ export class Pipeline {
         if (removeBackground) {
           const detected = detectBackground(src, sampled);
           if (detected) {
-            const { mask: bgMask, bgCount } = buildBackgroundMask(sampled, detected.bg);
-            bgMask.forEach((v, j) => {
+            const { mask: srcMask, bgCount: srcBgCount } = buildBackgroundMask(
+              src,
+              detected.bg
+            );
+            const gridMask = downsampleMaskByAll(
+              srcMask,
+              src.width,
+              src.height,
+              outW,
+              outH
+            );
+            const filtered = filterMaskByBorderConnectivity(gridMask, outW, outH);
+            let kept = 0;
+            filtered.forEach((v, j) => {
+              if (v) kept++;
               mask[j] = v;
             });
             console.info(
               `[pingdou] bg detected = rgb(${detected.bg.join(',')}), ` +
-                `removed ${bgCount}/${outW * outH} cells (gridSize=${gridSize})`
+                `kept ${kept}/${outW * outH} border-connected cells ` +
+                `(src ${srcBgCount}/${src.width * src.height} → grid ${gridMask.reduce((s, v) => s + v, 0)}/${outW * outH}, gridSize=${gridSize})`
             );
           } else {
             console.warn(
@@ -155,6 +193,7 @@ export class Pipeline {
           { cellPx: exportCellPx },
           mask
         );
+        applyWatermark(compositeCanvas);
         const blob = await canvasToBlob(compositeCanvas);
         triggerDownload(blob, `pingdou-${outW}x${outH}.png`);
         success++;

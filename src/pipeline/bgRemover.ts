@@ -176,3 +176,117 @@ export function detectBackground(
     null
   );
 }
+
+/**
+ * Keep only the background-mask pixels that belong to an 8-connected
+ * component connected to one of the four image corners.
+ *
+ * Use case: when a subject has internal white regions (eyes, clothing,
+ * negative space) on a solid-color background, `buildBackgroundMask`
+ * catches those interior pixels because they share the bg color. This
+ * filter keeps only the OUTER (corner-connected) component so the
+ * interior pixels are correctly treated as foreground.
+ * Starting from corners rather than every border pixel also preserves a
+ * white subject region that reaches a cropped image edge behind its outline.
+ *
+ * We use 4-connectivity deliberately: with diagonal connectivity, a
+ * background-colored interior can leak through the corners of a diagonal
+ * outline and be removed with the outer background.
+ *
+ * Pure function: never mutates `mask`. O(W * H) via 4-connected BFS.
+ */
+export function filterMaskByBorderConnectivity(
+  mask: Uint8Array,
+  width: number,
+  height: number
+): Uint8Array {
+  const out = new Uint8Array(mask.length);
+  if (mask.length === 0 || width === 0 || height === 0) return out;
+  if (width === 1 || height === 1) return new Uint8Array(mask);
+
+  const visited = new Uint8Array(mask.length);
+  const queue: number[] = [];
+
+  const pushIfMasked = (idx: number): void => {
+    if (mask[idx] === 1 && !visited[idx]) {
+      visited[idx] = 1;
+      out[idx] = 1;
+      queue.push(idx);
+    }
+  };
+  pushIfMasked(0);
+  pushIfMasked(width - 1);
+  pushIfMasked((height - 1) * width);
+  pushIfMasked(height * width - 1);
+
+  const DIRS = [
+    [0, -1],
+    [-1, 0], [1, 0],
+    [0, 1],
+  ];
+
+  let head = 0;
+  while (head < queue.length) {
+    const idx = queue[head++];
+    const cx = idx % width;
+    const cy = (idx - cx) / width;
+    for (const [dx, dy] of DIRS) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+      const nIdx = ny * width + nx;
+      if (visited[nIdx] || mask[nIdx] !== 1) continue;
+      visited[nIdx] = 1;
+      out[nIdx] = 1;
+      queue.push(nIdx);
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Downsample a source-resolution bg mask to grid resolution using AND
+ * semantics: an output cell is bg (1) ONLY if every source pixel inside
+ * the cell's source-area is bg (1).
+ *
+ * Why: a sampled cell (e.g. 20×20 source pixels) box-averages colors, so
+ * a 1-pixel black outline gets diluted to mid-grey and falls within bg
+ * tolerance. The sampled-grid mask then has NO outline, and an interior
+ * white region "leaks" through the diluted outline into the bg. Building
+ * the mask at source resolution keeps outline pixels at their true black,
+ * and AND-downsampling guarantees that any cell with even one non-bg
+ * source pixel (the outline) is treated as foreground at grid scale.
+ *
+ * Use together with `buildBackgroundMask(src, bg)` to get a clean
+ * grid-resolution mask suitable for `filterMaskByBorderConnectivity`.
+ */
+export function downsampleMaskByAll(
+  srcMask: Uint8Array,
+  srcW: number,
+  srcH: number,
+  outW: number,
+  outH: number
+): Uint8Array {
+  const out = new Uint8Array(outW * outH);
+  if (outW === 0 || outH === 0) return out;
+  const xScale = srcW / outW;
+  const yScale = srcH / outH;
+  for (let y = 0; y < outH; y++) {
+    for (let x = 0; x < outW; x++) {
+      const x0 = Math.floor(x * xScale);
+      const y0 = Math.floor(y * yScale);
+      const x1 = Math.min(srcW, Math.ceil((x + 1) * xScale));
+      const y1 = Math.min(srcH, Math.ceil((y + 1) * yScale));
+      let allBg = true;
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) {
+          if (srcMask[sy * srcW + sx] !== 1) { allBg = false; break; }
+        }
+        if (!allBg) break;
+      }
+      out[y * outW + x] = allBg ? 1 : 0;
+    }
+  }
+  return out;
+}

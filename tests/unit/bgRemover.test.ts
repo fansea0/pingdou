@@ -3,6 +3,8 @@ import {
   buildBackgroundMask,
   detectBackground,
   DEFAULT_TOLERANCE,
+  filterMaskByBorderConnectivity,
+  downsampleMaskByAll,
 } from '@/pipeline/bgRemover';
 import type { BackgroundMask } from '@/types';
 
@@ -197,5 +199,128 @@ describe('detectBackground + buildBackgroundMask integration', () => {
     }
     const img = new ImageData(arr, W, H);
     expect(detect(img)).toBeNull();
+  });
+});
+
+describe('filterMaskByBorderConnectivity', () => {
+  it('keeps all when mask is fully 1', () => {
+    const m = new Uint8Array(5 * 5).fill(1);
+    const out = filterMaskByBorderConnectivity(m, 5, 5);
+    expect(Array.from(out)).toEqual(Array.from(m));
+  });
+
+  it('clears interior isolated island (no border contact)', () => {
+    const m = new Uint8Array(5 * 5);
+    m[2 * 5 + 2] = 1;
+    const out = filterMaskByBorderConnectivity(m, 5, 5);
+    expect(out.every(v => v === 0)).toBe(true);
+  });
+
+  it('keeps border-connected ring, clears interior island', () => {
+    const m = new Uint8Array(6 * 6);
+    for (let i = 0; i < 6; i++) {
+      m[i] = 1;
+      m[5 * 6 + i] = 1;
+      m[i * 6] = 1;
+      m[i * 6 + 5] = 1;
+    }
+    m[3 * 6 + 3] = 1;
+    const out = filterMaskByBorderConnectivity(m, 6, 6);
+    expect(out[0]).toBe(1);
+    expect(out[5 * 6 + 5]).toBe(1);
+    expect(out[3 * 6 + 0]).toBe(1);
+    expect(out[0 * 6 + 3]).toBe(1);
+    expect(out[3 * 6 + 3]).toBe(0);
+  });
+
+  it('keeps an interior region enclosed by a diagonal outline', () => {
+    // A one-pixel diamond outline has diagonal edges. Treating diagonal
+    // background cells as connected lets the outer background leak through
+    // the outline's corners and incorrectly removes the white interior.
+    const m = new Uint8Array(5 * 5).fill(1);
+    for (const [x, y] of [[2, 0], [1, 1], [3, 1], [0, 2], [4, 2], [1, 3], [3, 3], [2, 4]]) {
+      m[y * 5 + x] = 0;
+    }
+
+    const out = filterMaskByBorderConnectivity(m, 5, 5);
+
+    expect(out[2 * 5 + 2]).toBe(0);
+    expect(out[0 * 5 + 0]).toBe(1);
+  });
+
+  it('keeps a white subject region that reaches an image edge behind an outline', () => {
+    // The white shirt reaches the cropped bottom edge, but dark jacket edges
+    // separate it from the outer background. Seeding every edge cell treats
+    // the shirt as background before connectivity can distinguish it.
+    const m = new Uint8Array(7 * 7).fill(1);
+    for (const [x, y] of [[1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [1, 5], [5, 5], [1, 6], [5, 6]]) {
+      m[y * 7 + x] = 0;
+    }
+
+    const out = filterMaskByBorderConnectivity(m, 7, 7);
+
+    expect(out[5 * 7 + 3]).toBe(0);
+    expect(out[0]).toBe(1);
+  });
+
+  it('handles empty mask', () => {
+    const m = new Uint8Array(0);
+    const out = filterMaskByBorderConnectivity(m, 0, 0);
+    expect(out.length).toBe(0);
+  });
+
+  it('handles 1×1 mask (single pixel is itself on the border)', () => {
+    const m = new Uint8Array([1]);
+    const out = filterMaskByBorderConnectivity(m, 1, 1);
+    expect(Array.from(out)).toEqual([1]);
+  });
+
+  it('handles 1×N row: every pixel touches the degenerate column border', () => {
+    // In a 1×N image the left column equals the right column, so every
+    // pixel touches that border. The function keeps all masked pixels.
+    const m = new Uint8Array([1, 0, 0, 0]);
+    const out = filterMaskByBorderConnectivity(m, 1, 4);
+    expect(Array.from(out)).toEqual([1, 0, 0, 0]);
+    const m2 = new Uint8Array([0, 0, 1, 0]);
+    const out2 = filterMaskByBorderConnectivity(m2, 1, 4);
+    expect(Array.from(out2)).toEqual([0, 0, 1, 0]);
+  });
+
+  it('returns a new Uint8Array (does not mutate input)', () => {
+    const m = new Uint8Array(2 * 2);
+    m[0] = 1;
+    const copy = new Uint8Array(m);
+    const out = filterMaskByBorderConnectivity(m, 2, 2);
+    expect(Array.from(m)).toEqual(Array.from(copy));
+    expect(out === m).toBe(false);
+  });
+});
+
+describe('downsampleMaskByAll', () => {
+  it('keeps cell as bg only if every source pixel in its area is bg', () => {
+    // 6x6 source → 3x3 grid (each cell = 2x2 source pixels).
+    // Cell 0: all bg → kept as bg.
+    // Cell 1: 1 of 4 source pixels is not bg → NOT bg.
+    // Cell 4 (center): all bg → kept as bg.
+    const srcMask = new Uint8Array(36).fill(1);
+    srcMask[1 * 6 + 3] = 0; // one non-bg pixel in cell 1's area (rows 2-3, cols 2-3)
+    const out = downsampleMaskByAll(srcMask, 6, 6, 3, 3);
+    expect(out[0 * 3 + 0]).toBe(1); // cell 0: all bg
+    expect(out[0 * 3 + 1]).toBe(0); // cell 1: 1 non-bg pixel → AND = 0
+    expect(out[1 * 3 + 1]).toBe(1); // cell 4 (center): all bg
+  });
+
+  it('handles empty output dimensions', () => {
+    expect(downsampleMaskByAll(new Uint8Array(0), 0, 0, 0, 0).length).toBe(0);
+  });
+
+  it('returns all-zero when source mask is all-zero', () => {
+    const out = downsampleMaskByAll(new Uint8Array(100), 10, 10, 5, 5);
+    expect(out.every(v => v === 0)).toBe(true);
+  });
+
+  it('returns all-one when source mask is all-one', () => {
+    const out = downsampleMaskByAll(new Uint8Array(100).fill(1), 10, 10, 5, 5);
+    expect(out.every(v => v === 1)).toBe(true);
   });
 });
