@@ -79,7 +79,7 @@ export function App() {
     setExporting(true);
     setExportFlash('idle');
     try {
-      const out = await exportMulti(32, []);
+      const out = await exportMulti(32, gridSize, []);
       if (out && out.success > 0) {
         trackImageExport();
         setExportFlash('done');

@@ -41,14 +41,18 @@ export function usePipeline(palette: Palette | null) {
     }
   }, [throttledProcess]);
 
-  const exportMulti = useCallback(async (exportCellPx: number, extraGridSizes: number[]) => {
+  const exportMulti = useCallback(async (
+    exportCellPx: number,
+    selectedGridSize: number,
+    extraGridSizes: number[]
+  ) => {
     if (!pipelineRef.current || !result || !srcRef.current) return null;
     setStatus('exporting');
     try {
       const out = await pipelineRef.current.exportMulti(
         srcRef.current,
-        result,
         exportCellPx,
+        selectedGridSize,
         extraGridSizes,
         removeBgRef.current
       );

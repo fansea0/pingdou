@@ -2,6 +2,7 @@ import { sampleImage } from './sampler';
 import { quantizeWithCanvas2D } from './quantizer.canvas';
 import { renderPaletteImage } from './renderer';
 import { renderComposite, DEFAULT_COMPOSITE_OPTIONS } from './composite';
+import { renderSquareBoard } from './squareBoard';
 import { canvasToBlob, triggerDownload } from './exporter';
 import {
   buildBackgroundMask,
@@ -9,7 +10,6 @@ import {
   downsampleMaskByAll,
   filterMaskByBorderConnectivity,
 } from './bgRemover';
-import { applyWatermark } from './watermark';
 import type {
   Palette,
   ProcessParams,
@@ -135,14 +135,14 @@ export class Pipeline {
    */
   async exportMulti(
     src: ImageData,
-    currentResult: PipelineResult,
     exportCellPx: number,
+    selectedGridSize: number,
     extraGridSizes: number[],
     removeBackground: boolean
   ): Promise<{ success: number; failed: number }> {
     if (!this.palette) throw new Error('Pipeline not initialized');
 
-    const sizes = [currentResult.gridSize, ...extraGridSizes.filter(n => n !== currentResult.gridSize)];
+    const sizes = [selectedGridSize, ...extraGridSizes.filter(n => n !== selectedGridSize)];
     let success = 0;
     let failed = 0;
 
@@ -185,17 +185,18 @@ export class Pipeline {
             );
           }
         }
-        const compositeCanvas = renderComposite(
+        const boardCanvas = renderSquareBoard(
           indices,
           outW,
           outH,
           this.palette,
-          { cellPx: exportCellPx },
+          gridSize,
+          exportCellPx,
+          12,
           mask
         );
-        applyWatermark(compositeCanvas);
-        const blob = await canvasToBlob(compositeCanvas);
-        triggerDownload(blob, `pingdou-${outW}x${outH}.png`);
+        const blob = await canvasToBlob(boardCanvas);
+        triggerDownload(blob, `pingdou-${gridSize}x${gridSize}.png`);
         success++;
         if (i < sizes.length - 1) {
           await new Promise(r => setTimeout(r, 100));
