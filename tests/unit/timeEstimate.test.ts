@@ -8,9 +8,9 @@ describe('timeEstimate', () => {
     expect(estimateAssemblyHours(Number.NaN)).toBeNull();
   });
 
-  it('calculates hours from 250 beads per hour', () => {
-    expect(estimateAssemblyHours(250)).toBe(1);
-    expect(estimateAssemblyHours(375)).toBe(1.5);
+  it('calculates hours from 600 beads per hour', () => {
+    expect(estimateAssemblyHours(600)).toBe(1);
+    expect(estimateAssemblyHours(900)).toBe(1.5);
   });
 
   it('formats a one-decimal Chinese hour label', () => {
