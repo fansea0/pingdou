@@ -1,15 +1,9 @@
-import type { Palette, RGB } from '@/types';
+import type { ColorSimplificationStats, Palette, RGB } from '@/types';
 
 export const RARE_COLOR_COUNT_LIMIT = 10;
 export const MAX_SIMILAR_COLOR_DELTA_E = 8;
 
 export type Lab = readonly [number, number, number];
-
-export interface ColorSimplificationStats {
-  readonly beforeColorCount: number;
-  readonly afterColorCount: number;
-  readonly mergedColorCount: number;
-}
 
 export interface ColorSimplificationResult {
   readonly indices: Uint8Array;

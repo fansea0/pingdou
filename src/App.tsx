@@ -50,7 +50,7 @@ export function App() {
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
     if (sample && palette && status === 'idle') {
-      process(sample, { gridSize, removeBackground });
+      process(sample, { gridSize, removeBackground, simplifyColors: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample, palette, status]);
@@ -101,7 +101,7 @@ export function App() {
 
       <main className="layout-3col">
         <aside className="left">
-          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground })} />
+          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors: false })} />
           <ParamPanel
             gridSize={gridSize}
             beanCount={beanCount}
@@ -110,11 +110,11 @@ export function App() {
             removeBackground={removeBackground}
             onGridSizeChange={n => {
               setGridSize(n);
-              reprocess({ gridSize: n, removeBackground });
+              reprocess({ gridSize: n, removeBackground, simplifyColors: false });
             }}
             onRemoveBackgroundChange={b => {
               setRemoveBackground(b);
-              reprocess({ gridSize, removeBackground: b });
+              reprocess({ gridSize, removeBackground: b, simplifyColors: false });
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
@@ -151,13 +151,13 @@ export function App() {
         removeBackground={removeBackground}
         onGridSizeChange={n => {
           setGridSize(n);
-          reprocess({ gridSize: n, removeBackground });
+          reprocess({ gridSize: n, removeBackground, simplifyColors: false });
         }}
         onRemoveBackgroundChange={b => {
           setRemoveBackground(b);
-          reprocess({ gridSize, removeBackground: b });
+          reprocess({ gridSize, removeBackground: b, simplifyColors: false });
         }}
-        onLoad={(data) => process(data, { gridSize, removeBackground })}
+        onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors: false })}
         onExport={handleExport}
         canExport={!!result}
         exporting={exporting}

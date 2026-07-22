@@ -9,7 +9,7 @@ export function usePipeline(palette: Palette | null) {
   const [status, setStatus] = useState<UIStatus>('idle');
   const [error, setError] = useState<Error | null>(null);
   const srcRef = useRef<ImageData | null>(null);
-  const removeBgRef = useRef(false);
+  const settingsRef = useRef({ removeBackground: false, simplifyColors: false });
 
   useEffect(() => {
     if (!palette) return;
@@ -20,7 +20,10 @@ export function usePipeline(palette: Palette | null) {
   const throttledProcess = useThrottle(async (src: ImageData, params: ProcessParams) => {
     if (!pipelineRef.current) return;
     try {
-      removeBgRef.current = params.removeBackground;
+      settingsRef.current = {
+        removeBackground: params.removeBackground,
+        simplifyColors: params.simplifyColors,
+      };
       await pipelineRef.current.process(src, params, setStatus, setResult);
       setError(null);
     } catch (e) {
@@ -30,13 +33,19 @@ export function usePipeline(palette: Palette | null) {
 
   const process = useCallback((src: ImageData, params: ProcessParams) => {
     srcRef.current = src;
-    removeBgRef.current = params.removeBackground;
+    settingsRef.current = {
+      removeBackground: params.removeBackground,
+      simplifyColors: params.simplifyColors,
+    };
     return throttledProcess(src, params);
   }, [throttledProcess]);
 
   const reprocess = useCallback((params: ProcessParams) => {
     if (srcRef.current) {
-      removeBgRef.current = params.removeBackground;
+      settingsRef.current = {
+        removeBackground: params.removeBackground,
+        simplifyColors: params.simplifyColors,
+      };
       throttledProcess(srcRef.current, params);
     }
   }, [throttledProcess]);
@@ -54,7 +63,8 @@ export function usePipeline(palette: Palette | null) {
         exportCellPx,
         selectedGridSize,
         extraGridSizes,
-        removeBgRef.current
+        settingsRef.current.removeBackground,
+        settingsRef.current.simplifyColors
       );
       return out;
     } finally {
