@@ -33,8 +33,10 @@ interface Props {
   beanCount: number;
   estimateLabel?: string | null;
   removeBackground: boolean;
+  simplifyColors: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
+  onSimplifyColorsChange: (enabled: boolean) => void;
   onLoad: (imageData: ImageData) => void;
   onExport: () => void;
   canExport: boolean;
@@ -47,8 +49,10 @@ export function MobileActionBar({
   beanCount,
   estimateLabel,
   removeBackground,
+  simplifyColors,
   onGridSizeChange,
   onRemoveBackgroundChange,
+  onSimplifyColorsChange,
   onLoad,
   onExport,
   canExport,
@@ -197,6 +201,15 @@ export function MobileActionBar({
           onChange={e => onRemoveBackgroundChange(e.target.checked)}
         />
         自动去纯色背景
+      </label>
+
+      <label className="mobile-toggle-row">
+        <input
+          type="checkbox"
+          checked={simplifyColors}
+          onChange={e => onSimplifyColorsChange(e.target.checked)}
+        />
+        自动简化颜色 · 合并少于 10 颗的相近色
       </label>
 
       <div className="mobile-action-row">

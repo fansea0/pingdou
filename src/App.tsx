@@ -13,8 +13,14 @@ import { Disclaimer } from '@/components/Disclaimer';
 import { computeLegend } from '@/pipeline/legend';
 import { estimateAssemblyHours, formatAssemblyHours } from '@/pipeline/timeEstimate';
 import { usePageView, trackImageExport } from '@/hooks/useTracking';
+import type { ColorSimplificationStats } from '@/types';
 
 const PREVIEW_CELL_PX = 24;
+const EMPTY_COLOR_SIMPLIFICATION: ColorSimplificationStats = Object.freeze({
+  beforeColorCount: 0,
+  afterColorCount: 0,
+  mergedColorCount: 0,
+});
 
 export function App() {
   const { palette, error: paletteError } = usePalette();
@@ -142,7 +148,10 @@ export function App() {
         </section>
 
         <aside className="right">
-          <ColorLegend legend={legend} />
+          <ColorLegend
+            legend={legend}
+            colorSimplification={result?.colorSimplification ?? EMPTY_COLOR_SIMPLIFICATION}
+          />
         </aside>
       </main>
 
@@ -155,6 +164,7 @@ export function App() {
         beanCount={beanCount}
         estimateLabel={estimateLabel}
         removeBackground={removeBackground}
+        simplifyColors={simplifyColors}
         onGridSizeChange={n => {
           setGridSize(n);
           reprocess({ gridSize: n, removeBackground, simplifyColors });
@@ -162,6 +172,10 @@ export function App() {
         onRemoveBackgroundChange={b => {
           setRemoveBackground(b);
           reprocess({ gridSize, removeBackground: b, simplifyColors });
+        }}
+        onSimplifyColorsChange={enabled => {
+          setSimplifyColors(enabled);
+          reprocess({ gridSize, removeBackground, simplifyColors: enabled });
         }}
         onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors })}
         onExport={handleExport}
