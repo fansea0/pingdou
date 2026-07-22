@@ -13,6 +13,9 @@ const unchangedColors: ColorSimplificationStats = {
   beforeColorCount: 0,
   afterColorCount: 0,
   mergedColorCount: 0,
+  rareColorCountBefore: 0,
+  rareColorCountAfter: 0,
+  minimumColorCountSatisfied: false,
 };
 
 beforeAll(() => {
@@ -86,6 +89,9 @@ describe('ColorLegend', () => {
       beforeColorCount: 12,
       afterColorCount: 8,
       mergedColorCount: 4,
+      rareColorCountBefore: 4,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: true,
     };
     const { container, rerender } = render(
       <ColorLegend legend={legend} colorSimplification={simplifiedColors} />,

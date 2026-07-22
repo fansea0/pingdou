@@ -55,6 +55,9 @@ async function runProcess(
       beforeColorCount: number;
       afterColorCount: number;
       mergedColorCount: number;
+      rareColorCountBefore: number;
+      rareColorCountAfter: number;
+      minimumColorCountSatisfied: boolean;
     };
   };
 }

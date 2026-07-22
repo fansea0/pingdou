@@ -20,6 +20,9 @@ const EMPTY_COLOR_SIMPLIFICATION: ColorSimplificationStats = Object.freeze({
   beforeColorCount: 0,
   afterColorCount: 0,
   mergedColorCount: 0,
+  rareColorCountBefore: 0,
+  rareColorCountAfter: 0,
+  minimumColorCountSatisfied: false,
 });
 
 export function App() {

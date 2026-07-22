@@ -73,6 +73,9 @@ const pipelineResult: PipelineResult = {
     beforeColorCount: 1,
     afterColorCount: 1,
     mergedColorCount: 0,
+    rareColorCountBefore: 0,
+    rareColorCountAfter: 0,
+    minimumColorCountSatisfied: true,
   },
 };
 
