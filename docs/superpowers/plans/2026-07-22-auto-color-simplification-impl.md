@@ -1019,7 +1019,7 @@ git commit -m "docs: document automatic color simplification"
 
 Read and follow `superpowers:requesting-code-review`, address only verified findings, then read and follow `superpowers:verification-before-completion`. Do not claim completion until fresh verification output proves every acceptance criterion.
 
-## Verification record
+## Historical verification record (2026-07-22)
 
 Recorded on 2026-07-22 for branch `codex/auto-color-simplification`.
 
@@ -1034,3 +1034,18 @@ Recorded on 2026-07-22 for branch `codex/auto-color-simplification`.
 - Known successful-run noise: jsdom emitted existing `HTMLCanvasElement.prototype.getContext` stderr warnings, and one run emitted an asynchronous database teardown `ENOENT` warning; the test command still exited 0.
 
 This record distinguishes the completed implementation head and prior verification commit from any later documentation-only fixes.
+
+## Latest post-review verification addendum (2026-07-23)
+
+This plan remains an implemented historical record and must not be re-executed.
+
+- Final implementation head at the time of this run: `12ba96a` (`fix: process latest throttled settings`).
+- Root cause and fix: the throttle trailing call now executes the latest full arguments; a fake-timer hook test covers interleaved grid, background-removal, and simplification settings together with their export flags.
+- Formatting: `git diff --check 1d5279f..12ba96a` passed.
+- Focused final-review suite: 8/8 test files and 53/53 tests passed.
+- Full suite: `npm test` exited 0 with 42/42 test files and 213/213 tests passing.
+- Type checking: `npm run typecheck` passed both client and server checks.
+- Production build: `npm run build` passed after transforming 83 modules.
+- Palette: `public/data/mard.json` remains exactly 221 entries and is unchanged from the feature base.
+- Known successful-run noise: jsdom emitted existing canvas stderr warnings, and one run emitted asynchronous database teardown `ENOENT` stderr; all verification commands exited successfully.
+- Worktree status at verification: only `.superpowers/` and the unrelated `docs/superpowers/plans/2026-07-16-seo-baseline-impl.md` remained untracked.
