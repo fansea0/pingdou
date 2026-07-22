@@ -137,6 +137,7 @@ describe('Pipeline color simplification', () => {
     const result = await process(false);
 
     expect(result.indices).toEqual(Uint8Array.from([...Array(10).fill(0), 2]));
+    expect(result.simplifyColors).toBe(false);
     expect(result.colorSimplification).toEqual({
       beforeColorCount: 2,
       afterColorCount: 2,
@@ -151,6 +152,7 @@ describe('Pipeline color simplification', () => {
     const result = await process(true);
 
     expect(result.indices).toEqual(new Uint8Array(11));
+    expect(result.simplifyColors).toBe(true);
     expect(result.colorSimplification).toEqual({
       beforeColorCount: 2,
       afterColorCount: 1,

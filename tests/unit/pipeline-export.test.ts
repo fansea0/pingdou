@@ -66,6 +66,7 @@ describe('Pipeline.exportComposite', () => {
       outH: 1,
       token: 1,
       mask: new Uint8Array(1),
+      simplifyColors: false,
       colorSimplification: {
         beforeColorCount: 1,
         afterColorCount: 1,

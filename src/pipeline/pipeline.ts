@@ -120,6 +120,7 @@ export class Pipeline {
         outH,
         token: myToken,
         mask,
+        simplifyColors: params.simplifyColors,
         colorSimplification: colorSimplification.stats,
       });
     } catch (err) {

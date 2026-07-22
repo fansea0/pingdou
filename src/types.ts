@@ -36,6 +36,7 @@ export interface PipelineResult {
   readonly outH: number;
   readonly token: number;
   readonly mask: BackgroundMask;
+  readonly simplifyColors: boolean;
   readonly colorSimplification: ColorSimplificationStats;
 }
 

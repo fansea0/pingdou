@@ -41,6 +41,7 @@ export function App() {
     () => (result && palette ? computeLegend(result.indices, palette, result.mask) : []),
     [result, palette]
   );
+  const statisticsCurrent = result !== null && result.simplifyColors === simplifyColors;
 
   const beanCount = useMemo(() => {
     if (!result) return 0;
@@ -155,6 +156,7 @@ export function App() {
             legend={legend}
             colorSimplification={result?.colorSimplification ?? EMPTY_COLOR_SIMPLIFICATION}
             simplifyColors={simplifyColors}
+            statisticsCurrent={statisticsCurrent}
           />
         </aside>
       </main>

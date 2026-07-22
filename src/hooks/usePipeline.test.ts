@@ -69,6 +69,7 @@ const pipelineResult: PipelineResult = {
   outH: 1,
   token: 1,
   mask: new Uint8Array([0]),
+  simplifyColors: false,
   colorSimplification: {
     beforeColorCount: 1,
     afterColorCount: 1,

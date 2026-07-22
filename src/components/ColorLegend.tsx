@@ -6,11 +6,17 @@ interface Props {
   legend: LegendRow[];
   colorSimplification: ColorSimplificationStats;
   simplifyColors: boolean;
+  statisticsCurrent: boolean;
 }
 
 const MOBILE_QUERY = '(max-width: 900px)';
 
-export function ColorLegend({ legend, colorSimplification, simplifyColors }: Props) {
+export function ColorLegend({
+  legend,
+  colorSimplification,
+  simplifyColors,
+  statisticsCurrent,
+}: Props) {
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
@@ -32,7 +38,9 @@ export function ColorLegend({ legend, colorSimplification, simplifyColors }: Pro
         <div>
           <h3 className="legend-title">色号对照表</h3>
           <p className="legend-subtitle">
-            {simplifyColors && !colorSimplification.minimumColorCountSatisfied ? (
+            {!statisticsCurrent ? (
+              <>正在更新颜色统计</>
+            ) : simplifyColors && !colorSimplification.minimumColorCountSatisfied ? (
               <>图案总数不足 10 颗，无法满足每色至少 10 颗</>
             ) : colorSimplification.mergedColorCount > 0 ? (
               <>
