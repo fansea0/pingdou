@@ -52,6 +52,10 @@ describe('deltaE76', () => {
 });
 
 describe('simplifyRareColors', () => {
+  it('pins the maximum similar-color Delta E threshold to 8', () => {
+    expect(MAX_SIMILAR_COLOR_DELTA_E).toBe(8);
+  });
+
   it('merges a similar color used 9 times into a similar color used 10 times', () => {
     const indices = cells([0, 10], [1, 9]);
 
@@ -79,10 +83,10 @@ describe('simplifyRareColors', () => {
     expect(result.stats).toEqual({ beforeColorCount: 2, afterColorCount: 2, mergedColorCount: 0 });
   });
 
-  it('merges a rare color immediately below the Delta E boundary', () => {
+  it('merges a rare color 0.00015 Delta E below the inclusive threshold', () => {
     const boundaryPalette: Palette = [
       { id: 'A01', rgb: [100, 100, 100], name: '主灰' },
-      { id: 'A02', rgb: [119, 119, 119], name: '临界内灰' },
+      { id: 'A02', rgb: [119, 118, 112], name: '临界内灰' },
     ];
     const distance = deltaE76(
       rgbToLab(boundaryPalette[0].rgb),
@@ -90,16 +94,17 @@ describe('simplifyRareColors', () => {
     );
     const indices = cells([0, 10], [1, 9]);
 
-    expect(distance).toBeCloseTo(7.659835790667, 10);
-    expect(distance).toBeLessThan(MAX_SIMILAR_COLOR_DELTA_E);
+    expect(distance).toBeCloseTo(7.999853163, 9);
+    expect(distance).toBeGreaterThanOrEqual(7.99);
+    expect(distance).toBeLessThanOrEqual(MAX_SIMILAR_COLOR_DELTA_E);
     expect(simplifyRareColors(indices, boundaryPalette, visibleMask(indices.length)).indices)
       .toEqual(cells([0, 19]));
   });
 
-  it('keeps a rare color immediately above the Delta E boundary', () => {
+  it('keeps a rare color 0.00008 Delta E above the threshold', () => {
     const boundaryPalette: Palette = [
       { id: 'A01', rgb: [100, 100, 100], name: '主灰' },
-      { id: 'A02', rgb: [120, 120, 120], name: '临界外灰' },
+      { id: 'A02', rgb: [97, 109, 119], name: '临界外灰' },
     ];
     const distance = deltaE76(
       rgbToLab(boundaryPalette[0].rgb),
@@ -107,8 +112,9 @@ describe('simplifyRareColors', () => {
     );
     const indices = cells([0, 10], [1, 9]);
 
-    expect(distance).toBeCloseTo(8.056663148062, 10);
+    expect(distance).toBeCloseTo(8.000081452, 9);
     expect(distance).toBeGreaterThan(MAX_SIMILAR_COLOR_DELTA_E);
+    expect(distance).toBeLessThanOrEqual(8.01);
     expect(simplifyRareColors(indices, boundaryPalette, visibleMask(indices.length)).indices)
       .toEqual(indices);
   });
