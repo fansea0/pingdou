@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   deltaE76,
+  MAX_SIMILAR_COLOR_DELTA_E,
   rgbToLab,
   simplifyRareColors,
   summarizeColors,
@@ -29,6 +30,14 @@ describe('rgbToLab', () => {
     expect(white[0]).toBeCloseTo(100, 4);
     expect(white[1]).toBeCloseTo(0, 4);
     expect(white[2]).toBeCloseTo(0, 4);
+  });
+
+  it('maps pure red to the known D65 CIE Lab reference', () => {
+    const red = rgbToLab([255, 0, 0]);
+
+    expect(red[0]).toBeCloseTo(53.24, 2);
+    expect(red[1]).toBeCloseTo(80.09, 2);
+    expect(red[2]).toBeCloseTo(67.2, 2);
   });
 });
 
@@ -70,6 +79,40 @@ describe('simplifyRareColors', () => {
     expect(result.stats).toEqual({ beforeColorCount: 2, afterColorCount: 2, mergedColorCount: 0 });
   });
 
+  it('merges a rare color immediately below the Delta E boundary', () => {
+    const boundaryPalette: Palette = [
+      { id: 'A01', rgb: [100, 100, 100], name: '主灰' },
+      { id: 'A02', rgb: [119, 119, 119], name: '临界内灰' },
+    ];
+    const distance = deltaE76(
+      rgbToLab(boundaryPalette[0].rgb),
+      rgbToLab(boundaryPalette[1].rgb),
+    );
+    const indices = cells([0, 10], [1, 9]);
+
+    expect(distance).toBeCloseTo(7.659835790667, 10);
+    expect(distance).toBeLessThan(MAX_SIMILAR_COLOR_DELTA_E);
+    expect(simplifyRareColors(indices, boundaryPalette, visibleMask(indices.length)).indices)
+      .toEqual(cells([0, 19]));
+  });
+
+  it('keeps a rare color immediately above the Delta E boundary', () => {
+    const boundaryPalette: Palette = [
+      { id: 'A01', rgb: [100, 100, 100], name: '主灰' },
+      { id: 'A02', rgb: [120, 120, 120], name: '临界外灰' },
+    ];
+    const distance = deltaE76(
+      rgbToLab(boundaryPalette[0].rgb),
+      rgbToLab(boundaryPalette[1].rgb),
+    );
+    const indices = cells([0, 10], [1, 9]);
+
+    expect(distance).toBeCloseTo(8.056663148062, 10);
+    expect(distance).toBeGreaterThan(MAX_SIMILAR_COLOR_DELTA_E);
+    expect(simplifyRareColors(indices, boundaryPalette, visibleMask(indices.length)).indices)
+      .toEqual(indices);
+  });
+
   it('does not merge when every used color has fewer than 10 visible cells', () => {
     const indices = cells([0, 9], [1, 9]);
 
@@ -99,6 +142,24 @@ describe('simplifyRareColors', () => {
 
     expect(indices).toEqual(original);
     expect(result.indices).not.toBe(indices);
+  });
+
+  it('returns zero color counts when every cell is masked', () => {
+    const indices = cells([0, 1], [1, 1], [2, 1]);
+
+    const result = simplifyRareColors(indices, palette, Uint8Array.from([1, 1, 1]));
+
+    expect(result.indices).toEqual(indices);
+    expect(result.stats).toEqual({ beforeColorCount: 0, afterColorCount: 0, mergedColorCount: 0 });
+  });
+
+  it('leaves a single visible color unchanged', () => {
+    const indices = cells([1, 1]);
+
+    const result = simplifyRareColors(indices, palette, visibleMask(indices.length));
+
+    expect(result.indices).toEqual(indices);
+    expect(result.stats).toEqual({ beforeColorCount: 1, afterColorCount: 1, mergedColorCount: 0 });
   });
 
   it('chooses the lower palette index when eligible targets have equal distance', () => {
