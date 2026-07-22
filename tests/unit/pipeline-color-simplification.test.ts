@@ -179,11 +179,21 @@ describe('Pipeline color simplification', () => {
       expect([outW, outH]).toEqual(expectedDimensions[callIndex]);
       expect(mask).toBeInstanceOf(Uint8Array);
       expect(mask).toHaveLength(indices.length);
+      expect(mask?.some(value => value === 1)).toBe(true);
       const visibleCounts = visibleColorCounts(indices, mask!);
       expect(visibleCounts).not.toHaveLength(0);
       expect(visibleCounts.every(count => count >= 10)).toBe(true);
       expect(compositeCall[1]).toEqual(indices);
       expect(compositeCall[3]).toEqual(mask);
+
+      // At 8×4, the eight masked white cells are below the rare-color limit;
+      // simplifying before applying the mask would force them away from index 3.
+      for (let position = 0; position < indices.length; position += 1) {
+        if (mask?.[position] === 1) {
+          expect(indices[position]).toBe(3);
+          expect(compositeCall[1][position]).toBe(3);
+        }
+      }
     }
   });
 });
