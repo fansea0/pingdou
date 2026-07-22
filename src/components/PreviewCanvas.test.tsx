@@ -21,7 +21,7 @@ const result: PipelineResult = {
     mergedColorCount: 0,
     rareColorCountBefore: 0,
     rareColorCountAfter: 0,
-    minimumColorCountSatisfied: true,
+    minimumColorCountSatisfied: false,
   },
 };
 
