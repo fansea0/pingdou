@@ -43,9 +43,9 @@
 
 - `rareColorCountBefore`：简化前数量少于 10 颗的已用色号数。
 - `rareColorCountAfter`：简化后数量少于 10 颗的已用色号数。
-- `minimumColorCountSatisfied`：可见格总数不少于 10 时为 `true`，否则为 `false`。
+- `minimumColorCountSatisfied`：当前结果的可见格总数不少于 10，且没有数量少于 10 颗的已用色号时为 `true`；其余情况为 `false`。
 
-现有 `beforeColorCount`、`afterColorCount`、`mergedColorCount` 保留。关闭开关时只做统计，颜色索引不变，新的稀有色统计反映原始结果。
+现有 `beforeColorCount`、`afterColorCount`、`mergedColorCount` 保留。关闭开关时只做统计，颜色索引不变，新的稀有色统计反映原始结果；因此开关关闭时，即使可见格总数不少于 10，若原始结果仍有稀有色，`minimumColorCountSatisfied` 也可以为 `false`。
 
 桌面和移动端开关文字保持“自动简化颜色”，提示改为“启用后每种颜色至少 10 颗”。色号表在发生合并时显示“已从 X 种简化为 Y 种 · 已消除 Z 种零散色”；如果图中非背景格不足 10，则显示“图案总数不足 10 颗，无法满足每色至少 10 颗”。
 

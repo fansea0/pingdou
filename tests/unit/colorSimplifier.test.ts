@@ -99,6 +99,19 @@ describe('simplifyRareColors', () => {
     });
   });
 
+  it('never selects an unused palette color as a merge target', () => {
+    const activeOnlyPalette: Palette = [
+      { id: 'A01', rgb: [255, 0, 0], name: '稀有红' },
+      { id: 'A02', rgb: [100, 100, 100], name: '活跃灰' },
+      { id: 'A03', rgb: [255, 0, 0], name: '未使用红' },
+    ];
+    const indices = cells([0, 1], [1, 10]);
+
+    const result = simplifyRareColors(indices, activeOnlyPalette, visibleMask(indices.length));
+
+    expect(result.indices).toEqual(cells([1, 11]));
+  });
+
   it('merges colors on either side of the former Delta E threshold', () => {
     const boundaryPalette: Palette = [
       { id: 'A01', rgb: [100, 100, 100], name: '主灰' },
