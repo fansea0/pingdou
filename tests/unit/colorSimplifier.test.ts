@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   deltaE76,
-  MAX_SIMILAR_COLOR_DELTA_E,
   rgbToLab,
   simplifyRareColors,
   summarizeColors,
@@ -52,17 +51,20 @@ describe('deltaE76', () => {
 });
 
 describe('simplifyRareColors', () => {
-  it('pins the maximum similar-color Delta E threshold to 8', () => {
-    expect(MAX_SIMILAR_COLOR_DELTA_E).toBe(8);
-  });
-
   it('merges a similar color used 9 times into a similar color used 10 times', () => {
     const indices = cells([0, 10], [1, 9]);
 
     const result = simplifyRareColors(indices, palette, visibleMask(indices.length));
 
     expect(result.indices).toEqual(cells([0, 19]));
-    expect(result.stats).toEqual({ beforeColorCount: 2, afterColorCount: 1, mergedColorCount: 1 });
+    expect(result.stats).toEqual({
+      beforeColorCount: 2,
+      afterColorCount: 1,
+      mergedColorCount: 1,
+      rareColorCountBefore: 1,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: true,
+    });
   });
 
   it('does not treat a color used exactly 10 times as rare', () => {
@@ -71,19 +73,33 @@ describe('simplifyRareColors', () => {
     const result = simplifyRareColors(indices, palette, visibleMask(indices.length));
 
     expect(result.indices).toEqual(indices);
-    expect(result.stats).toEqual({ beforeColorCount: 2, afterColorCount: 2, mergedColorCount: 0 });
+    expect(result.stats).toEqual({
+      beforeColorCount: 2,
+      afterColorCount: 2,
+      mergedColorCount: 0,
+      rareColorCountBefore: 0,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: true,
+    });
   });
 
-  it('keeps a perceptually distant rare accent unchanged', () => {
+  it('forces a perceptually distant rare accent into an active color', () => {
     const indices = cells([0, 10], [2, 1]);
 
     const result = simplifyRareColors(indices, palette, visibleMask(indices.length));
 
-    expect(result.indices).toEqual(indices);
-    expect(result.stats).toEqual({ beforeColorCount: 2, afterColorCount: 2, mergedColorCount: 0 });
+    expect(result.indices).toEqual(cells([0, 11]));
+    expect(result.stats).toEqual({
+      beforeColorCount: 2,
+      afterColorCount: 1,
+      mergedColorCount: 1,
+      rareColorCountBefore: 1,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: true,
+    });
   });
 
-  it('merges a rare color 0.00015 Delta E below the inclusive threshold', () => {
+  it('merges colors on either side of the former Delta E threshold', () => {
     const boundaryPalette: Palette = [
       { id: 'A01', rgb: [100, 100, 100], name: '主灰' },
       { id: 'A02', rgb: [119, 118, 112], name: '临界内灰' },
@@ -95,13 +111,11 @@ describe('simplifyRareColors', () => {
     const indices = cells([0, 10], [1, 9]);
 
     expect(distance).toBeCloseTo(7.999853163, 9);
-    expect(distance).toBeGreaterThanOrEqual(7.99);
-    expect(distance).toBeLessThanOrEqual(MAX_SIMILAR_COLOR_DELTA_E);
     expect(simplifyRareColors(indices, boundaryPalette, visibleMask(indices.length)).indices)
       .toEqual(cells([0, 19]));
   });
 
-  it('keeps a rare color 0.00008 Delta E above the threshold', () => {
+  it('merges a rare color above the former Delta E threshold', () => {
     const boundaryPalette: Palette = [
       { id: 'A01', rgb: [100, 100, 100], name: '主灰' },
       { id: 'A02', rgb: [97, 109, 119], name: '临界外灰' },
@@ -113,19 +127,40 @@ describe('simplifyRareColors', () => {
     const indices = cells([0, 10], [1, 9]);
 
     expect(distance).toBeCloseTo(8.000081452, 9);
-    expect(distance).toBeGreaterThan(MAX_SIMILAR_COLOR_DELTA_E);
-    expect(distance).toBeLessThanOrEqual(8.01);
     expect(simplifyRareColors(indices, boundaryPalette, visibleMask(indices.length)).indices)
-      .toEqual(indices);
+      .toEqual(cells([0, 19]));
   });
 
-  it('does not merge when every used color has fewer than 10 visible cells', () => {
-    const indices = cells([0, 9], [1, 9]);
+  it('recursively merges rare colors until every visible color has at least 10 cells', () => {
+    const indices = cells([0, 10], [1, 4], [2, 3]);
 
     const result = simplifyRareColors(indices, palette, visibleMask(indices.length));
 
-    expect(result.indices).toEqual(indices);
-    expect(result.stats).toEqual({ beforeColorCount: 2, afterColorCount: 2, mergedColorCount: 0 });
+    expect(result.indices).toEqual(cells([0, 17]));
+    expect(result.stats).toEqual({
+      beforeColorCount: 3,
+      afterColorCount: 1,
+      mergedColorCount: 2,
+      rareColorCountBefore: 2,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: true,
+    });
+  });
+
+  it('coalesces a tiny visible total into one color when the minimum cannot be satisfied', () => {
+    const indices = cells([0, 3], [1, 3], [2, 3]);
+
+    const result = simplifyRareColors(indices, palette, visibleMask(indices.length));
+
+    expect(result.indices).toEqual(cells([1, 9]));
+    expect(result.stats).toEqual({
+      beforeColorCount: 3,
+      afterColorCount: 1,
+      mergedColorCount: 2,
+      rareColorCountBefore: 3,
+      rareColorCountAfter: 1,
+      minimumColorCountSatisfied: false,
+    });
   });
 
   it('excludes background cells from counts and leaves their stored indices unchanged', () => {
@@ -137,7 +172,14 @@ describe('simplifyRareColors', () => {
 
     expect(result.indices.slice(0, 19)).toEqual(cells([0, 19]));
     expect(result.indices[19]).toBe(1);
-    expect(result.stats).toEqual({ beforeColorCount: 2, afterColorCount: 1, mergedColorCount: 1 });
+    expect(result.stats).toEqual({
+      beforeColorCount: 2,
+      afterColorCount: 1,
+      mergedColorCount: 1,
+      rareColorCountBefore: 1,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: true,
+    });
   });
 
   it('does not mutate source indices', () => {
@@ -156,7 +198,14 @@ describe('simplifyRareColors', () => {
     const result = simplifyRareColors(indices, palette, Uint8Array.from([1, 1, 1]));
 
     expect(result.indices).toEqual(indices);
-    expect(result.stats).toEqual({ beforeColorCount: 0, afterColorCount: 0, mergedColorCount: 0 });
+    expect(result.stats).toEqual({
+      beforeColorCount: 0,
+      afterColorCount: 0,
+      mergedColorCount: 0,
+      rareColorCountBefore: 0,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: false,
+    });
   });
 
   it('leaves a single visible color unchanged', () => {
@@ -165,7 +214,14 @@ describe('simplifyRareColors', () => {
     const result = simplifyRareColors(indices, palette, visibleMask(indices.length));
 
     expect(result.indices).toEqual(indices);
-    expect(result.stats).toEqual({ beforeColorCount: 1, afterColorCount: 1, mergedColorCount: 0 });
+    expect(result.stats).toEqual({
+      beforeColorCount: 1,
+      afterColorCount: 1,
+      mergedColorCount: 0,
+      rareColorCountBefore: 1,
+      rareColorCountAfter: 1,
+      minimumColorCountSatisfied: false,
+    });
   });
 
   it('chooses the lower palette index when eligible targets have equal distance', () => {
@@ -198,6 +254,22 @@ describe('summarizeColors', () => {
       beforeColorCount: 2,
       afterColorCount: 2,
       mergedColorCount: 0,
+      rareColorCountBefore: 2,
+      rareColorCountAfter: 2,
+      minimumColorCountSatisfied: false,
+    });
+  });
+
+  it('reports disabled simplification stats for a main color and rare color', () => {
+    const indices = cells([0, 10], [2, 2]);
+
+    expect(summarizeColors(indices, palette, visibleMask(indices.length))).toEqual({
+      beforeColorCount: 2,
+      afterColorCount: 2,
+      mergedColorCount: 0,
+      rareColorCountBefore: 1,
+      rareColorCountAfter: 1,
+      minimumColorCountSatisfied: false,
     });
   });
 });

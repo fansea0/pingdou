@@ -18,6 +18,9 @@ export interface ColorSimplificationStats {
   readonly beforeColorCount: number;
   readonly afterColorCount: number;
   readonly mergedColorCount: number;
+  readonly rareColorCountBefore: number;
+  readonly rareColorCountAfter: number;
+  readonly minimumColorCountSatisfied: boolean;
 }
 
 /**

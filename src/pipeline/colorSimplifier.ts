@@ -1,7 +1,6 @@
 import type { ColorSimplificationStats, Palette, RGB } from '@/types';
 
 export const RARE_COLOR_COUNT_LIMIT = 10;
-export const MAX_SIMILAR_COLOR_DELTA_E = 8;
 
 export type Lab = readonly [number, number, number];
 
@@ -74,18 +73,43 @@ function usedColorCount(counts: readonly number[]): number {
   return counts.reduce((total, count) => total + Number(count > 0), 0);
 }
 
+function rareColorCount(counts: readonly number[]): number {
+  return counts.reduce(
+    (total, count) => total + Number(count > 0 && count < RARE_COLOR_COUNT_LIMIT),
+    0,
+  );
+}
+
+function visibleCellCount(counts: readonly number[]): number {
+  return counts.reduce((total, count) => total + count, 0);
+}
+
+function createStats(
+  beforeCounts: readonly number[],
+  afterCounts: readonly number[],
+  mergedColorCount: number,
+): ColorSimplificationStats {
+  const totalVisibleCells = visibleCellCount(afterCounts);
+  const rareColorCountAfter = rareColorCount(afterCounts);
+
+  return {
+    beforeColorCount: usedColorCount(beforeCounts),
+    afterColorCount: usedColorCount(afterCounts),
+    mergedColorCount,
+    rareColorCountBefore: rareColorCount(beforeCounts),
+    rareColorCountAfter,
+    minimumColorCountSatisfied: totalVisibleCells >= RARE_COLOR_COUNT_LIMIT && rareColorCountAfter === 0,
+  };
+}
+
 export function summarizeColors(
   indices: Uint8Array,
   palette: Palette,
   mask: Uint8Array,
 ): ColorSimplificationStats {
   validateInput(indices, palette, mask);
-  const colorCount = usedColorCount(countVisibleColors(indices, palette, mask));
-  return {
-    beforeColorCount: colorCount,
-    afterColorCount: colorCount,
-    mergedColorCount: 0,
-  };
+  const counts = countVisibleColors(indices, palette, mask);
+  return createStats(counts, counts, 0);
 }
 
 export function simplifyRareColors(
@@ -96,51 +120,54 @@ export function simplifyRareColors(
   validateInput(indices, palette, mask);
 
   const visibleCounts = countVisibleColors(indices, palette, mask);
-  const beforeColorCount = usedColorCount(visibleCounts);
-  const targetIndices = visibleCounts
-    .map((count, paletteIndex) => ({ count, paletteIndex }))
-    .filter(({ count }) => count >= RARE_COLOR_COUNT_LIMIT)
-    .map(({ paletteIndex }) => paletteIndex);
+  const beforeCounts = [...visibleCounts];
   const labs = palette.map(({ rgb }) => rgbToLab(rgb));
-  const replacements = new Map<number, number>();
+  const simplifiedIndices = indices.slice();
 
-  for (let sourceIndex = 0; sourceIndex < visibleCounts.length; sourceIndex += 1) {
-    const sourceCount = visibleCounts[sourceIndex];
-    if (sourceCount === 0 || sourceCount >= RARE_COLOR_COUNT_LIMIT) {
-      continue;
+  let mergedColorCount = 0;
+  while (usedColorCount(visibleCounts) > 1) {
+    let sourceIndex = -1;
+    for (let paletteIndex = 0; paletteIndex < visibleCounts.length; paletteIndex += 1) {
+      const count = visibleCounts[paletteIndex];
+      if (
+        count > 0
+        && count < RARE_COLOR_COUNT_LIMIT
+        && (sourceIndex < 0 || count < visibleCounts[sourceIndex])
+      ) {
+        sourceIndex = paletteIndex;
+      }
     }
 
-    let bestTarget = -1;
+    if (sourceIndex < 0) {
+      break;
+    }
+
+    let targetIndex = -1;
     let bestDistance = Number.POSITIVE_INFINITY;
-    for (const targetIndex of targetIndices) {
-      const distance = deltaE76(labs[sourceIndex], labs[targetIndex]);
+    for (let paletteIndex = 0; paletteIndex < visibleCounts.length; paletteIndex += 1) {
+      if (paletteIndex === sourceIndex || visibleCounts[paletteIndex] === 0) {
+        continue;
+      }
+
+      const distance = deltaE76(labs[sourceIndex], labs[paletteIndex]);
       if (distance < bestDistance) {
         bestDistance = distance;
-        bestTarget = targetIndex;
+        targetIndex = paletteIndex;
       }
     }
 
-    if (bestTarget >= 0 && bestDistance <= MAX_SIMILAR_COLOR_DELTA_E) {
-      replacements.set(sourceIndex, bestTarget);
-    }
-  }
-
-  const simplifiedIndices = indices.slice();
-  for (let position = 0; position < simplifiedIndices.length; position += 1) {
-    if (mask[position] === 0) {
-      const replacement = replacements.get(simplifiedIndices[position]);
-      if (replacement !== undefined) {
-        simplifiedIndices[position] = replacement;
+    for (let position = 0; position < simplifiedIndices.length; position += 1) {
+      if (mask[position] === 0 && simplifiedIndices[position] === sourceIndex) {
+        simplifiedIndices[position] = targetIndex;
       }
     }
+    visibleCounts[targetIndex] += visibleCounts[sourceIndex];
+    visibleCounts[sourceIndex] = 0;
+    mergedColorCount += 1;
   }
 
   return {
     indices: simplifiedIndices,
-    stats: {
-      beforeColorCount,
-      afterColorCount: beforeColorCount - replacements.size,
-      mergedColorCount: replacements.size,
-    },
+    stats: createStats(beforeCounts, visibleCounts, mergedColorCount),
   };
 }
