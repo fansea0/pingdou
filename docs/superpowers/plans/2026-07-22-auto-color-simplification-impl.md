@@ -1,6 +1,9 @@
 # Automatic Color Simplification Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status — Implemented historical record (2026-07-22). Do not re-execute.**
+> Implementation commits: `bbc3930` through `2506069`. Verification/documentation commit: `5c45fe6`.
+
+> **Original execution instruction (historical):** Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Add an optional, default-off color simplifier that keeps the current 221-color palette and merges only colors used fewer than 10 times into an already-used main color when their CIE Lab Delta E 76 distance is at most 8.
 
@@ -30,7 +33,7 @@
 - Create: `src/pipeline/colorSimplifier.ts`
 - Create: `tests/unit/colorSimplifier.test.ts`
 
-- [ ] **Step 1: Write failing color-space and simplification tests**
+- [x] **Step 1: Write failing color-space and simplification tests**
 
 Create `tests/unit/colorSimplifier.test.ts` with focused fixtures. The test data deliberately uses ten main-color cells and nine rare-color cells so the boundary is explicit.
 
@@ -143,7 +146,7 @@ describe('simplifyRareColors', () => {
 });
 ```
 
-- [ ] **Step 2: Run the new test and verify it fails because the module is missing**
+- [x] **Step 2: Run the new test and verify it fails because the module is missing**
 
 Run:
 
@@ -153,7 +156,7 @@ npx vitest run tests/unit/colorSimplifier.test.ts
 
 Expected: FAIL with an import-resolution error for `@/pipeline/colorSimplifier`.
 
-- [ ] **Step 3: Implement the pure module**
+- [x] **Step 3: Implement the pure module**
 
 Create `src/pipeline/colorSimplifier.ts`. Convert sRGB through D65 XYZ to Lab, cache Lab values once per palette call, count only unmasked cells, and choose only currently used colors with at least ten visible cells as targets.
 
@@ -288,7 +291,7 @@ export function simplifyRareColors(
 }
 ```
 
-- [ ] **Step 4: Run the simplifier tests and make only evidence-driven corrections**
+- [x] **Step 4: Run the simplifier tests and make only evidence-driven corrections**
 
 Run:
 
@@ -298,7 +301,7 @@ npx vitest run tests/unit/colorSimplifier.test.ts
 
 Expected: all tests PASS. If numeric precision differs, correct only the asserted decimal precision; do not raise the confirmed Delta E threshold.
 
-- [ ] **Step 5: Commit the pure algorithm**
+- [x] **Step 5: Commit the pure algorithm**
 
 ```bash
 git add src/pipeline/colorSimplifier.ts tests/unit/colorSimplifier.test.ts
@@ -317,7 +320,7 @@ git commit -m "feat: add perceptual color simplifier"
 - Modify: `tests/unit/pipeline-export.test.ts:36-69` (add the disabled export flag and result statistics)
 - Create: `tests/unit/pipeline-color-simplification.test.ts`
 
-- [ ] **Step 1: Write failing pipeline tests for disabled, enabled, and export behavior**
+- [x] **Step 1: Write failing pipeline tests for disabled, enabled, and export behavior**
 
 Create `tests/unit/pipeline-color-simplification.test.ts`. Mock only render/export boundaries so assertions inspect the actual indices delivered by the pipeline.
 
@@ -417,7 +420,7 @@ describe('Pipeline automatic color simplification', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify type/API failures**
+- [x] **Step 2: Run the test and verify type/API failures**
 
 Run:
 
@@ -427,7 +430,7 @@ npx vitest run tests/unit/pipeline-color-simplification.test.ts
 
 Expected: FAIL because `simplifyColors`, `colorSimplification`, and the sixth `exportMulti` argument do not exist yet.
 
-- [ ] **Step 3: Add shared types and apply one helper in both pipeline paths**
+- [x] **Step 3: Add shared types and apply one helper in both pipeline paths**
 
 In `src/types.ts`, import the stats type with a type-only import and extend the existing interfaces:
 
@@ -527,7 +530,7 @@ async exportMulti(
 }
 ```
 
-- [ ] **Step 4: Retain complete processing options in the hook**
+- [x] **Step 4: Retain complete processing options in the hook**
 
 Replace `removeBgRef` in `src/hooks/usePipeline.ts` with a focused settings ref and update it in `throttledProcess`, `process`, and `reprocess`:
 
@@ -566,7 +569,7 @@ const out = await pipelineRef.current.exportMulti(
 );
 ```
 
-- [ ] **Step 5: Update compile-time fixtures without changing their tested behavior**
+- [x] **Step 5: Update compile-time fixtures without changing their tested behavior**
 
 Find every `ProcessParams` object and `PipelineResult` literal:
 
@@ -586,7 +589,7 @@ colorSimplification: {
 
 Use the literal's actual number of visible colors when it is not one. Append `false` to existing direct `exportMulti` calls so their behavior stays unchanged.
 
-- [ ] **Step 6: Run focused pipeline tests and typecheck**
+- [x] **Step 6: Run focused pipeline tests and typecheck**
 
 Run:
 
@@ -597,7 +600,7 @@ npm run typecheck
 
 Expected: all focused tests PASS and both client/server TypeScript checks exit 0.
 
-- [ ] **Step 7: Commit pipeline integration**
+- [x] **Step 7: Commit pipeline integration**
 
 ```bash
 git add src/types.ts src/pipeline/pipeline.ts src/hooks/usePipeline.ts src/App.tsx src/components/PreviewCanvas.test.tsx tests/unit/pipeline-color-simplification.test.ts tests/unit/pipeline.bg.test.ts tests/unit/pipeline-export.test.ts
@@ -611,7 +614,7 @@ git commit -m "feat: apply color simplification to preview and exports"
 - Modify: `src/components/ParamPanel.tsx:4-179`
 - Modify: `src/components/ParamPanel.test.tsx:1-143`
 
-- [ ] **Step 1: Write failing desktop control tests**
+- [x] **Step 1: Write failing desktop control tests**
 
 Extend `baseProps` and replace the old “single checkbox” assertion in `src/components/ParamPanel.test.tsx`:
 
@@ -649,7 +652,7 @@ it('reports automatic color simplification changes', () => {
 
 Add `screen` to the Testing Library import.
 
-- [ ] **Step 2: Run the component test and verify missing-prop/UI failures**
+- [x] **Step 2: Run the component test and verify missing-prop/UI failures**
 
 Run:
 
@@ -659,7 +662,7 @@ npx vitest run src/components/ParamPanel.test.tsx
 
 Expected: FAIL because the simplification props and checkbox do not exist.
 
-- [ ] **Step 3: Add the desktop checkbox**
+- [x] **Step 3: Add the desktop checkbox**
 
 Extend `ParamPanel` props and destructuring:
 
@@ -695,7 +698,7 @@ Render a sibling label after the existing background checkbox:
 </label>
 ```
 
-- [ ] **Step 4: Make App own and pass complete parameters**
+- [x] **Step 4: Make App own and pass complete parameters**
 
 Add default-off state in `src/App.tsx`:
 
@@ -725,7 +728,7 @@ onSimplifyColorsChange={enabled => {
 
 Upload callbacks and the sample-image effect must pass the same `simplifyColors` state. This ensures there is no path where uploading silently resets simplification.
 
-- [ ] **Step 5: Run desktop tests and typecheck**
+- [x] **Step 5: Run desktop tests and typecheck**
 
 Run:
 
@@ -736,7 +739,7 @@ npm run typecheck
 
 Expected: ParamPanel tests PASS and both TypeScript checks exit 0. Mobile and legend public props have not changed yet, so this task must remain independently buildable.
 
-- [ ] **Step 6: Commit desktop parameter flow**
+- [x] **Step 6: Commit desktop parameter flow**
 
 ```bash
 git add src/App.tsx src/components/ParamPanel.tsx src/components/ParamPanel.test.tsx
@@ -753,7 +756,7 @@ git commit -m "feat: add desktop color simplification control"
 - Modify: `src/components/ColorLegend.test.tsx`
 - Modify: `src/App.tsx:138-171`
 
-- [ ] **Step 1: Write failing mobile and legend tests**
+- [x] **Step 1: Write failing mobile and legend tests**
 
 Add the new required props to every existing `MobileActionBar` test render:
 
@@ -823,7 +826,7 @@ it('shows before and after counts only when colors were merged', () => {
 
 Add default zero-change stats to existing `ColorLegend` renders.
 
-- [ ] **Step 2: Run the tests and verify they fail for missing UI**
+- [x] **Step 2: Run the tests and verify they fail for missing UI**
 
 Run:
 
@@ -833,7 +836,7 @@ npx vitest run src/components/MobileActionBar.test.tsx src/components/MobileActi
 
 Expected: FAIL because mobile and legend props/rendering are not implemented.
 
-- [ ] **Step 3: Add the mobile checkbox**
+- [x] **Step 3: Add the mobile checkbox**
 
 Extend `MobileActionBar` props and destructuring:
 
@@ -855,7 +858,7 @@ Render below the existing background toggle:
 </label>
 ```
 
-- [ ] **Step 4: Render simplification statistics in the legend**
+- [x] **Step 4: Render simplification statistics in the legend**
 
 Import the stats type into `ColorLegend.tsx`, extend props, and compute a single subtitle branch:
 
@@ -883,7 +886,7 @@ interface Props {
 </p>
 ```
 
-- [ ] **Step 5: Connect mobile and legend props in App**
+- [x] **Step 5: Connect mobile and legend props in App**
 
 Pass the same state and reprocess handler used by desktop to `MobileActionBar`:
 
@@ -910,7 +913,7 @@ Ensure mobile upload passes `{ gridSize, removeBackground, simplifyColors }`. Pa
 
 Prefer a module-level `EMPTY_COLOR_SIMPLIFICATION` constant in `App.tsx` so a new object is not created on every render.
 
-- [ ] **Step 6: Run component tests and typecheck**
+- [x] **Step 6: Run component tests and typecheck**
 
 Run:
 
@@ -921,7 +924,7 @@ npm run typecheck
 
 Expected: all named tests PASS and both TypeScript checks exit 0.
 
-- [ ] **Step 7: Commit mobile control and feedback**
+- [x] **Step 7: Commit mobile control and feedback**
 
 ```bash
 git add src/App.tsx src/components/MobileActionBar.tsx src/components/MobileActionBar.test.tsx src/components/MobileActionBar.boardSize.test.tsx src/components/ColorLegend.tsx src/components/ColorLegend.test.tsx
@@ -934,7 +937,7 @@ git commit -m "feat: show color simplification controls and results"
 - Modify: `README.md:1-40`
 - Verify: all files changed by Tasks 1-4
 
-- [ ] **Step 1: Correct and extend the README feature description**
+- [x] **Step 1: Correct and extend the README feature description**
 
 Replace outdated palette and dithering claims with current behavior:
 
@@ -948,7 +951,7 @@ Replace outdated palette and dithering claims with current behavior:
 
 Keep deployment and statistics documentation unchanged.
 
-- [ ] **Step 2: Run formatting and stale-assumption scans**
+- [x] **Step 2: Run formatting and stale-assumption scans**
 
 Run:
 
@@ -959,7 +962,7 @@ rg -n '283|可选 Floyd-Steinberg|simplifyColors' README.md src tests --glob '*.
 
 Expected: `git diff --check` has no output. The stale `283` and Floyd-Steinberg feature claims are absent from README. Every `ProcessParams` construction shown by surrounding context includes `simplifyColors`.
 
-- [ ] **Step 3: Run all unit/component tests**
+- [x] **Step 3: Run all unit/component tests**
 
 Run:
 
@@ -969,7 +972,7 @@ npm test
 
 Expected: all Vitest suites PASS with zero failures.
 
-- [ ] **Step 4: Run production typecheck and build**
+- [x] **Step 4: Run production typecheck and build**
 
 Run:
 
@@ -980,7 +983,7 @@ npm run build
 
 Expected: both commands exit 0; Vite creates `dist/` successfully.
 
-- [ ] **Step 5: Perform a requirement-by-requirement diff review**
+- [x] **Step 5: Perform a requirement-by-requirement diff review**
 
 Run:
 
@@ -1005,13 +1008,29 @@ Existing behavior: full test suite and disabled pipeline test.
 
 Do not stage `.superpowers/`, `docs/superpowers/plans/2026-07-16-seo-baseline-impl.md`, or any other unrelated pre-existing worktree item.
 
-- [ ] **Step 6: Commit README and any final evidence-driven correction**
+- [x] **Step 6: Commit README and any final evidence-driven correction**
 
 ```bash
 git add README.md
 git commit -m "docs: document automatic color simplification"
 ```
 
-- [ ] **Step 7: Invoke completion workflows**
+- [x] **Step 7: Invoke completion workflows**
 
 Read and follow `superpowers:requesting-code-review`, address only verified findings, then read and follow `superpowers:verification-before-completion`. Do not claim completion until fresh verification output proves every acceptance criterion.
+
+## Verification record
+
+Recorded on 2026-07-22 for branch `codex/auto-color-simplification`.
+
+- Implementation head: `2506069` (`bbc3930` through `2506069`).
+- Prior verification/documentation commit: `5c45fe6`.
+- Palette: `public/data/mard.json` contains exactly 221 entries and is unchanged from the feature base.
+- Formatting: `git diff --check` completed with no output.
+- Tests: `npm test` exited 0 with 41/41 test files and 212/212 tests passing.
+- Type checking: `npm run typecheck` exited 0.
+- Production build: `npm run build` exited 0 after transforming 83 modules.
+- Worktree after the prior documentation commit: only `.superpowers/` and the unrelated `docs/superpowers/plans/2026-07-16-seo-baseline-impl.md` remained untracked.
+- Known successful-run noise: jsdom emitted existing `HTMLCanvasElement.prototype.getContext` stderr warnings, and one run emitted an asynchronous database teardown `ENOENT` warning; the test command still exited 0.
+
+This record distinguishes the completed implementation head and prior verification commit from any later documentation-only fixes.

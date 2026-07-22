@@ -10,7 +10,7 @@
 - 可选自动简化颜色：将少于 10 颗且 CIE Lab Delta E 76 色差不大于 8 的近似色合并到已使用的主色
 - 导出带色号标注、色号对照表和水印的合成 PNG
 - 图片全程在浏览器本地处理，不会上传到服务端
-- 离线可用（色板缓存到 IndexedDB）
+- 色板缓存到 IndexedDB，减少重复加载
 
 ## 技术栈
 
@@ -55,7 +55,7 @@ src/
 │   ├── pipeline.ts          # 主线程编排器
 │   └── README.md            # 架构决策记录
 ├── hooks/                   # React hooks (usePalette/usePipeline/useThrottle)
-├── components/              # 4 个 UI 组件
+├── components/              # UI 组件
 └── workers/                 # Web Worker 入口
 shaders/
 └── quantize.frag.glsl       # 颜色量化 fragment shader
