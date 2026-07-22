@@ -39,69 +39,96 @@ beforeAll(() => {
 
 describe('ColorLegend', () => {
   it('renders one row per legend entry', () => {
-    const { container } = render(<ColorLegend legend={legend} colorSimplification={unchangedColors} />);
+    const { container } = render(
+      <ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />,
+    );
     const rows = container.querySelectorAll('.legend-row');
     expect(rows).toHaveLength(2);
   });
 
   it('shows id, name, count for each row', () => {
-    const { container } = render(<ColorLegend legend={legend} colorSimplification={unchangedColors} />);
+    const { container } = render(
+      <ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />,
+    );
     expect(container.textContent).toContain('A01');
     expect(container.textContent).toContain('红');
     expect(container.textContent).toContain('3');
   });
 
   it('renders empty state when legend is empty', () => {
-    const { container } = render(<ColorLegend legend={[]} colorSimplification={unchangedColors} />);
+    const { container } = render(
+      <ColorLegend legend={[]} colorSimplification={unchangedColors} simplifyColors={false} />,
+    );
     const el = container.querySelector('.empty-state');
     expect(el).toBeTruthy();
     expect(el?.textContent).toMatch(/上传图片后查看色号对照表/);
   });
 
   it('does not show empty-state when legend has items', () => {
-    const { container } = render(<ColorLegend legend={legend} colorSimplification={unchangedColors} />);
+    const { container } = render(
+      <ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />,
+    );
     expect(container.querySelector('.empty-state')).toBeNull();
     expect(container.querySelector('.legend-row')).toBeTruthy();
   });
 
   it('does not have any highlighted class on rows', () => {
-    const { container } = render(<ColorLegend legend={legend} colorSimplification={unchangedColors} />);
+    const { container } = render(
+      <ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />,
+    );
     const firstRow = container.querySelector('.legend-row')!;
     expect(firstRow.className).not.toMatch(/highlighted/);
   });
 
   it('starts in open state on desktop', () => {
-    const { container } = render(<ColorLegend legend={legend} colorSimplification={unchangedColors} />);
+    const { container } = render(
+      <ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />,
+    );
     expect(container.querySelector('.legend-wrap')?.className).toMatch(/is-open/);
     expect(container.querySelector('.legend-toggle')).toBeTruthy();
   });
 
   it('clicking the toggle collapses the table', () => {
-    const { container } = render(<ColorLegend legend={legend} colorSimplification={unchangedColors} />);
+    const { container } = render(
+      <ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />,
+    );
     const head = container.querySelector('.legend-head') as HTMLElement;
     fireEvent.click(head);
     expect(container.querySelector('.legend-wrap')?.className).toMatch(/is-closed/);
     expect(container.querySelector('.legend-row')).toBeNull();
   });
 
-  it('shows before and after counts only when colors were merged', () => {
+  it('shows the successful forced simplification summary', () => {
     const simplifiedColors: ColorSimplificationStats = {
       beforeColorCount: 12,
       afterColorCount: 8,
       mergedColorCount: 4,
-      rareColorCountBefore: 4,
+      rareColorCountBefore: 5,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
     };
     const { container, rerender } = render(
-      <ColorLegend legend={legend} colorSimplification={simplifiedColors} />,
+      <ColorLegend legend={legend} colorSimplification={simplifiedColors} simplifyColors />,
     );
 
-    expect(container.textContent).toContain('已从 12 种简化为 8 种');
+    expect(container.textContent).toContain('已从 12 种简化为 8 种 · 已消除 5 种零散色');
 
-    rerender(<ColorLegend legend={legend} colorSimplification={unchangedColors} />);
+    rerender(<ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />);
 
     expect(container.textContent).not.toContain('已从');
+    expect(container.textContent).toContain('当前图像 · 2 种颜色');
+  });
+
+  it('shows the tiny-image warning only when simplification is enabled', () => {
+    const { container, rerender } = render(
+      <ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors />,
+    );
+
+    expect(container.textContent).toContain('图案总数不足 10 颗，无法满足每色至少 10 颗');
+
+    rerender(<ColorLegend legend={legend} colorSimplification={unchangedColors} simplifyColors={false} />);
+
+    expect(container.textContent).not.toContain('图案总数不足 10 颗，无法满足每色至少 10 颗');
     expect(container.textContent).toContain('当前图像 · 2 种颜色');
   });
 });

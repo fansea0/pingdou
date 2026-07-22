@@ -70,7 +70,9 @@ describe('ParamPanel', () => {
     const checkbox = within(container).getByRole('checkbox', { name: /自动简化颜色/ });
 
     expect((checkbox as HTMLInputElement).checked).toBe(false);
-    expect(within(container).getByText(/合并少于 10 颗的相近色/)).toBeTruthy();
+    expect(checkbox.closest('label')?.querySelector('.param-toggle-hint')?.textContent).toBe(
+      ' · 启用后每种颜色至少 10 颗',
+    );
   });
 
   it('toggling automatic color simplification fires onSimplifyColorsChange', () => {

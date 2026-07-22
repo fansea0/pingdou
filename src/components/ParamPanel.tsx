@@ -188,7 +188,7 @@ export function ParamPanel({
         />
         <span>
           自动简化颜色
-          <span className="param-toggle-hint"> · 合并少于 10 颗的相近色</span>
+          <span className="param-toggle-hint"> · 启用后每种颜色至少 10 颗</span>
         </span>
       </label>
     </div>

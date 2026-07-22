@@ -5,11 +5,12 @@ import type { ColorSimplificationStats } from '@/types';
 interface Props {
   legend: LegendRow[];
   colorSimplification: ColorSimplificationStats;
+  simplifyColors: boolean;
 }
 
 const MOBILE_QUERY = '(max-width: 900px)';
 
-export function ColorLegend({ legend, colorSimplification }: Props) {
+export function ColorLegend({ legend, colorSimplification, simplifyColors }: Props) {
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
@@ -31,10 +32,16 @@ export function ColorLegend({ legend, colorSimplification }: Props) {
         <div>
           <h3 className="legend-title">色号对照表</h3>
           <p className="legend-subtitle">
-            {colorSimplification.mergedColorCount > 0 ? (
+            {simplifyColors && !colorSimplification.minimumColorCountSatisfied ? (
+              <>图案总数不足 10 颗，无法满足每色至少 10 颗</>
+            ) : colorSimplification.mergedColorCount > 0 ? (
               <>
                 已从 <strong>{colorSimplification.beforeColorCount}</strong> 种简化为{' '}
-                <strong>{colorSimplification.afterColorCount}</strong> 种
+                <strong>{colorSimplification.afterColorCount}</strong> 种 · 已消除{' '}
+                <strong>
+                  {colorSimplification.rareColorCountBefore - colorSimplification.rareColorCountAfter}
+                </strong>{' '}
+                种零散色
               </>
             ) : (
               <>当前图像 · <strong>{legend.length}</strong> 种颜色</>

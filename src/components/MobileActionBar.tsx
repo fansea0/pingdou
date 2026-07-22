@@ -209,7 +209,7 @@ export function MobileActionBar({
           checked={simplifyColors}
           onChange={e => onSimplifyColorsChange(e.target.checked)}
         />
-        自动简化颜色 · 合并少于 10 颗的相近色
+        自动简化颜色 · 启用后每种颜色至少 10 颗
       </label>
 
       <div className="mobile-action-row">

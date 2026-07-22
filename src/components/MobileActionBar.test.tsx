@@ -49,7 +49,7 @@ describe('MobileActionBar', () => {
     );
 
     const checkbox = within(container).getByRole('checkbox', {
-      name: '自动简化颜色 · 合并少于 10 颗的相近色',
+      name: '自动简化颜色 · 启用后每种颜色至少 10 颗',
     });
     expect((checkbox as HTMLInputElement).checked).toBe(false);
 

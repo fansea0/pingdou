@@ -154,6 +154,7 @@ export function App() {
           <ColorLegend
             legend={legend}
             colorSimplification={result?.colorSimplification ?? EMPTY_COLOR_SIMPLIFICATION}
+            simplifyColors={simplifyColors}
           />
         </aside>
       </main>
