@@ -62,6 +62,7 @@ export function MobileActionBar({
   const inputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState(0);
   const rafRef = useRef<number | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (exporting) {
@@ -141,7 +142,7 @@ export function MobileActionBar({
     : '导出图片';
 
   return (
-    <div className="mobile-action-bar">
+    <>
       <input
         ref={inputRef}
         type="file"
@@ -153,89 +154,63 @@ export function MobileActionBar({
         }}
       />
 
-      <div
-        className="mobile-grid-row"
-        onPointerDown={onPointerDown}
-      >
-        <span className="mobile-grid-text">网格</span>
-        <div className="mobile-grid-track-wrap" ref={trackRef}>
-          <div className="mobile-grid-track">
-            <div
-              className="mobile-grid-fill"
-              style={{ width: `${valueToRatio(gridSize) * 100}%` }}
-            />
-          </div>
-          {GRID_PRESETS.map(p => {
-            const isActive = p === gridSize;
-            return (
-              <div
-                key={p}
-                className={`mobile-grid-dot ${isActive ? 'active' : ''}`}
-                style={{ left: `${valueToRatio(p) * 100}%` }}
-              />
-            );
-          })}
-        </div>
-        <span className="mobile-grid-value">{gridSize}</span>
-      </div>
-
-      <div className="mobile-board-size-options" aria-label="快捷板子尺寸">
-        {BOARD_SIZE_PRESETS.map(size => (
+      <div className="mobile-action-bar">
+        <div className="mobile-bar-row mobile-bar-summary">
           <button
-            key={size}
             type="button"
-            className={`mobile-board-size-option ${gridSize === size ? 'active' : ''}`}
-            aria-label={`${size} × ${size} 板子`}
-            aria-pressed={gridSize === size}
-            onClick={() => onGridSizeChange(size)}
+            className="mobile-gear-btn"
+            aria-label="设置"
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen(true)}
           >
-            {size} × {size}
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M19.14 12.94a7.49 7.49 0 0 0 .05-.94 7.49 7.49 0 0 0-.05-.94l2.03-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54c-.59.24-1.13.55-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.67 8.48a.5.5 0 0 0 .12.61l2.03 1.58a7.49 7.49 0 0 0-.05.94 7.49 7.49 0 0 0 .05.94l-2.03 1.58a.5.5 0 0 0-.12.61l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.49.39 1.03.7 1.62.94l.36 2.54c.04.24.25.42.5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.59-.24 1.13-.55 1.62-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.61l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5z"
+              />
+            </svg>
           </button>
-        ))}
-      </div>
+          <p className="mobile-bean-count">
+            {beanCount > 0 ? (
+              <>
+                <strong>{beanCount.toLocaleString()}</strong> 颗
+                {estimateLabel && <span className="mobile-assembly-time"> · {estimateLabel}</span>}
+                {removeBackground && <span className="bean-count-removed"> · 已去背景</span>}
+              </>
+            ) : (
+              <span className="mobile-bean-empty">未上传图片</span>
+            )}
+          </p>
+        </div>
 
-      <label className="mobile-toggle-row">
-        <input
-          type="checkbox"
-          checked={removeBackground}
-          onChange={e => onRemoveBackgroundChange(e.target.checked)}
-        />
-        自动去纯色背景
-      </label>
+        <div className="mobile-board-size-options" aria-label="快捷板子尺寸">
+          {BOARD_SIZE_PRESETS.map(size => (
+            <button
+              key={size}
+              type="button"
+              className={`mobile-board-size-option ${gridSize === size ? 'active' : ''}`}
+              aria-label={`${size} × ${size} 板子`}
+              aria-pressed={gridSize === size}
+              onClick={() => onGridSizeChange(size)}
+            >
+              {size} × {size}
+            </button>
+          ))}
+        </div>
 
-      <label className="mobile-toggle-row">
-        <input
-          type="checkbox"
-          checked={simplifyColors}
-          onChange={e => onSimplifyColorsChange(e.target.checked)}
-        />
-        自动简化颜色 · 启用后每种颜色至少 10 颗
-      </label>
-
-      <div className="mobile-action-row">
-        <p className="mobile-bean-count">
-          {beanCount > 0 ? (
-            <>
-              <strong>{beanCount.toLocaleString()}</strong> 颗
-              {estimateLabel && <span className="mobile-assembly-time"> · {estimateLabel}</span>}
-              {removeBackground && <span className="bean-count-removed"> · 已去背景</span>}
-            </>
-          ) : (
-            '—'
-          )}
-        </p>
-        <div className="mobile-buttons">
+        <div className="mobile-bar-row mobile-bar-actions">
           <button
-            className="primary mobile-icon-btn mobile-action-button"
+            className="primary mobile-action-button mobile-btn-secondary"
             onClick={() => inputRef.current?.click()}
             aria-label="上传图片"
           >
             <span>上传图片</span>
           </button>
           <button
-            className={`primary mobile-icon-btn mobile-action-button${exporting ? ' is-loading' : ''}${flash === 'done' ? ' is-done' : ''}`}
+            className={`primary mobile-action-button mobile-btn-primary${exporting ? ' is-loading' : ''}${flash === 'done' ? ' is-done' : ''}`}
             disabled={!canExport || exporting}
             onClick={onExport}
+            aria-label="导出图片"
           >
             {progress > 0 && progress < 1 && (
               <span
@@ -248,6 +223,79 @@ export function MobileActionBar({
           </button>
         </div>
       </div>
-    </div>
+
+      {settingsOpen && (
+        <div
+          className="mobile-sheet-mask"
+          role="presentation"
+          onClick={() => setSettingsOpen(false)}
+        >
+          <div
+            className="mobile-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="设置"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mobile-sheet-handle" aria-hidden="true" />
+            <div className="mobile-sheet-header">
+              <span className="mobile-sheet-title">设置</span>
+              <button
+                type="button"
+                className="mobile-sheet-close"
+                aria-label="关闭"
+                onClick={() => setSettingsOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+
+            <div
+              className="mobile-grid-row"
+              onPointerDown={onPointerDown}
+            >
+              <span className="mobile-grid-text">网格</span>
+              <div className="mobile-grid-track-wrap" ref={trackRef}>
+                <div className="mobile-grid-track">
+                  <div
+                    className="mobile-grid-fill"
+                    style={{ width: `${valueToRatio(gridSize) * 100}%` }}
+                  />
+                </div>
+                {GRID_PRESETS.map(p => {
+                  const isActive = p === gridSize;
+                  return (
+                    <div
+                      key={p}
+                      className={`mobile-grid-dot ${isActive ? 'active' : ''}`}
+                      style={{ left: `${valueToRatio(p) * 100}%` }}
+                    />
+                  );
+                })}
+              </div>
+              <span className="mobile-grid-value">{gridSize}</span>
+            </div>
+
+            <label className="mobile-toggle-row">
+              <input
+                type="checkbox"
+                checked={removeBackground}
+                onChange={e => onRemoveBackgroundChange(e.target.checked)}
+              />
+              自动去纯色背景
+            </label>
+
+            <label className="mobile-toggle-row">
+              <input
+                type="checkbox"
+                checked={simplifyColors}
+                onChange={e => onSimplifyColorsChange(e.target.checked)}
+              />
+              自动简化颜色 · 启用后每种颜色至少 10 颗
+            </label>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

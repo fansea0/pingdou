@@ -30,8 +30,8 @@ export function App() {
   const { status, result, error, process, reprocess, exportMulti } = usePipeline(palette);
   const { imageData: sample } = useSampleImage();
   const [gridSize, setGridSize] = useState(100);
-  const [removeBackground, setRemoveBackground] = useState(false);
-  const [simplifyColors, setSimplifyColors] = useState(false);
+  const [removeBackground, setRemoveBackground] = useState(true);
+  const [simplifyColors, setSimplifyColors] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
 

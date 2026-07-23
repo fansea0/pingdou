@@ -48,6 +48,8 @@ describe('MobileActionBar', () => {
       />,
     );
 
+    fireEvent.click(container.querySelector('.mobile-gear-btn') as HTMLElement);
+
     const checkbox = within(container).getByRole('checkbox', {
       name: '自动简化颜色 · 启用后每种颜色至少 10 颗',
     });
