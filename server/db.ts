@@ -298,3 +298,22 @@ export function querySummary(days: number): SummaryResult {
     productClicks,
   };
 }
+
+export interface PublicTotals {
+  pageView: number;
+  imageExport: number;
+}
+
+export function queryPublicTotals(): PublicTotals {
+  const rows = queryAll<{ kind: string; total: number }>(
+    `SELECT kind, COUNT(*) AS total FROM events
+     WHERE kind IN ('page-view', 'image-export')
+     GROUP BY kind`,
+  );
+  const map = new Map<string, number>();
+  for (const r of rows) map.set(r.kind, r.total);
+  return {
+    pageView: map.get('page-view') ?? 0,
+    imageExport: map.get('image-export') ?? 0,
+  };
+}

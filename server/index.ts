@@ -4,7 +4,7 @@ import multer from 'multer';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { initDb, querySummary, trackEvent, touchSession, flushNow, queryAll, dayRange } from './db.js';
+import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange } from './db.js';
 import { loadProductsCache, getAllProducts, updateProduct, createProduct, deleteProduct, replaceProductImage } from './products.js';
 import {
   verifySessionFromRequest, clearAuthCookies, clearSessionForCurrentToken, setAuthCookies,
@@ -202,6 +202,16 @@ function buildMerchantSummary(userId: number, days: number) {
     productBreakdown: productBreakdown.map(r => ({ productId: r.ref, total: r.total })),
   };
 }
+
+app.get('/api/statics/public', (_req, res) => {
+  try {
+    const totals = queryPublicTotals();
+    return res.json({ pv: totals.pageView, exports: totals.imageExport });
+  } catch (e) {
+    console.error('[statics/public]', e);
+    return res.status(500).json({ error: 'query failed' });
+  }
+});
 
 app.get('/api/statics/summary', requireAuth, (req: AuthedRequest, res) => {
   const days = Math.max(1, Math.min(90, Number(req.query.days ?? 7)));

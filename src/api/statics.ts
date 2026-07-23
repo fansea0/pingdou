@@ -79,6 +79,16 @@ export async function fetchSummary(days: number, _role: 'admin' | 'merchant'): P
   return jsonOrThrow<AdminSummary | MerchantSummary>(res);
 }
 
+export interface PublicTotals {
+  pv: number;
+  exports: number;
+}
+
+export async function fetchPublicTotals(): Promise<PublicTotals> {
+  const res = await fetch(`${BASE}/statics/public`, { credentials: 'omit' });
+  return jsonOrThrow<PublicTotals>(res);
+}
+
 export function trackEvent(
   kind: 'page-view' | 'product-click' | 'image-export',
   ref?: string,

@@ -8,6 +8,7 @@ import { PreviewCanvas } from '@/components/PreviewCanvas';
 import { ColorLegend } from '@/components/ColorLegend';
 import { ExportPanel } from '@/components/ExportPanel';
 import { MobileActionBar } from '@/components/MobileActionBar';
+import { SiteStats } from '@/components/SiteStats';
 import { ProductShowcase } from '@/components/ProductShowcase';
 import { Disclaimer } from '@/components/Disclaimer';
 import { computeLegend } from '@/pipeline/legend';
@@ -80,6 +81,7 @@ export function App() {
         <header>
           <h1>拼豆图生成器</h1>
           <p className="subtitle">色板加载中...</p>
+          <SiteStats />
         </header>
       </div>
     );
@@ -106,6 +108,7 @@ export function App() {
       <header>
         <h1>🐰 拼豆图生成器</h1>
         <p className="subtitle">上传图片 → 一键生成你的拼豆图纸（MARD {palette.length} 色）</p>
+        <SiteStats />
       </header>
 
       {error && <p className="error">处理异常：{error.message}</p>}

@@ -1,0 +1,14 @@
+.site-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.site-stats-dot {
+  opacity: 0.6;
+}
