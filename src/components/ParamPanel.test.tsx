@@ -7,8 +7,10 @@ const baseProps = () => ({
   beanCount: 10000,
   totalCells: 10000,
   removeBackground: false,
+  simplifyColors: false,
   onGridSizeChange: () => {},
   onRemoveBackgroundChange: () => {},
+  onSimplifyColorsChange: () => {},
 });
 
 describe('ParamPanel', () => {
@@ -55,10 +57,33 @@ describe('ParamPanel', () => {
     expect(valueBadge?.textContent).toBe('50');
   });
 
-  it('exposes a single removeBackground checkbox (no dither)', () => {
+  it('exposes distinct background removal and color simplification options (no dither)', () => {
     const { container } = render(<ParamPanel {...baseProps()} />);
     const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-    expect(checkboxes).toHaveLength(1);
+    expect(checkboxes).toHaveLength(2);
+    expect(within(container).getByRole('checkbox', { name: /自动去背景/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /自动简化颜色/ })).toBeTruthy();
+  });
+
+  it('renders automatic color simplification off by default with its hint', () => {
+    const { container } = render(<ParamPanel {...baseProps()} />);
+    const checkbox = within(container).getByRole('checkbox', { name: /自动简化颜色/ });
+
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    expect(checkbox.closest('label')?.querySelector('.param-toggle-hint')?.textContent).toBe(
+      ' · 启用后每种颜色至少 10 颗',
+    );
+  });
+
+  it('toggling automatic color simplification fires onSimplifyColorsChange', () => {
+    const onChange = vi.fn();
+    const { container } = render(
+      <ParamPanel {...baseProps()} onSimplifyColorsChange={onChange} />
+    );
+
+    fireEvent.click(within(container).getByRole('checkbox', { name: /自动简化颜色/ }));
+
+    expect(onChange).toHaveBeenCalledWith(true);
   });
 
   it('toggling removeBackground fires onRemoveBackgroundChange', () => {

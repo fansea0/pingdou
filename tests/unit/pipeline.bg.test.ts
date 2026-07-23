@@ -37,6 +37,7 @@ async function runProcess(
     {
       gridSize: 30,
       removeBackground,
+      simplifyColors: false,
     },
     () => {},
     r => {
@@ -50,6 +51,14 @@ async function runProcess(
     outH: number;
     token: number;
     mask: Uint8Array;
+    colorSimplification: {
+      beforeColorCount: number;
+      afterColorCount: number;
+      mergedColorCount: number;
+      rareColorCountBefore: number;
+      rareColorCountAfter: number;
+      minimumColorCountSatisfied: boolean;
+    };
   };
 }
 

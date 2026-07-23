@@ -36,7 +36,7 @@ describe('Pipeline.exportMulti', () => {
   it('exports the selected square board with its legend and watermark', async () => {
     const pipeline = new Pipeline();
     pipeline.init(palette);
-    await pipeline.exportMulti(source(40, 20), 24, 4, [], false);
+    await pipeline.exportMulti(source(40, 20), 24, 4, [], false, false);
 
     const compositeCanvas = canvasToBlob.mock.calls[0][0];
     expect(compositeCanvas).toEqual(expect.objectContaining({ width: expect.any(Number) }));
@@ -66,6 +66,15 @@ describe('Pipeline.exportComposite', () => {
       outH: 1,
       token: 1,
       mask: new Uint8Array(1),
+      simplifyColors: false,
+      colorSimplification: {
+        beforeColorCount: 1,
+        afterColorCount: 1,
+        mergedColorCount: 0,
+        rareColorCountBefore: 0,
+        rareColorCountAfter: 0,
+        minimumColorCountSatisfied: false,
+      },
     });
 
     const compositeCanvas = canvasToBlob.mock.calls[0][0];

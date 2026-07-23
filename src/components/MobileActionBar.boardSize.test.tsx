@@ -11,8 +11,10 @@ describe('MobileActionBar board-size shortcuts', () => {
         beanCount={1000}
         estimateLabel="约 4.0 小时"
         removeBackground={false}
+        simplifyColors={false}
         onGridSizeChange={onGridSizeChange}
         onRemoveBackgroundChange={() => {}}
+        onSimplifyColorsChange={() => {}}
         onLoad={() => {}}
         onExport={() => {}}
         canExport

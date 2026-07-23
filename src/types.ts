@@ -11,6 +11,16 @@ export type Palette = ReadonlyArray<PaletteEntry>;
 export interface ProcessParams {
   readonly gridSize: number;
   readonly removeBackground: boolean;
+  readonly simplifyColors: boolean;
+}
+
+export interface ColorSimplificationStats {
+  readonly beforeColorCount: number;
+  readonly afterColorCount: number;
+  readonly mergedColorCount: number;
+  readonly rareColorCountBefore: number;
+  readonly rareColorCountAfter: number;
+  readonly minimumColorCountSatisfied: boolean;
 }
 
 /**
@@ -26,6 +36,8 @@ export interface PipelineResult {
   readonly outH: number;
   readonly token: number;
   readonly mask: BackgroundMask;
+  readonly simplifyColors: boolean;
+  readonly colorSimplification: ColorSimplificationStats;
 }
 
 export type UIStatus = 'idle' | 'loading' | 'ready' | 'recomputing' | 'exporting';

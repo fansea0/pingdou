@@ -7,8 +7,10 @@ interface Props {
   totalCells: number;
   estimateLabel?: string | null;
   removeBackground: boolean;
+  simplifyColors: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
+  onSimplifyColorsChange: (enabled: boolean) => void;
   disabled?: boolean;
 }
 
@@ -111,8 +113,10 @@ export function ParamPanel({
   totalCells,
   estimateLabel,
   removeBackground,
+  simplifyColors,
   onGridSizeChange,
   onRemoveBackgroundChange,
+  onSimplifyColorsChange,
   disabled,
 }: Props) {
   const removed = totalCells > 0 ? totalCells - beanCount : 0;
@@ -172,6 +176,19 @@ export function ParamPanel({
         <span>
           自动去背景
           <span className="param-toggle-hint"> · 适合卡通插画</span>
+        </span>
+      </label>
+
+      <label className="checkbox param-toggle">
+        <input
+          type="checkbox"
+          checked={simplifyColors}
+          onChange={e => onSimplifyColorsChange(e.target.checked)}
+          disabled={disabled}
+        />
+        <span>
+          自动简化颜色
+          <span className="param-toggle-hint"> · 启用后每种颜色至少 10 颗</span>
         </span>
       </label>
     </div>

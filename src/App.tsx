@@ -13,8 +13,17 @@ import { Disclaimer } from '@/components/Disclaimer';
 import { computeLegend } from '@/pipeline/legend';
 import { estimateAssemblyHours, formatAssemblyHours } from '@/pipeline/timeEstimate';
 import { usePageView, trackImageExport } from '@/hooks/useTracking';
+import type { ColorSimplificationStats } from '@/types';
 
 const PREVIEW_CELL_PX = 24;
+const EMPTY_COLOR_SIMPLIFICATION: ColorSimplificationStats = Object.freeze({
+  beforeColorCount: 0,
+  afterColorCount: 0,
+  mergedColorCount: 0,
+  rareColorCountBefore: 0,
+  rareColorCountAfter: 0,
+  minimumColorCountSatisfied: false,
+});
 
 export function App() {
   const { palette, error: paletteError } = usePalette();
@@ -22,6 +31,7 @@ export function App() {
   const { imageData: sample } = useSampleImage();
   const [gridSize, setGridSize] = useState(100);
   const [removeBackground, setRemoveBackground] = useState(false);
+  const [simplifyColors, setSimplifyColors] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
 
@@ -31,6 +41,7 @@ export function App() {
     () => (result && palette ? computeLegend(result.indices, palette, result.mask) : []),
     [result, palette]
   );
+  const statisticsCurrent = result !== null && result.simplifyColors === simplifyColors;
 
   const beanCount = useMemo(() => {
     if (!result) return 0;
@@ -50,7 +61,7 @@ export function App() {
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
     if (sample && palette && status === 'idle') {
-      process(sample, { gridSize, removeBackground });
+      process(sample, { gridSize, removeBackground, simplifyColors });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample, palette, status]);
@@ -101,20 +112,25 @@ export function App() {
 
       <main className="layout-3col">
         <aside className="left">
-          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground })} />
+          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors })} />
           <ParamPanel
             gridSize={gridSize}
             beanCount={beanCount}
             totalCells={totalCells}
             estimateLabel={estimateLabel}
             removeBackground={removeBackground}
+            simplifyColors={simplifyColors}
             onGridSizeChange={n => {
               setGridSize(n);
-              reprocess({ gridSize: n, removeBackground });
+              reprocess({ gridSize: n, removeBackground, simplifyColors });
             }}
             onRemoveBackgroundChange={b => {
               setRemoveBackground(b);
-              reprocess({ gridSize, removeBackground: b });
+              reprocess({ gridSize, removeBackground: b, simplifyColors });
+            }}
+            onSimplifyColorsChange={enabled => {
+              setSimplifyColors(enabled);
+              reprocess({ gridSize, removeBackground, simplifyColors: enabled });
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
@@ -136,7 +152,12 @@ export function App() {
         </section>
 
         <aside className="right">
-          <ColorLegend legend={legend} />
+          <ColorLegend
+            legend={legend}
+            colorSimplification={result?.colorSimplification ?? EMPTY_COLOR_SIMPLIFICATION}
+            simplifyColors={simplifyColors}
+            statisticsCurrent={statisticsCurrent}
+          />
         </aside>
       </main>
 
@@ -149,15 +170,20 @@ export function App() {
         beanCount={beanCount}
         estimateLabel={estimateLabel}
         removeBackground={removeBackground}
+        simplifyColors={simplifyColors}
         onGridSizeChange={n => {
           setGridSize(n);
-          reprocess({ gridSize: n, removeBackground });
+          reprocess({ gridSize: n, removeBackground, simplifyColors });
         }}
         onRemoveBackgroundChange={b => {
           setRemoveBackground(b);
-          reprocess({ gridSize, removeBackground: b });
+          reprocess({ gridSize, removeBackground: b, simplifyColors });
         }}
-        onLoad={(data) => process(data, { gridSize, removeBackground })}
+        onSimplifyColorsChange={enabled => {
+          setSimplifyColors(enabled);
+          reprocess({ gridSize, removeBackground, simplifyColors: enabled });
+        }}
+        onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors })}
         onExport={handleExport}
         canExport={!!result}
         exporting={exporting}

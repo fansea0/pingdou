@@ -15,6 +15,15 @@ const result: PipelineResult = {
   outH: 2,
   token: 1,
   mask: new Uint8Array([0, 0, 0, 0]),
+  simplifyColors: false,
+  colorSimplification: {
+    beforeColorCount: 2,
+    afterColorCount: 2,
+    mergedColorCount: 0,
+    rareColorCountBefore: 0,
+    rareColorCountAfter: 0,
+    minimumColorCountSatisfied: false,
+  },
 };
 
 describe('PreviewCanvas (empty state)', () => {

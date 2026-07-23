@@ -1,24 +1,25 @@
 # 拼豆图生成器
 
-将任意图片转为 MARD 拼豆图的高清色块图 + 色号标注图 + 配方表，纯前端实现。
+将任意图片转为带色号标注、色号对照表和水印的 MARD 拼豆合成图，纯前端实现。
 
 ## 特性
 
-- 上传图片 → 实时预览拼豆效果
+- 使用当前 MARD 221 色色板生成实时拼豆预览
 - 网格大小可调（50×50 ~ 500×500，长边）
-- 可选 Floyd-Steinberg 抖动
-- 导出三件套：高清 PNG、色号标注 PNG（cellPx ≥ 24 时）、配方表 CSV
-- 全程在前端运行，零上传，零服务端
-- 离线可用（色板缓存到 IndexedDB）
+- 可选自动去背景
+- 可选自动简化颜色：持续合并少于 10 颗的颜色；正常图案会保留每种颜色至少 10 颗。色差仅用于选择当前最接近的有效合并目标
+- 导出带色号标注、色号对照表和水印的合成 PNG
+- 图片全程在浏览器本地处理，不会上传到服务端
+- 色板缓存到 IndexedDB，减少重复加载
 
 ## 技术栈
 
-React 18 + TypeScript + Vite 5 + Canvas 2D + Floyd-Steinberg dithering + IndexedDB。
+React 18 + TypeScript + Vite 5 + Canvas 2D + CIE Lab 色差计算 + IndexedDB。
 WebGL2 / Web Worker 路径已搭好但 MVP 用纯 JS 量化（性能满足预算）。
 
 ## 数据来源
 
-MARD 拼豆色板（283 种颜色，编号 A01-A99 / B01-B99 / ...）参考自
+MARD 拼豆色板（当前 221 种颜色）参考自
 [Zippland/perler-beads](https://github.com/Zippland/perler-beads)，
 从其 `colorSystemMapping.json` 反向整理得到 `{id, rgb, name}` 列表。
 
@@ -44,9 +45,9 @@ src/
 ├── data/palette.ts          # IndexedDB 缓存
 ├── pipeline/
 │   ├── sampler.ts           # 像素采样（box-average）
-│   ├── ditherer.ts          # Floyd-Steinberg 抖动
 │   ├── quantizer.canvas.ts  # 颜色量化（纯 JS）
 │   ├── quantizer.webgl.ts   # WebGL2 量化器（占位）
+│   ├── colorSimplifier.ts   # 自动合并低频近似色
 │   ├── renderer.ts          # 色块图渲染
 │   ├── annotator.ts         # 色号标注图渲染
 │   ├── recipe.ts            # 配方表 CSV
@@ -54,12 +55,12 @@ src/
 │   ├── pipeline.ts          # 主线程编排器
 │   └── README.md            # 架构决策记录
 ├── hooks/                   # React hooks (usePalette/usePipeline/useThrottle)
-├── components/              # 4 个 UI 组件
+├── components/              # UI 组件
 └── workers/                 # Web Worker 入口
 shaders/
 └── quantize.frag.glsl       # 颜色量化 fragment shader
 tests/
-├── unit/                    # vitest 单测 (31 passing)
+├── unit/                    # vitest 单测
 ├── bench/                   # 性能基准
 ├── e2e/                     # Playwright E2E
 └── fixtures/                # 测试素材

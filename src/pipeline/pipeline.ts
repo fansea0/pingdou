@@ -9,6 +9,7 @@ import {
 import { renderSquareBoard } from './squareBoard';
 import { canvasToBlob, triggerDownload } from './exporter';
 import { applyWatermark } from './watermark';
+import { simplifyRareColors, summarizeColors } from './colorSimplifier';
 import {
   buildBackgroundMask,
   detectBackground,
@@ -22,6 +23,7 @@ import type {
   UIStatus,
   BackgroundMask,
 } from '@/types';
+import type { ColorSimplificationResult } from './colorSimplifier';
 
 export class Pipeline {
   private token = 0;
@@ -29,6 +31,19 @@ export class Pipeline {
 
   init(palette: Palette): void {
     this.palette = palette;
+  }
+
+  private applyColorSimplification(
+    indices: Uint8Array,
+    mask: BackgroundMask,
+    enabled: boolean
+  ): ColorSimplificationResult {
+    if (!this.palette) throw new Error('Pipeline not initialized');
+    if (enabled) return simplifyRareColors(indices, this.palette, mask);
+    return {
+      indices,
+      stats: summarizeColors(indices, this.palette, mask),
+    };
   }
 
   async process(
@@ -91,14 +106,22 @@ export class Pipeline {
 
       if (myToken !== this.token) return;
 
+      const colorSimplification = this.applyColorSimplification(
+        indices,
+        mask,
+        params.simplifyColors
+      );
+
       onStatus('ready');
       onResult({
-        indices,
+        indices: colorSimplification.indices,
         gridSize: outW,
         outW,
         outH,
         token: myToken,
         mask,
+        simplifyColors: params.simplifyColors,
+        colorSimplification: colorSimplification.stats,
       });
     } catch (err) {
       onStatus('ready');
@@ -144,7 +167,8 @@ export class Pipeline {
     exportCellPx: number,
     selectedGridSize: number,
     extraGridSizes: number[],
-    removeBackground: boolean
+    removeBackground: boolean,
+    simplifyColors: boolean
   ): Promise<{ success: number; failed: number }> {
     if (!this.palette) throw new Error('Pipeline not initialized');
 
@@ -191,8 +215,13 @@ export class Pipeline {
             );
           }
         }
-        const boardCanvas = renderSquareBoard(
+        const colorSimplification = this.applyColorSimplification(
           indices,
+          mask,
+          simplifyColors
+        );
+        const boardCanvas = renderSquareBoard(
+          colorSimplification.indices,
           outW,
           outH,
           this.palette,
@@ -203,7 +232,7 @@ export class Pipeline {
         );
         const compositeCanvas = renderCompositeFromBoard(
           boardCanvas,
-          indices,
+          colorSimplification.indices,
           this.palette,
           mask
         );
