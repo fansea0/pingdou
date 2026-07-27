@@ -15,7 +15,7 @@ export function AdminDashboard() {
         <button role="tab" aria-selected={tab === 'users'} className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}>账号</button>
         <button role="tab" aria-selected={tab === 'products'} className={tab === 'products' ? 'active' : ''} onClick={() => setTab('products')}>商品</button>
       </div>
-      {tab === 'stats' && <StatsTab />}
+      {tab === 'stats' && <StatsTab role="admin" />}
       {tab === 'users' && <UsersTab />}
       {tab === 'products' && <ProductsTab />}
     </>

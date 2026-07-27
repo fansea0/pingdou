@@ -83,9 +83,23 @@ export async function initDb(): Promise<void> {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_auth_tokens_user ON auth_tokens(user_id);
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL,
+      updated_by TEXT NOT NULL DEFAULT ''
+    );
   `);
 
+  runStmt(
+    `INSERT OR IGNORE INTO settings(key, value, updated_at, updated_by) VALUES(?, ?, ?, ?)`,
+    ['showProducts', 'true', Date.now(), ''],
+  );
+
   flushNow();
+
+  loadAllSettings();
 
   process.on('beforeExit', () => {
     flushNow();
@@ -316,4 +330,59 @@ export function queryPublicTotals(): PublicTotals {
     pageView: map.get('page-view') ?? 0,
     imageExport: map.get('image-export') ?? 0,
   };
+}
+
+export interface SettingRow {
+  key: string;
+  value: string;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+const settingsCache = new Map<string, SettingRow>();
+
+function rowToSetting(r: { key: string; value: string; updated_at: number; updated_by: string }): SettingRow {
+  return { key: r.key, value: r.value, updatedAt: r.updated_at, updatedBy: r.updated_by };
+}
+
+export function loadAllSettings(): SettingRow[] {
+  const rows = queryAll<{ key: string; value: string; updated_at: number; updated_by: string }>(
+    `SELECT key, value, updated_at, updated_by FROM settings`,
+  );
+  settingsCache.clear();
+  for (const r of rows) settingsCache.set(r.key, rowToSetting(r));
+  return listAllSettings();
+}
+
+export function listAllSettings(): SettingRow[] {
+  return Array.from(settingsCache.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+export function getSetting(key: string): SettingRow | null {
+  const cached = settingsCache.get(key);
+  if (cached) return { ...cached };
+  const rows = queryAll<{ key: string; value: string; updated_at: number; updated_by: string }>(
+    `SELECT key, value, updated_at, updated_by FROM settings WHERE key = ?`,
+    [key],
+  );
+  if (rows.length === 0) return null;
+  const row = rowToSetting(rows[0]);
+  settingsCache.set(key, row);
+  return { ...row };
+}
+
+export function setSetting(key: string, value: string, updatedBy: string): SettingRow {
+  const now = Date.now();
+  runStmt(
+    `INSERT INTO settings(key, value, updated_at, updated_by)
+       VALUES(?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_at = excluded.updated_at,
+         updated_by = excluded.updated_by`,
+    [key, value, now, updatedBy ?? ''],
+  );
+  const next: SettingRow = { key, value, updatedAt: now, updatedBy: updatedBy ?? '' };
+  settingsCache.set(key, next);
+  return { ...next };
 }

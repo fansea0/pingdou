@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { usePalette } from '@/hooks/usePalette';
 import { usePipeline } from '@/hooks/usePipeline';
 import { useSampleImage } from '@/hooks/useSampleImage';
+import { useSiteConfig } from '@/hooks/useSiteConfig';
 import { UploadZone } from '@/components/UploadZone';
 import { ParamPanel } from '@/components/ParamPanel';
 import { PreviewCanvas } from '@/components/PreviewCanvas';
@@ -30,6 +31,7 @@ export function App() {
   const { palette, error: paletteError } = usePalette();
   const { status, result, error, process, reprocess, exportMulti } = usePipeline(palette);
   const { imageData: sample } = useSampleImage();
+  const { config: siteConfig, loaded: siteConfigLoaded } = useSiteConfig();
   const [gridSize, setGridSize] = useState(100);
   const [removeBackground, setRemoveBackground] = useState(true);
   const [simplifyColors, setSimplifyColors] = useState(true);
@@ -164,7 +166,7 @@ export function App() {
         </aside>
       </main>
 
-      <ProductShowcase />
+      {siteConfigLoaded && siteConfig.showProducts && <ProductShowcase />}
 
       <Disclaimer />
 

@@ -4,7 +4,7 @@ import multer from 'multer';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange } from './db.js';
+import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
 import { loadProductsCache, getAllProducts, updateProduct, createProduct, deleteProduct, replaceProductImage } from './products.js';
 import {
   verifySessionFromRequest, clearAuthCookies, clearSessionForCurrentToken, setAuthCookies,
@@ -45,6 +45,10 @@ app.use((req, _res, next) => {
 });
 
 interface AuthedRequest extends express.Request { user?: AuthedUser; }
+
+interface SiteConfig {
+  showProducts: boolean;
+}
 
 export function requireAuth(req: AuthedRequest, res: express.Response, next: express.NextFunction) {
   const u = verifySessionFromRequest(req);
@@ -370,6 +374,60 @@ app.post('/api/admin/users/:id/reset-password', requireAuth, requireAdmin, (req,
 
 app.get('/api/statics/status', requireAuth, (_req, res) => {
   res.json({ ok: true });
+});
+
+const ALLOWED_SETTING_KEYS = new Set(['showProducts']);
+const DEFAULT_SITE_CONFIG: SiteConfig = { showProducts: true };
+
+function parseBoolSetting(raw: string | null | undefined, fallback: boolean): boolean {
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return fallback;
+}
+
+function readPublicSiteConfig(): SiteConfig {
+  const row = getSetting('showProducts');
+  return {
+    showProducts: parseBoolSetting(row?.value, DEFAULT_SITE_CONFIG.showProducts),
+  };
+}
+
+app.get('/api/config', (_req, res) => {
+  try {
+    return res.json(readPublicSiteConfig());
+  } catch (e) {
+    console.error('[config] read failed', e);
+    return res.status(500).json({ error: 'config read failed' });
+  }
+});
+
+app.get('/api/admin/settings', requireAuth, requireAdmin, (_req, res) => {
+  try {
+    return res.json({ settings: listAllSettings() });
+  } catch (e) {
+    console.error('[admin/settings] list failed', e);
+    return res.status(500).json({ error: 'settings list failed' });
+  }
+});
+
+app.put('/api/admin/settings', requireAuth, requireAdmin, (req: AuthedRequest, res) => {
+  const { key, value } = req.body ?? {};
+  if (typeof key !== 'string' || typeof value !== 'string') {
+    return res.status(400).json({ error: 'key & value required' });
+  }
+  if (!ALLOWED_SETTING_KEYS.has(key)) {
+    return res.status(400).json({ error: 'unknown setting key' });
+  }
+  const u = getUserById(req.user!.id);
+  const updatedBy = u?.username ?? '';
+  try {
+    const next = setSetting(key, value, updatedBy);
+    console.log(`[admin/settings] updated key=${key} value=${value} by=${updatedBy}`);
+    return res.json({ ok: true, setting: next });
+  } catch (e) {
+    console.error('[admin/settings] update failed', e);
+    return res.status(500).json({ error: 'settings update failed' });
+  }
 });
 
 const distDir = resolve(process.cwd(), 'dist');

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { fetchSummary, type AdminSummary } from '@/api/statics';
+import { adminListSettings, adminPutSetting } from '@/api/settings';
 
-export function StatsTab() {
+export function StatsTab({ role }: { role: 'admin' }) {
   const [days, setDays] = useState<number>(7);
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +19,7 @@ export function StatsTab() {
 
   return (
     <div className="statics-section">
+      {role === 'admin' && <SiteDisplayCard />}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
         <h3>统计概览</h3>
         <select value={days} onChange={e => setDays(Number(e.target.value))}>
@@ -62,6 +64,74 @@ export function StatsTab() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function SiteDisplayCard() {
+  const [showProducts, setShowProducts] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    adminListSettings()
+      .then(res => {
+        if (cancelled) return;
+        const row = res.settings.find(r => r.key === 'showProducts');
+        setShowProducts(row ? row.value === 'true' : true);
+      })
+      .catch(e => {
+        if (cancelled) return;
+        setError(e.message ?? 'load failed');
+        setShowProducts(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const toggle = async () => {
+    if (showProducts == null || saving) return;
+    const next = !showProducts;
+    setSaving(true);
+    setError(null);
+    setShowProducts(next);
+    try {
+      await adminPutSetting('showProducts', next ? 'true' : 'false');
+    } catch (e: any) {
+      setShowProducts(!next);
+      setError(e?.message ?? 'save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="statics-card site-display-card" style={{ marginBottom: 'var(--space-4)' }}>
+      <div className="site-display-card__header">
+        <h3>站点展示</h3>
+        <p>关闭后首页将不再展示「购买拼豆材料」商品橱窗。</p>
+      </div>
+      <div className="site-display-card__row">
+        <div className="site-display-card__label">
+          <span className="site-display-card__title">首页商品橱窗</span>
+          <span className="site-display-card__hint">
+            {showProducts == null ? '加载中…' : showProducts ? '当前：显示' : '当前：隐藏'}
+          </span>
+        </div>
+        <button
+          type="button"
+          className={`site-toggle ${showProducts ? 'is-on' : 'is-off'}`}
+          aria-pressed={!!showProducts}
+          aria-label="切换首页商品橱窗显示"
+          data-testid="site-toggle-products"
+          onClick={toggle}
+          disabled={showProducts == null || saving}
+        >
+          <span className="site-toggle__knob" />
+          <span className="site-toggle__label">{showProducts ? '显示' : '隐藏'}</span>
+        </button>
+      </div>
+      {error && <p className="statics-error">{error}</p>}
     </div>
   );
 }
