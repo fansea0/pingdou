@@ -106,14 +106,14 @@ function SiteDisplayCard() {
   };
 
   return (
-    <div className="statics-card site-display-card" style={{ marginBottom: 'var(--space-4)' }}>
-      <div className="site-display-card__header">
-        <h3>站点展示</h3>
-        <p>关闭后首页将不再展示「购买拼豆材料」商品橱窗。</p>
+    <section className="site-display-card">
+      <div className="site-display-card__copy">
+        <div className="site-display-card__title">站点展示</div>
+        <p className="site-display-card__desc">关闭后首页将不再展示「购买拼豆材料」商品橱窗。</p>
       </div>
-      <div className="site-display-card__row">
-        <div className="site-display-card__label">
-          <span className="site-display-card__title">首页商品橱窗</span>
+      <div className="site-display-card__control">
+        <div className="site-display-card__meta">
+          <span className="site-display-card__label">首页商品橱窗</span>
           <span className="site-display-card__hint">
             {showProducts == null ? '加载中…' : showProducts ? '当前：显示' : '当前：隐藏'}
           </span>
@@ -131,8 +131,8 @@ function SiteDisplayCard() {
           <span className="site-toggle__label">{showProducts ? '显示' : '隐藏'}</span>
         </button>
       </div>
-      {error && <p className="statics-error">{error}</p>}
-    </div>
+      {error && <p className="statics-error site-display-card__error">{error}</p>}
+    </section>
   );
 }
 
