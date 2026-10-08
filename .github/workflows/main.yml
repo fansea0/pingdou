@@ -9,13 +9,13 @@ on:
     paths:
       - "src/**"
       - "public/**"
+      - "server/**"
       - "package.json"
       - "package-lock.json"
-      - "vite.config.js"
       - "vite.config.ts"
       - ".env"
       - ".env.*"
-      - ".github/workflows/build_ping_dou.yml"
+      - ".github/workflows/main.yml"
 
 jobs:
   deploy:
@@ -43,7 +43,7 @@ jobs:
           set -e
 
           PROJECT_DIR="/root/project/pingdou"
-          SERVICE_PORT="3000"
+          SERVICE_PORT="${SERVICE_PORT:-80}"
           LOG_FILE="$PROJECT_DIR/start.log"
           PID_FILE="$PROJECT_DIR/start.pid"
 
@@ -120,7 +120,7 @@ jobs:
 
           ss -lntp | grep ":${SERVICE_PORT}" || true
 
-          # 从 ss 输出中提取占用 3000 端口的 PID
+          # 从 ss 输出中提取占用 ${SERVICE_PORT} 端口的 PID
           PORT_PIDS=$(
             ss -lntp 2>/dev/null |
             grep ":${SERVICE_PORT}" |
@@ -154,7 +154,8 @@ jobs:
           echo "${SERVICE_PORT} 端口已释放"
           echo "启动新服务..."
 
-          nohup npm run start -- --port "$SERVICE_PORT" --strictPort \
+          # npm run start 不识别 --port，由 PORT 环境变量控制
+          NODE_ENV=production PORT="$SERVICE_PORT" nohup npm run start \
             > "$LOG_FILE" 2>&1 &
 
           NEW_PID=$!
