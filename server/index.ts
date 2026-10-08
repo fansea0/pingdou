@@ -17,7 +17,9 @@ import {
 } from './users.js';
 import { reconcileAssignments, revokeAllForProduct, hasActiveAssignment, getActiveAssignmentsForUser } from './assignments.js';
 
-const PORT = Number(process.env.PORT ?? 3000);
+// 默认端口：生产 80，开发 3000；PORT 环境变量始终优先
+const DEFAULT_PORT = process.env.NODE_ENV === 'production' ? 80 : 3000;
+const PORT = Number(process.env.PORT ?? DEFAULT_PORT);
 
 if (process.env.STATICS_PASSWORD) {
   console.warn('[pingdou-server] STATICS_PASSWORD env var is ignored (legacy). Set the root password via /api/admin/users after login.');
