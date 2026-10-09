@@ -15,6 +15,7 @@ on:
       - "vite.config.ts"
       - ".env"
       - ".env.*"
+      - "scripts/**"
       - ".github/workflows/main.yml"
 
 jobs:
@@ -28,6 +29,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y sshpass
 
+      # 线上拓扑（2026-10-09 起）：
+      #   nginx (systemd: nginx)   443 直接托管 /var/www/pingdou 的静态产物
+      #                            /api/ 反代 127.0.0.1:3000
+      #   systemd: pingdou-backend Express API，监听 3000
+      #   systemd: certbot-renew.timer 证书自动续期
+      #
+      # 不再有「前端 5173 跑 vite preview」这回事 —— 那套 nohup 进程/pid 文件
+      # 的管理方式已被 systemd 取代。这里只负责「拉代码 + 调部署脚本」。
       - name: 部署到服务器
         env:
           HOST: ${{ secrets.SERVER_HOST }}
@@ -36,231 +45,33 @@ jobs:
         run: |
           sshpass -p "$PASSWORD" ssh \
             -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=15 \
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=3 \
-            "$USER@$HOST" << 'EOF'
+            "$USER@$HOST" 'bash -s' << 'EOF'
 
-          set -e
+          set -euo pipefail
 
           PROJECT_DIR="/root/project/pingdou"
-
-          # 前端 5173，后端 3000（前后端解耦，各自独立进程）。
-          BACKEND_PORT="${BACKEND_PORT:-3000}"
-          FRONTEND_PORT="${FRONTEND_PORT:-5173}"
-
-          BACKEND_LOG="$PROJECT_DIR/backend.log"
-          BACKEND_PID_FILE="$PROJECT_DIR/backend.pid"
-          FRONTEND_LOG="$PROJECT_DIR/frontend.log"
-          FRONTEND_PID_FILE="$PROJECT_DIR/frontend.pid"
-
           cd "$PROJECT_DIR"
 
           echo "=============================="
           echo "开始部署拼豆项目"
-          echo "项目目录：$PROJECT_DIR"
-          echo "后端端口：$BACKEND_PORT"
-          echo "前端端口：$FRONTEND_PORT"
           echo "=============================="
 
-          echo "重置本地仓库状态..."
-
-          git reset --hard HEAD
-          git clean -fd
-
-          OLD_COMMIT=$(git rev-parse HEAD)
-
-          echo "当前版本：$OLD_COMMIT"
           echo "拉取最新代码..."
+          git fetch origin main
+          # 服务器上不应有本地改动；.env / data / node_modules / dist 都在
+          # .gitignore 里，git reset 不会碰到它们
+          git reset --hard origin/main
+          git log --oneline -1
 
-          git pull --ff-only
-
-          NEW_COMMIT=$(git rev-parse HEAD)
-
-          echo "最新版本：$NEW_COMMIT"
-
-          NEED_INSTALL=false
-
-          if [ ! -d "node_modules" ]; then
-            echo "node_modules 不存在，需要安装依赖"
-            NEED_INSTALL=true
-          fi
-
-          if [ "$OLD_COMMIT" != "$NEW_COMMIT" ]; then
-            CHANGED_FILES=$(git diff --name-only "$OLD_COMMIT" "$NEW_COMMIT")
-
-            echo "本次修改文件："
-            echo "$CHANGED_FILES"
-
-            if echo "$CHANGED_FILES" | grep -Eq \
-              '^(package\.json|package-lock\.json)$'; then
-              NEED_INSTALL=true
-            fi
-          else
-            echo "没有检测到新的代码提交"
-          fi
-
-          if [ "$NEED_INSTALL" = true ]; then
-            echo "开始安装依赖..."
-            npm ci
-          else
-            echo "依赖未发生变化，跳过安装"
-          fi
-
-          # ============ 通用：杀掉指定端口占用 ============
-
-          kill_port() {
-            local PORT=$1
-            local NAME=$2
-            echo "检查 ${NAME} 端口 ${PORT} 占用..."
-            ss -lntp | grep ":${PORT}" || true
-
-            local PORT_PIDS=$(
-              ss -lntp 2>/dev/null |
-              grep ":${PORT}" |
-              grep -o 'pid=[0-9]*' |
-              cut -d= -f2 |
-              sort -u || true
-            )
-
-            if [ -n "$PORT_PIDS" ]; then
-              echo "${NAME} 端口被以下进程占用："
-              echo "$PORT_PIDS"
-              for PID in $PORT_PIDS; do
-                echo "执行 kill -9 $PID"
-                kill -9 "$PID" 2>/dev/null || true
-              done
-            else
-              echo "${NAME} 端口 ${PORT} 未被占用"
-            fi
-
-            sleep 1
-
-            if ss -lntp | grep -q ":${PORT}"; then
-              echo "错误：${NAME} 端口 ${PORT} 仍然被占用"
-              ss -lntp | grep ":${PORT}" || true
-              exit 1
-            fi
-
-            echo "${NAME} 端口 ${PORT} 已释放"
-          }
-
-          # 兜底：停掉所有 npm run start:backend / start:frontend
-          pkill -9 -f "node dist-server/server/index.js" 2>/dev/null || true
-          pkill -9 -f "vite preview"                       2>/dev/null || true
-
-          # ============ 后端 ============
-
-          echo "---------------- 部署后端 ----------------"
-
-          if [ -f "$BACKEND_PID_FILE" ]; then
-            OLD_BACKEND_PID=$(cat "$BACKEND_PID_FILE" 2>/dev/null || true)
-            if [ -n "$OLD_BACKEND_PID" ] && kill -0 "$OLD_BACKEND_PID" >/dev/null 2>&1; then
-              echo "停止旧后端，PID：$OLD_BACKEND_PID"
-              kill -9 "$OLD_BACKEND_PID" 2>/dev/null || true
-            fi
-            rm -f "$BACKEND_PID_FILE"
-          fi
-
-          kill_port "$BACKEND_PORT" "后端"
-
-          echo "构建后端..."
-          npm run build:server
-
-          echo "启动后端..."
-          NODE_ENV=production PORT="$BACKEND_PORT" nohup npm run start:backend \
-            > "$BACKEND_LOG" 2>&1 &
-
-          BACKEND_PID=$!
-          echo "$BACKEND_PID" > "$BACKEND_PID_FILE"
-
-          echo "后端 PID：$BACKEND_PID"
-          echo "等待后端就绪..."
-
-          BACKEND_READY=false
-          for i in $(seq 1 30); do
-            if curl -fsS "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null 2>&1; then
-              BACKEND_READY=true
-              break
-            fi
-
-            if ! kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
-              echo "后端进程已经退出"
-              tail -n 100 "$BACKEND_LOG" || true
-              exit 1
-            fi
-
-            echo "后端第 $i/30 次检查..."
-            sleep 2
-          done
-
-          if [ "$BACKEND_READY" != "true" ]; then
-            echo "后端启动失败或等待超时"
-            tail -n 100 "$BACKEND_LOG" || true
-            exit 1
-          fi
-
-          echo "后端启动成功"
-
-          # ============ 前端 ============
-
-          echo "---------------- 部署前端 ----------------"
-
-          if [ -f "$FRONTEND_PID_FILE" ]; then
-            OLD_FRONTEND_PID=$(cat "$FRONTEND_PID_FILE" 2>/dev/null || true)
-            if [ -n "$OLD_FRONTEND_PID" ] && kill -0 "$OLD_FRONTEND_PID" >/dev/null 2>&1; then
-              echo "停止旧前端，PID：$OLD_FRONTEND_PID"
-              kill -9 "$OLD_FRONTEND_PID" 2>/dev/null || true
-            fi
-            rm -f "$FRONTEND_PID_FILE"
-          fi
-
-          kill_port "$FRONTEND_PORT" "前端"
-
-          echo "构建前端..."
-          npm run build
-
-          echo "启动前端（vite preview）..."
-          # vite preview 通过 PORT/--port 决定监听端口；我们用 --port 更直接
-          nohup npx vite preview --host 0.0.0.0 --port "$FRONTEND_PORT" \
-            > "$FRONTEND_LOG" 2>&1 &
-
-          FRONTEND_PID=$!
-          echo "$FRONTEND_PID" > "$FRONTEND_PID_FILE"
-
-          echo "前端 PID：$FRONTEND_PID"
-          echo "等待前端就绪..."
-
-          FRONTEND_READY=false
-          for i in $(seq 1 30); do
-            if curl -fsS "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null 2>&1; then
-              FRONTEND_READY=true
-              break
-            fi
-
-            if ! kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
-              echo "前端进程已经退出"
-              tail -n 100 "$FRONTEND_LOG" || true
-              exit 1
-            fi
-
-            echo "前端第 $i/30 次检查..."
-            sleep 2
-          done
-
-          if [ "$FRONTEND_READY" != "true" ]; then
-            echo "前端启动失败或等待超时"
-            tail -n 100 "$FRONTEND_LOG" || true
-            exit 1
-          fi
+          # 构建 + 发布静态文件 + 重启 systemd 后端 + 重载 nginx + 健康检查
+          # 全部逻辑收在脚本里，本地和 CI 走同一条路径
+          bash "$PROJECT_DIR/scripts/deploy-server.sh"
 
           echo "=============================="
-          echo "部署完成"
-          echo "前端：http://<host>:${FRONTEND_PORT}"
-          echo "后端：http://<host>:${BACKEND_PORT}/api/health"
-          echo "后端 PID：$BACKEND_PID  日志：$BACKEND_LOG"
-          echo "前端 PID：$FRONTEND_PID  日志：$FRONTEND_LOG"
+          echo "部署完成：https://xn--muu023g.xyz"
           echo "=============================="
-
-          exit 0
 
           EOF
