@@ -68,10 +68,15 @@ info "已发布 $(find "$WWW_ROOT" -type f | wc -l) 个文件 -> $WWW_ROOT"
 echo "=========================================="
 echo " [4.5/6] 检查运行时环境"
 echo "=========================================="
-# 运行时目录必须存在（首次部署由 docs/DEPLOY.md 处理）
-for d in /var/lib/pingdou/data /var/lib/pingdou/images /var/lib/pingdou/db; do
-  [[ -d "$d" ]] || err "运行时目录不存在: $d（首次部署见 docs/DEPLOY.md#运行时数据管理）"
-done
+# 运行时目录不存在则自动建（并设权限让 nginx 能读 data/ 和 images/）
+# 后端启动时也会兜底 mkdir，但**权限**不会自动设，这里一次性设好
+if [[ ! -d /var/lib/pingdou ]]; then
+  info "运行时目录不存在，自动创建 /var/lib/pingdou/{data,images,db}"
+  mkdir -p /var/lib/pingdou/{data,images,db}
+  chown -R root:root /var/lib/pingdou
+  chmod 755 /var/lib/pingdou /var/lib/pingdou/{data,images,db}
+  chmod -R a+rX /var/lib/pingdou/data /var/lib/pingdou/images
+fi
 
 # systemd unit 必须包含 3 个必填 env（ROOT_PASSWORD 是种子密码，
 # 用完可删，不强制要求）。直接读 unit 文件，不依赖 systemctl show 格式。

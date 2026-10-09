@@ -75,7 +75,10 @@ sed -i 's/^PORT=80$/PORT=3000/' .env
 grep -E '^(PORT|PRODUCTS_JSON_PATH|PRODUCTS_IMAGES_DIR|STATS_DB_PATH|ROOT_PASSWORD)=' .env
 ```
 
-### 3. 运行时数据目录（必做）
+### 3. 运行时数据目录权限（必做）
+
+后端启动时若目录不存在会自动 `mkdirSync({ recursive: true })`，
+但**权限**不会自动设置成 nginx 可读。手动设一次：
 
 ```bash
 mkdir -p /var/lib/pingdou/{data,images,db}
@@ -484,10 +487,8 @@ systemctl restart pingdou-backend
 | 启动报错 | 原因 | 怎么查 |
 |---|---|---|
 | `PRODUCTS_JSON_PATH env var is required` | 没设这个 env | `cat /etc/pingdou-backend.env` |
-| `PRODUCTS_JSON_PATH parent dir missing: /var/lib/pingdou/data` | 父目录不存在 | `ls -ld /var/lib/pingdou/data` |
-| `PRODUCTS_IMAGES_DIR not found: /var/lib/pingdou/images` | images 目录不存在 | `ls -ld /var/lib/pingdou/images` |
+| `PRODUCTS_IMAGES_DIR env var is required` | 同上 | 同上 |
 | `STATS_DB_PATH env var is required` | 同上 | 同上 |
-| `STATS_DB_PATH parent dir missing: /var/lib/pingdou/db` | db 目录不存在 | `ls -ld /var/lib/pingdou/db` |
 | `products.json is corrupt: ...` | products.json JSON 损坏 | `python3 -m json.tool /var/lib/pingdou/data/products.json` 单独测 |
 | `ROOT_PASSWORD env var is required ...` | 首次启动没配这个 env | 在 `/etc/pingdou-backend.env` 里加 |
 | `ROOT_PASSWORD must be at least 8 characters` | 密码太短 | 换个 ≥ 8 位的 |

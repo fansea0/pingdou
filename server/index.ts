@@ -3,7 +3,7 @@ import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createServer } from 'node:net';
 import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
@@ -30,7 +30,7 @@ if (process.env.STATICS_PASSWORD) {
 }
 
 /**
- * 启动时校验：外部动态资源目录必须显式配置且目录必须存在。
+ * 启动时校验：env 必填；目录不存在则自动创建（首次部署 / 自动化场景友好）。
  * products.json 不存在 → 创建空数组（首次部署场景）。
  * products.json 损坏 → 显式报错（不静默 fallback）。
  */
@@ -59,9 +59,11 @@ function assertRuntimePaths(): void {
   const jsonParent = dirname(jsonAbs);
   const dbParent = dirname(dbAbs);
 
-  if (!existsSync(jsonParent)) throw new Error(`PRODUCTS_JSON_PATH parent dir missing: ${jsonParent}`);
-  if (!existsSync(imgAbs))     throw new Error(`PRODUCTS_IMAGES_DIR not found: ${imgAbs}`);
-  if (!existsSync(dbParent))   throw new Error(`STATS_DB_PATH parent dir missing: ${dbParent}`);
+  // 目录不存在 → 自动创建（首次部署 / 自动化场景更顺手；
+  // env 必填，路径不会被误指向到奇怪位置）
+  mkdirSync(jsonParent, { recursive: true });
+  mkdirSync(imgAbs,     { recursive: true });
+  mkdirSync(dbParent,   { recursive: true });
 
   // products.json 不存在 → seed 空数组（首次部署场景，不算错）
   if (!existsSync(jsonAbs)) {
