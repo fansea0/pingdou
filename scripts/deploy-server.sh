@@ -66,6 +66,27 @@ chmod -R a+rX "$WWW_ROOT"
 info "已发布 $(find "$WWW_ROOT" -type f | wc -l) 个文件 -> $WWW_ROOT"
 
 echo "=========================================="
+echo " [4.5/6] 检查运行时环境"
+echo "=========================================="
+# 运行时目录必须存在（首次部署由 docs/DEPLOY.md 处理）
+for d in /var/lib/pingdou/data /var/lib/pingdou/images /var/lib/pingdou/db; do
+  [[ -d "$d" ]] || err "运行时目录不存在: $d（首次部署见 docs/DEPLOY.md#运行时数据管理）"
+done
+
+# systemd unit 必须包含 3 个必填 env（ROOT_PASSWORD 是种子密码，
+# 用完可删，不强制要求）。直接读 unit 文件，不依赖 systemctl show 格式。
+UNIT_FILE="/etc/systemd/system/pingdou-backend.service"
+[[ -f "$UNIT_FILE" ]] || err "systemd unit 不存在: $UNIT_FILE（首次部署见 docs/DEPLOY.md）"
+UNIT_CONTENT=$(cat "$UNIT_FILE")
+for key in PRODUCTS_JSON_PATH PRODUCTS_IMAGES_DIR STATS_DB_PATH; do
+  if ! grep -q "$key" <<<"$UNIT_CONTENT"; then
+    err "systemd unit 缺少 $key（首次部署见 docs/DEPLOY.md#运行时数据管理）"
+  fi
+done
+
+info "运行时环境 OK（目录 + 必填 env）"
+
+echo "=========================================="
 echo " [5/6] 重启后端 + 重载 nginx"
 echo "=========================================="
 systemctl restart pingdou-backend

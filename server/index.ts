@@ -39,9 +39,19 @@ function assertRuntimePaths(): void {
   const imgDir = process.env.PRODUCTS_IMAGES_DIR;
   const dbPath = process.env.STATS_DB_PATH;
 
-  if (!jsonPath) throw new Error('PRODUCTS_JSON_PATH env var is required');
-  if (!imgDir)  throw new Error('PRODUCTS_IMAGES_DIR env var is required');
-  if (!dbPath)  throw new Error('STATS_DB_PATH env var is required');
+  // 缺少 env 时给开发者一个明确的下一步指引
+  // （本地开发跑 npm run dev:init 一键创建 .env）
+  const devHint = !process.env.PRODUCTS_JSON_PATH
+    && !process.env.PRODUCTS_IMAGES_DIR
+    && !process.env.STATS_DB_PATH
+    && process.env.NODE_ENV !== 'production';
+
+  if (!jsonPath) throw new Error(
+    'PRODUCTS_JSON_PATH env var is required' +
+    (devHint ? '\n\n本地开发：先跑 `npm run dev:init` 生成 .env，再 `npm run dev:server`\n生产部署：见 docs/DEPLOY.md 的「运行时数据管理」一节' : '')
+  );
+  if (!imgDir) throw new Error('PRODUCTS_IMAGES_DIR env var is required');
+  if (!dbPath) throw new Error('STATS_DB_PATH env var is required');
 
   const jsonAbs = resolve(jsonPath);
   const imgAbs = resolve(imgDir);

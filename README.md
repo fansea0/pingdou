@@ -144,7 +144,7 @@ PORT=3000 nohup npm run start:backend   > backend.log  2>&1 &
 nohup npx vite preview --host 0.0.0.0 --port 5173 > frontend.log 2>&1 &
 ```
 
-环境变量（**生产部署必填**，详见 [`docs/runtime-data.md`](./docs/runtime-data.md)）：
+环境变量（**生产部署必填**，详见 [`docs/DEPLOY.md#运行时数据管理`](./docs/DEPLOY.md#运行时数据管理)）：
 - `PRODUCTS_JSON_PATH` — 商品数据 JSON 文件（必填）
 - `PRODUCTS_IMAGES_DIR` — 商品图片目录（必填）
 - `STATS_DB_PATH` — SQLite 统计库路径（必填）
