@@ -140,9 +140,22 @@ export function checkUserPassword(id: number, plain: string): boolean {
 export function seedDefaultAdminIfEmpty(): UserRow | null {
   const rows = queryAll<{ n: number }>(`SELECT COUNT(*) AS n FROM users`);
   if ((rows[0]?.n ?? 0) > 0) return null;
+
+  // 首次启动必须显式配置 root 密码（无默认值，无 hardcode）
+  const password = process.env.ROOT_PASSWORD;
+  if (!password) {
+    throw new Error(
+      'ROOT_PASSWORD env var is required for first-time bootstrap ' +
+      '(only used when users table is empty; after first login, change via /api/admin/users)'
+    );
+  }
+  if (password.length < 8) {
+    throw new Error('ROOT_PASSWORD must be at least 8 characters');
+  }
+
   const u = createUser({
     username: 'root',
-    password: 'fansea0117',
+    password,
     role: 'admin',
     expiresAt: null,
     mustChangePassword: false,

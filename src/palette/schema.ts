@@ -35,7 +35,7 @@ export function parsePalette(raw: unknown): Palette {
 }
 
 export async function loadPalette(): Promise<Palette> {
-  const res = await fetch('/data/mard.json');
+  const res = await fetch('/static-data/mard.json');
   if (!res.ok) throw new Error(`Failed to load palette: ${res.status}`);
   const raw = await res.json();
   return parsePalette(raw);

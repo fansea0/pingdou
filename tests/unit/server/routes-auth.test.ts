@@ -10,6 +10,7 @@ async function buildAppFixture() {
   const base = tmpdir_;
   process.env.STATS_DB_PATH = join(base, 'stats.db');
   process.env.PRODUCTS_JSON_PATH = join(base, 'public/data/products.json');
+  process.env.ROOT_PASSWORD = 'test-seed-password-1234';
   mkdirSync(resolve(process.env.PRODUCTS_JSON_PATH, '..'), { recursive: true });
   writeFileSync(process.env.PRODUCTS_JSON_PATH, JSON.stringify([
     { id: 'p-a', name: 'A', image: '', price: 1, currency: 'CNY', description: '', url: '' },
@@ -46,6 +47,7 @@ describe('auth route integration', () => {
     delete process.env.STATS_DB_TMPDIR;
     delete process.env.STATS_DB_PATH;
     delete process.env.PRODUCTS_JSON_PATH;
+    delete process.env.ROOT_PASSWORD;
   });
 
   const request = () => requestMod.default ?? requestMod;
@@ -53,7 +55,7 @@ describe('auth route integration', () => {
   it('login → me → logout flow for the root admin', async () => {
     const { app } = await buildAppFixture();
     const agent = request().agent(app);
-    const login = await agent.post('/api/auth/login').send({ username: 'root', password: 'fansea0117' });
+    const login = await agent.post('/api/auth/login').send({ username: 'root', password: process.env.ROOT_PASSWORD });
     expect(login.status).toBe(200);
     expect(login.body.role).toBe('admin');
     expect(login.body.mustChangePassword).toBe(false);

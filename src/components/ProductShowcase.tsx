@@ -53,14 +53,9 @@ export function ProductShowcase() {
 }
 
 function ProductCard({ product }: { product: Product }) {
-  return (
-    <a
-      className="product-card"
-      href={product.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={() => trackProductClick(product.id)}
-    >
+  const clickable = !!product.url;
+  const inner = (
+    <>
       <div className="product-image" data-fallback={product.name}>
         <img
           src={product.image}
@@ -68,8 +63,10 @@ function ProductCard({ product }: { product: Product }) {
           loading="lazy"
           onError={(e) => {
             const img = e.currentTarget;
-            img.style.display = 'none';
-            img.parentElement!.classList.add('placeholder');
+            // 防止 default 图也失败时进入 onerror 死循环
+            if (img.dataset.fallbackApplied === '1') return;
+            img.dataset.fallbackApplied = '1';
+            img.src = '/static-data/default-product.png';
           }}
         />
         {product.badge && <span className="product-badge">{product.badge}</span>}
@@ -79,6 +76,22 @@ function ProductCard({ product }: { product: Product }) {
         <p className="product-desc">{product.description}</p>
         <div className="product-price">¥{product.price.toFixed(2)}</div>
       </div>
+    </>
+  );
+
+  return clickable ? (
+    <a
+      className="product-card"
+      href={product.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={() => trackProductClick(product.id)}
+    >
+      {inner}
     </a>
+  ) : (
+    <div className="product-card" data-no-url>
+      {inner}
+    </div>
   );
 }

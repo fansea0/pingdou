@@ -3,6 +3,8 @@ import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { createServer } from 'node:net';
 import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
 import { loadProductsCache, getAllProducts, updateProduct, createProduct, deleteProduct, replaceProductImage } from './products.js';
@@ -25,6 +27,43 @@ const PORT = Number(process.env.PORT ?? DEFAULT_PORT);
 
 if (process.env.STATICS_PASSWORD) {
   console.warn('[pingdou-server] STATICS_PASSWORD env var is ignored (legacy). Set the root password via /api/admin/users after login.');
+}
+
+/**
+ * 启动时校验：外部动态资源目录必须显式配置且目录必须存在。
+ * products.json 不存在 → 创建空数组（首次部署场景）。
+ * products.json 损坏 → 显式报错（不静默 fallback）。
+ */
+function assertRuntimePaths(): void {
+  const jsonPath = process.env.PRODUCTS_JSON_PATH;
+  const imgDir = process.env.PRODUCTS_IMAGES_DIR;
+  const dbPath = process.env.STATS_DB_PATH;
+
+  if (!jsonPath) throw new Error('PRODUCTS_JSON_PATH env var is required');
+  if (!imgDir)  throw new Error('PRODUCTS_IMAGES_DIR env var is required');
+  if (!dbPath)  throw new Error('STATS_DB_PATH env var is required');
+
+  const jsonAbs = resolve(jsonPath);
+  const imgAbs = resolve(imgDir);
+  const dbAbs = resolve(dbPath);
+  const jsonParent = dirname(jsonAbs);
+  const dbParent = dirname(dbAbs);
+
+  if (!existsSync(jsonParent)) throw new Error(`PRODUCTS_JSON_PATH parent dir missing: ${jsonParent}`);
+  if (!existsSync(imgAbs))     throw new Error(`PRODUCTS_IMAGES_DIR not found: ${imgAbs}`);
+  if (!existsSync(dbParent))   throw new Error(`STATS_DB_PATH parent dir missing: ${dbParent}`);
+
+  // products.json 不存在 → seed 空数组（首次部署场景，不算错）
+  if (!existsSync(jsonAbs)) {
+    writeFileSync(jsonAbs, '[]\n', 'utf-8');
+    console.warn(`[seed] created empty ${jsonAbs}`);
+  }
+  // products.json 损坏 → fail 启动，给运维明确信号
+  try {
+    JSON.parse(readFileSync(jsonAbs, 'utf-8'));
+  } catch (e) {
+    throw new Error(`products.json is corrupt: ${(e as Error).message}`);
+  }
 }
 
 const upload = multer({
@@ -454,6 +493,7 @@ async function findFreePort(start: number): Promise<number> {
 }
 
 export async function start(): Promise<void> {
+  assertRuntimePaths();
   await initDb();
   seedDefaultAdminIfEmpty();
   loadProductsCache();

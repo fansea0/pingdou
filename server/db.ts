@@ -1,11 +1,11 @@
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const DB_PATH = process.env.STATS_DB_PATH ?? resolve(process.cwd(), 'data/stats.db');
+const DB_PATH_RAW = process.env.STATS_DB_PATH;
+if (!DB_PATH_RAW) throw new Error('STATS_DB_PATH env var is required');
+const DB_PATH = resolve(DB_PATH_RAW);
 const WASM_PATH = resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm');
-
-mkdirSync(dirname(DB_PATH), { recursive: true });
 
 let SQL: SqlJsStatic | null = null;
 let db: Database | null = null;

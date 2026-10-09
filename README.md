@@ -144,9 +144,12 @@ PORT=3000 nohup npm run start:backend   > backend.log  2>&1 &
 nohup npx vite preview --host 0.0.0.0 --port 5173 > frontend.log 2>&1 &
 ```
 
-环境变量：
+环境变量（**生产部署必填**，详见 [`docs/runtime-data.md`](./docs/runtime-data.md)）：
+- `PRODUCTS_JSON_PATH` — 商品数据 JSON 文件（必填）
+- `PRODUCTS_IMAGES_DIR` — 商品图片目录（必填）
+- `STATS_DB_PATH` — SQLite 统计库路径（必填）
+- `ROOT_PASSWORD` — 首次部署种子密码（必填，seed 完后可删）
 - `PORT`（默认 `3000`） — 后端端口
-- `STATS_DB_PATH`（默认 `data/stats.db`） — sql.js 持久化文件
 - `BACKEND_URL`（默认 `http://localhost:3000`） — Vite dev/preview 代理目标
 
 ## 统计功能
@@ -160,7 +163,7 @@ nohup npx vite preview --host 0.0.0.0 --port 5173 > frontend.log 2>&1 &
 - 按时间桶（日）聚合的事件总数（折线图）
 - 支持 1/7/30/90 天时间范围切换
 
-数据存储在本地 SQLite 文件 `data/stats.db`，**随服务器物理文件一起持久**，重启不丢失。
+数据存储在 SQLite 文件，路径由 `STATS_DB_PATH` 指定。生产环境位于 `/var/lib/pingdou/db/stats.db`，**随服务器物理文件一起持久**，重启不丢失。
 
 API 端点：
 - `POST /api/track` — 上报事件（无需鉴权）
