@@ -116,8 +116,12 @@ curl -s localhost:3000/api/health   # {"ok":true,"port":3000}
 
 - `location ^~ /.well-known/acme-challenge/` 指向 `/var/www/certbot-webroot`，
   **必须用 `^~`**，否则会被后面的跳转规则吃掉，导致证书续期失败
-- `location /api/` 反代到 `127.0.0.1:3000`，**必须透传 `Cookie` / `Set-Cookie`**
-  （鉴权走 cookie + `credentials:'include'`，不透传登录态会丢）
+- `location /api/` 反代到 `127.0.0.1:3000`。
+  配置里的 `proxy_set_header Cookie` / `proxy_pass_header Set-Cookie` **不是必需的**——
+  实测（端口 8899 起临时 nginx 实例做对照）nginx 默认就双向透传 Cookie 和 Set-Cookie。
+  保留它们纯粹是**显式声明鉴权关键头**，防止以后有人加了 `proxy_hide_header` 或 `proxy_cache` 把语义改掉。
+  真正必需的是 `Host` / `X-Forwarded-For` / `X-Forwarded-Proto`（nginx 不会替你设成你想要的值）。
+  详见 [`tutorial-nginx-https.md`](./tutorial-nginx-https.md) 的"坑 5"。
 - `location /` 用 `try_files $uri $uri/ /index.html` 做 SPA 回退
 
 ```bash
@@ -253,7 +257,7 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 |---|---|
 | 首页 403 | 静态文件放回了 `/root/...`，nginx 穿不透 `/root`（550） |
 | `/api/*` 502 | 后端没起来，或 `.env` 里 `PORT` 不是 3000 |
-| 登录后立刻掉登录态 | nginx 没透传 `Cookie` / `Set-Cookie` |
+| 登录后立刻掉登录态 | 先确认 cookie 有没有到后端：`curl -i -X POST localhost/api/auth/logout \| grep -ci '^set-cookie:'`。nginx 默认会透传，所以更可能是 `secure` 属性（`NODE_ENV=production` 时 cookie 只在 HTTPS 下发）或前端没带 `credentials:'include'` |
 | 续期报 `Another instance of Certbot is already running` | `/var/log/letsencrypt/.certbot.lock` 残留（多半是上次续期被强杀），删掉即可 |
 | 续期报 `Timeout during connect` / `DNS SERVFAIL` | 正常现象，见上面「证书续期」一节，靠重试兜底 |
 | 续期报 `404` 或不含 ACME 路径 | 检查 80 端口的 `/.well-known/acme-challenge/` 是否被 301 跳转吃掉（要用 `location ^~`） |
