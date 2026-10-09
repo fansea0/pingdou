@@ -16,6 +16,10 @@ const allowedHosts = [
   '.拼豆.xyz',
 ];
 
+// 前端 dev / preview 默认端口固定 5173；后端固定 3000（见 server/index.ts）。
+// dev 模式下通过 proxy 把 /api 转发到后端，避免前端写死 origin。
+const BACKEND_DEV_URL = process.env.BACKEND_URL ?? 'http://localhost:3000';
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -28,10 +32,22 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     allowedHosts,
+    proxy: {
+      '/api': {
+        target: BACKEND_DEV_URL,
+        changeOrigin: false,
+      },
+    },
   },
   preview: {
     host: '0.0.0.0',
-    port: 4173,
+    port: 5173,
     allowedHosts,
+    proxy: {
+      '/api': {
+        target: BACKEND_DEV_URL,
+        changeOrigin: false,
+      },
+    },
   },
 });

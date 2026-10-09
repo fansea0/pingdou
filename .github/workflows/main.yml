@@ -43,16 +43,23 @@ jobs:
           set -e
 
           PROJECT_DIR="/root/project/pingdou"
-          SERVICE_PORT="${SERVICE_PORT:-80}"
-          LOG_FILE="$PROJECT_DIR/start.log"
-          PID_FILE="$PROJECT_DIR/start.pid"
+
+          # 前端 5173，后端 3000（前后端解耦，各自独立进程）。
+          BACKEND_PORT="${BACKEND_PORT:-3000}"
+          FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+
+          BACKEND_LOG="$PROJECT_DIR/backend.log"
+          BACKEND_PID_FILE="$PROJECT_DIR/backend.pid"
+          FRONTEND_LOG="$PROJECT_DIR/frontend.log"
+          FRONTEND_PID_FILE="$PROJECT_DIR/frontend.pid"
 
           cd "$PROJECT_DIR"
 
           echo "=============================="
           echo "开始部署拼豆项目"
           echo "项目目录：$PROJECT_DIR"
-          echo "服务端口：$SERVICE_PORT"
+          echo "后端端口：$BACKEND_PORT"
+          echo "前端端口：$FRONTEND_PORT"
           echo "=============================="
 
           echo "重置本地仓库状态..."
@@ -94,108 +101,166 @@ jobs:
 
           if [ "$NEED_INSTALL" = true ]; then
             echo "开始安装依赖..."
-            npm i
+            npm ci
           else
             echo "依赖未发生变化，跳过安装"
           fi
 
-          echo "停止旧服务..."
+          # ============ 通用：杀掉指定端口占用 ============
 
-          # 根据 PID 文件停止旧服务
-          if [ -f "$PID_FILE" ]; then
-            OLD_PID=$(cat "$PID_FILE" 2>/dev/null || true)
+          kill_port() {
+            local PORT=$1
+            local NAME=$2
+            echo "检查 ${NAME} 端口 ${PORT} 占用..."
+            ss -lntp | grep ":${PORT}" || true
 
-            if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" >/dev/null 2>&1; then
-              echo "强制停止旧服务，PID：$OLD_PID"
-              kill -9 "$OLD_PID" 2>/dev/null || true
+            local PORT_PIDS=$(
+              ss -lntp 2>/dev/null |
+              grep ":${PORT}" |
+              grep -o 'pid=[0-9]*' |
+              cut -d= -f2 |
+              sort -u || true
+            )
+
+            if [ -n "$PORT_PIDS" ]; then
+              echo "${NAME} 端口被以下进程占用："
+              echo "$PORT_PIDS"
+              for PID in $PORT_PIDS; do
+                echo "执行 kill -9 $PID"
+                kill -9 "$PID" 2>/dev/null || true
+              done
+            else
+              echo "${NAME} 端口 ${PORT} 未被占用"
             fi
 
-            rm -f "$PID_FILE"
-          fi
+            sleep 1
 
-          # 兜底：停止 npm run start 进程
-          pkill -9 -f "npm run start" 2>/dev/null || true
-
-          echo "检查 ${SERVICE_PORT} 端口占用..."
-
-          ss -lntp | grep ":${SERVICE_PORT}" || true
-
-          # 从 ss 输出中提取占用 ${SERVICE_PORT} 端口的 PID
-          PORT_PIDS=$(
-            ss -lntp 2>/dev/null |
-            grep ":${SERVICE_PORT}" |
-            grep -o 'pid=[0-9]*' |
-            cut -d= -f2 |
-            sort -u || true
-          )
-
-          if [ -n "$PORT_PIDS" ]; then
-            echo "${SERVICE_PORT} 端口被以下进程占用："
-            echo "$PORT_PIDS"
-
-            for PID in $PORT_PIDS; do
-              echo "执行 kill -9 $PID"
-              kill -9 "$PID" 2>/dev/null || true
-            done
-          else
-            echo "${SERVICE_PORT} 端口未被占用"
-          fi
-
-          sleep 1
-
-          echo "再次检查 ${SERVICE_PORT} 端口..."
-
-          if ss -lntp | grep -q ":${SERVICE_PORT}"; then
-            echo "错误：${SERVICE_PORT} 端口仍然被占用"
-            ss -lntp | grep ":${SERVICE_PORT}" || true
-            exit 1
-          fi
-
-          echo "${SERVICE_PORT} 端口已释放"
-          echo "启动新服务..."
-
-          # npm run start 不识别 --port，由 PORT 环境变量控制
-          NODE_ENV=production PORT="$SERVICE_PORT" nohup npm run start \
-            > "$LOG_FILE" 2>&1 &
-
-          NEW_PID=$!
-          echo "$NEW_PID" > "$PID_FILE"
-
-          echo "新服务 PID：$NEW_PID"
-          echo "等待服务启动..."
-
-          for i in $(seq 1 30); do
-            if curl -fsS "http://127.0.0.1:${SERVICE_PORT}" >/dev/null 2>&1; then
-              echo "=============================="
-              echo "服务启动成功"
-              echo "服务端口：$SERVICE_PORT"
-              echo "进程 PID：$NEW_PID"
-              echo "=============================="
-              exit 0
-            fi
-
-            if ! kill -0 "$NEW_PID" >/dev/null 2>&1; then
-              echo "服务进程已经退出"
-              echo "最近 100 行日志："
-              tail -n 100 "$LOG_FILE" || true
+            if ss -lntp | grep -q ":${PORT}"; then
+              echo "错误：${NAME} 端口 ${PORT} 仍然被占用"
+              ss -lntp | grep ":${PORT}" || true
               exit 1
             fi
 
-            echo "第 $i/30 次检查，服务尚未就绪..."
+            echo "${NAME} 端口 ${PORT} 已释放"
+          }
+
+          # 兜底：停掉所有 npm run start:backend / start:frontend
+          pkill -9 -f "node dist-server/server/index.js" 2>/dev/null || true
+          pkill -9 -f "vite preview"                       2>/dev/null || true
+
+          # ============ 后端 ============
+
+          echo "---------------- 部署后端 ----------------"
+
+          if [ -f "$BACKEND_PID_FILE" ]; then
+            OLD_BACKEND_PID=$(cat "$BACKEND_PID_FILE" 2>/dev/null || true)
+            if [ -n "$OLD_BACKEND_PID" ] && kill -0 "$OLD_BACKEND_PID" >/dev/null 2>&1; then
+              echo "停止旧后端，PID：$OLD_BACKEND_PID"
+              kill -9 "$OLD_BACKEND_PID" 2>/dev/null || true
+            fi
+            rm -f "$BACKEND_PID_FILE"
+          fi
+
+          kill_port "$BACKEND_PORT" "后端"
+
+          echo "构建后端..."
+          npm run build:server
+
+          echo "启动后端..."
+          NODE_ENV=production PORT="$BACKEND_PORT" nohup npm run start:backend \
+            > "$BACKEND_LOG" 2>&1 &
+
+          BACKEND_PID=$!
+          echo "$BACKEND_PID" > "$BACKEND_PID_FILE"
+
+          echo "后端 PID：$BACKEND_PID"
+          echo "等待后端就绪..."
+
+          BACKEND_READY=false
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${BACKEND_PORT}/api/health" >/dev/null 2>&1; then
+              BACKEND_READY=true
+              break
+            fi
+
+            if ! kill -0 "$BACKEND_PID" >/dev/null 2>&1; then
+              echo "后端进程已经退出"
+              tail -n 100 "$BACKEND_LOG" || true
+              exit 1
+            fi
+
+            echo "后端第 $i/30 次检查..."
             sleep 2
           done
 
+          if [ "$BACKEND_READY" != "true" ]; then
+            echo "后端启动失败或等待超时"
+            tail -n 100 "$BACKEND_LOG" || true
+            exit 1
+          fi
+
+          echo "后端启动成功"
+
+          # ============ 前端 ============
+
+          echo "---------------- 部署前端 ----------------"
+
+          if [ -f "$FRONTEND_PID_FILE" ]; then
+            OLD_FRONTEND_PID=$(cat "$FRONTEND_PID_FILE" 2>/dev/null || true)
+            if [ -n "$OLD_FRONTEND_PID" ] && kill -0 "$OLD_FRONTEND_PID" >/dev/null 2>&1; then
+              echo "停止旧前端，PID：$OLD_FRONTEND_PID"
+              kill -9 "$OLD_FRONTEND_PID" 2>/dev/null || true
+            fi
+            rm -f "$FRONTEND_PID_FILE"
+          fi
+
+          kill_port "$FRONTEND_PORT" "前端"
+
+          echo "构建前端..."
+          npm run build
+
+          echo "启动前端（vite preview）..."
+          # vite preview 通过 PORT/--port 决定监听端口；我们用 --port 更直接
+          nohup npx vite preview --host 0.0.0.0 --port "$FRONTEND_PORT" \
+            > "$FRONTEND_LOG" 2>&1 &
+
+          FRONTEND_PID=$!
+          echo "$FRONTEND_PID" > "$FRONTEND_PID_FILE"
+
+          echo "前端 PID：$FRONTEND_PID"
+          echo "等待前端就绪..."
+
+          FRONTEND_READY=false
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null 2>&1; then
+              FRONTEND_READY=true
+              break
+            fi
+
+            if ! kill -0 "$FRONTEND_PID" >/dev/null 2>&1; then
+              echo "前端进程已经退出"
+              tail -n 100 "$FRONTEND_LOG" || true
+              exit 1
+            fi
+
+            echo "前端第 $i/30 次检查..."
+            sleep 2
+          done
+
+          if [ "$FRONTEND_READY" != "true" ]; then
+            echo "前端启动失败或等待超时"
+            tail -n 100 "$FRONTEND_LOG" || true
+            exit 1
+          fi
+
           echo "=============================="
-          echo "服务启动失败或等待超时"
+          echo "部署完成"
+          echo "前端：http://<host>:${FRONTEND_PORT}"
+          echo "后端：http://<host>:${BACKEND_PORT}/api/health"
+          echo "后端 PID：$BACKEND_PID  日志：$BACKEND_LOG"
+          echo "前端 PID：$FRONTEND_PID  日志：$FRONTEND_LOG"
           echo "=============================="
 
-          echo "当前端口占用："
-          ss -lntp | grep ":${SERVICE_PORT}" || true
-
-          echo "最近 100 行日志："
-          tail -n 100 "$LOG_FILE" || true
-
-          exit 1
+          exit 0
 
           EOF
-

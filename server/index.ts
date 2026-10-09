@@ -3,8 +3,6 @@ import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
-import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
 import { loadProductsCache, getAllProducts, updateProduct, createProduct, deleteProduct, replaceProductImage } from './products.js';
@@ -19,8 +17,10 @@ import {
 } from './users.js';
 import { reconcileAssignments, revokeAllForProduct, hasActiveAssignment, getActiveAssignmentsForUser } from './assignments.js';
 
-// 默认端口：生产 80，开发 3000；PORT 环境变量始终优先
-const DEFAULT_PORT = process.env.NODE_ENV === 'production' ? 80 : 3000;
+// 后端固定端口 3000（dev / prod 一致）。可通过 PORT 环境变量覆盖。
+// 前端 dev / preview 都走 5173（见 vite.config.ts）；
+// 生产部署推荐 nginx 反代把同一域名下的 /api 转发到 3000，避免跨域。
+const DEFAULT_PORT = 3000;
 const PORT = Number(process.env.PORT ?? DEFAULT_PORT);
 
 if (process.env.STATICS_PASSWORD) {
@@ -76,7 +76,7 @@ function requireProductAccess(req: AuthedRequest, res: express.Response, next: e
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, staticsConfigured: true });
+  res.json({ ok: true, port: PORT });
 });
 
 app.post('/api/track', (req, res) => {
@@ -434,17 +434,11 @@ app.put('/api/admin/settings', requireAuth, requireAdmin, (req: AuthedRequest, r
   }
 });
 
-const distDir = resolve(process.cwd(), 'dist');
-if (existsSync(distDir)) {
-  app.use(express.static(distDir));
-  app.get(/^\/(?!api).*/, (_req, res) => {
-    res.sendFile(resolve(distDir, 'index.html'));
-  });
-} else {
-  app.get('/', (_req, res) => {
-    res.type('text/plain').send('pingdou server is running. Build the frontend (npm run build) to serve static files.');
-  });
-}
+// 仅 API 进程：前端静态资源由 nginx / `vite preview` 独立托管（端口 5173）。
+// 健康检查根路径，方便部署时做存活探测。
+app.get('/', (_req, res) => {
+  res.type('text/plain').send(`pingdou api is running on port ${PORT}`);
+});
 
 async function findFreePort(start: number): Promise<number> {
   for (let p = start; p < start + 20; p++) {
