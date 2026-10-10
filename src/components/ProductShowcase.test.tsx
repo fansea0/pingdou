@@ -3,8 +3,8 @@ import { render, waitFor, screen, cleanup } from '@testing-library/react';
 import { ProductShowcase } from '@/components/ProductShowcase';
 
 const mockProducts = [
-  { id: 'p1', name: '128 色套装', image: '/a.jpg', price: 99, currency: 'CNY' as const, description: '套装介绍', url: 'https://taobao.com/1' },
-  { id: 'p2', name: '24 色套装', image: '/b.jpg', price: 29.9, currency: 'CNY' as const, description: '入门套装', url: 'https://taobao.com/2', badge: '新品' },
+  { id: 1, name: '128 色套装', image: '/a.jpg', price: 9900, description: '套装介绍', url: 'https://taobao.com/1' },
+  { id: 2, name: '24 色套装', image: '/b.jpg', price: 2990, description: '入门套装', url: 'https://taobao.com/2', badge: '新品' },
 ];
 
 describe('ProductShowcase', () => {

@@ -23,12 +23,13 @@ export function ProductEditModal({ product, onClose, onSaved }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const numericPrice = Number(price);
-      if (Number.isNaN(numericPrice)) throw new Error('invalid price');
+      const numericYuan = Number(price);
+      if (Number.isNaN(numericYuan)) throw new Error('invalid price');
+      const numericCents = Math.round(numericYuan * 100);
       const updated = await updateProduct(product.id, {
         name,
         description,
-        price: numericPrice,
+        price: numericCents,
         url,
         badge: badge === '' ? null : badge,
       });
