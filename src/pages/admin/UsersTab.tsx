@@ -113,7 +113,7 @@ function CreateUserModal({ products, onClose, onCreated }: { products: Product[]
         username,
         password,
         role,
-        productIds: role === 'merchant' ? (productIds as unknown as string[]) : [],
+        productIds: role === 'merchant' ? productIds : [],
         mustChangePassword: mustChange,
       });
       onCreated();

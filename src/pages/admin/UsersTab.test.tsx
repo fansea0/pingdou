@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 vi.mock('@/api/users', () => ({
   adminListUsers: vi.fn().mockResolvedValue([
     { id: 1, username: 'root', role: 'admin', disabled: false, mustChangePassword: false, expiresAt: null, createdAt: 0, products: [] },
-    { id: 2, username: 'mike', role: 'merchant', disabled: false, mustChangePassword: false, expiresAt: null, createdAt: 0, products: ['p-a'] },
+    { id: 2, username: 'mike', role: 'merchant', disabled: false, mustChangePassword: false, expiresAt: null, createdAt: 0, products: [1] },
   ]),
   adminCreateUser: vi.fn().mockResolvedValue({ id: 3, username: 'new', role: 'merchant' }),
   adminPatchUser: vi.fn().mockResolvedValue({ ok: true }),

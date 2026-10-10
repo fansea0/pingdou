@@ -10,14 +10,14 @@ export interface AdminUserView {
   mustChangePassword: boolean;
   expiresAt: number | null;
   createdAt: number;
-  products: string[];
+  products: number[];
 }
 
 export interface CreateUserPayload {
   username: string;
   password: string;
   role: Role;
-  productIds?: string[];
+  productIds?: number[];
   expiresAt?: number | null;
   mustChangePassword?: boolean;
 }
@@ -27,7 +27,7 @@ export interface PatchUserPayload {
   disabled?: boolean;
   mustChangePassword?: boolean;
   expiresAt?: number | null;
-  productIds?: string[];
+  productIds?: number[];
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
