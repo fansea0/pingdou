@@ -15,6 +15,8 @@ export interface UserRow {
 
 function now(): number { return Date.now(); }
 
+const DEFAULT_ADMIN_PASSWORD = '12345678';
+
 function mapUser(row: Record<string, unknown>): UserRow {
   return {
     id: Number(row.id),
@@ -141,25 +143,16 @@ export function seedDefaultAdminIfEmpty(): UserRow | null {
   const rows = queryAll<{ n: number }>(`SELECT COUNT(*) AS n FROM users`);
   if ((rows[0]?.n ?? 0) > 0) return null;
 
-  // 首次启动必须显式配置 root 密码（无默认值，无 hardcode）
-  const password = process.env.ROOT_PASSWORD;
-  if (!password) {
-    throw new Error(
-      'ROOT_PASSWORD env var is required for first-time bootstrap ' +
-      '(only used when users table is empty; after first login, change via /api/admin/users)'
-    );
-  }
-  if (password.length < 8) {
-    throw new Error('ROOT_PASSWORD must be at least 8 characters');
-  }
-
   const u = createUser({
     username: 'root',
-    password,
+    password: DEFAULT_ADMIN_PASSWORD,
     role: 'admin',
     expiresAt: null,
-    mustChangePassword: false,
+    mustChangePassword: true,
   });
-  console.log('[pingdou-server] seeded default admin (root)');
+  console.warn(
+    '[pingdou-server] seeded default admin (root) — ' +
+    'login with username=root, password=12345678, MUST change password on first login',
+  );
   return u;
 }
