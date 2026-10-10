@@ -730,23 +730,17 @@ done
 
 ### 10.3 期望结果
 
-`npm test` 现有 + 新增 ≥ 18 个测试全部通过。
+`npm test` 现有 + 新增 ≥ 15 个测试全部通过。
 
 ## 十一、生产部署步骤
 
-1. **部署前备份**（强烈建议）：
-   ```bash
-   tar czf backup-pre-products-db.tgz /var/lib/pingdou/data/products.json
-   ```
-   如果你确认旧数据不重要，可跳过。
-
-2. **部署新代码 + 改 env**：
+1. **部署新代码 + 改 env**：
    ```bash
    # 服务器上
    cd /root/project/pingdou
-   bash scripts/deploy-server.sh    # 检测到旧 env 会打印 WARN
+   bash scripts/deploy-server.sh    # 检测到旧 env 会打印 WARN，但因 PINGDOU_DATA_DIR 没设会报错退出
    ```
-   deploy 脚本会失败（因为 `PINGDOU_DATA_DIR` 没设）。手动：
+   deploy 脚本失败后手动改 env：
    ```bash
    cat > /etc/pingdou-backend.env <<'EOF'
    PINGDOU_DATA_DIR=/var/lib/pingdou
@@ -755,20 +749,20 @@ done
    bash scripts/deploy-server.sh     # 这次会成功
    ```
 
-3. **首次启动**：
+2. **首次启动**：
    - 后端检测 users 表为空 → seed root / `12345678` / `mustChangePassword=true`
    - 控制台 / journalctl 打印：
      ```
      [pingdou-server] seeded default admin (root) — login with username=root, password=12345678, MUST change password on first login
      ```
 
-4. **首次登录 + 强制改密**：
+3. **首次登录 + 强制改密**：
    - 打开 `https://<域名>/statics`
    - 用户名 `root` / 密码 `12345678`
-   - 强制改密 modal 弹出 → 输入新密码 → 提交
+   - 强制改密 modal 弹出 → 输入旧密码 `12345678` + 新密码（≥ 4 位） → 提交
    - 改密成功 → 进入 admin 仪表盘
 
-5. **清理（可选）**：
+4. **清理（可选）**：
    ```bash
    rm -rf /var/lib/pingdou/data/    # 旧目录，新代码不再使用
    # nginx reload 让 /data/ alias 失效
@@ -782,19 +776,19 @@ done
 | 运维忘记改 env | 进程起不来 | fail-fast + 报错信息明确指向 DEPLOY.md |
 | nginx 仍有 `location /data/` alias 但后端不再写 products.json | 访客 `/data/products.json` 404 | frontend 已切到 `/api/public/products`，404 不影响；DEPLOY.md 提示 reload nginx 删 alias |
 | `seedDefaultAdminIfEmpty` 把 `12345678` 打到 journalctl | journalctl 不外暴露可接受；外暴露等于公开默认密码 | 接受 trade-off（用户已确认硬编码），建议生产环境通过其他方式（firewall）限制 journalctl 访问 |
-| 旧 prod `data/products.json` 真实商品数据丢失 | 用户已确认不迁移 | 文档强制建议部署前手动 tar 备份一次 |
+| 旧 prod `data/products.json` 真实商品数据丢失 | 用户已确认不迁移、不备份 | 不做备份；运维在首次部署后通过 admin 后台重新录入 |
 | sql.js `flushNow` 500ms 防抖：商品写入后未立即落盘 → 进程崩溃可能丢 | 跟现有其他表一样的保证 | 不算新问题 |
 | 多副本部署未来扩展时 SQLite 文件并发写坑 | 当前单进程不引入 | DEPLOY.md 注释一句 |
 | `order` 字段在 SQL 是关键字需转义 | 语法错误 | 全部用 `"order"` 双引号包起来；测试覆盖 |
 | merchant 用户通过前端表单手动塞 `order` 字段到 PUT body | 服务端必须拒绝 | `PUT /api/products/:id` 路由里**不接受** `order` 字段；即使客户端传也直接被 destructuring 忽略 |
 | admin 拖拽时其他 admin 同时拖 | 第二次写入覆盖第一次 | 接受 last-write-wins；如果需要严格并发，加版本号字段（YAGNI） |
-| 旧 prod 中已有 `product_assignments.product_id` 为 TEXT 引用 string slug id | 升级后 references 全部失效（schema 改了类型） | 用户已确认不迁移；首次部署会清空 stats.db；建议运维部署前 `cp stats.db stats.db.bak`，有问题可回滚 |
+| 旧 prod 中已有 `product_assignments.product_id` 为 TEXT 引用 string slug id | 升级后 references 全部失效（schema 改了类型） | 用户已确认不迁移、不备份；升级后 stats.db 等同于清空重建 |
 
 ## 十三、验收清单
 
 - [ ] `PINGDOU_DATA_DIR` env 不设 → 后端启动 fail-fast + 错误信息明确
 - [ ] `npm run typecheck` 0 错误
-- [ ] `npm test` 全部通过（含新增 ≥ 18 个）
+- [ ] `npm test` 全部通过（含新增 ≥ 15 个）
 - [ ] `npm run build` 通过
 - [ ] admin 登录 root/12345678 → 强制改密 modal 弹出 → 改密成功 → 进入仪表盘
 - [ ] admin 创建商品 → 访客侧 `GET /api/public/products` 立即返回新商品
