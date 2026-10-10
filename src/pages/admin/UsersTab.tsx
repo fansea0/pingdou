@@ -99,7 +99,7 @@ function CreateUserModal({ products, onClose, onCreated }: { products: Product[]
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'merchant' | 'admin'>('merchant');
-  const [productIds, setProductIds] = useState<string[]>([]);
+  const [productIds, setProductIds] = useState<number[]>([]);
   const [mustChange, setMustChange] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -113,7 +113,7 @@ function CreateUserModal({ products, onClose, onCreated }: { products: Product[]
         username,
         password,
         role,
-        productIds: role === 'merchant' ? productIds : [],
+        productIds: role === 'merchant' ? (productIds as unknown as string[]) : [],
         mustChangePassword: mustChange,
       });
       onCreated();
