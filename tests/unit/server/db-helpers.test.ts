@@ -7,7 +7,6 @@ let dbPath = '';
 
 async function freshDb() {
   dbPath = join(tmpdir(), `stats-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-  process.env.STATS_DB_PATH = dbPath;
   vi.resetModules();
   const db = await import('../../../server/db.js');
   await db.initDb();
@@ -16,6 +15,8 @@ async function freshDb() {
 
 beforeEach(() => {
   if (dbPath && existsSync(dbPath)) unlinkSync(dbPath);
+  process.env.PINGDOU_DATA_DIR = join(tmpdir(), `db-helpers-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  vi.resetModules();
 });
 
 describe('initDb new tables + runInTransaction', () => {
@@ -26,6 +27,7 @@ describe('initDb new tables + runInTransaction', () => {
     expect(names).toContain('users');
     expect(names).toContain('product_assignments');
     expect(names).toContain('auth_tokens');
+    expect(names).toContain('products');
     flushNow();
   });
 
