@@ -12,3 +12,11 @@
 .site-stats-dot {
   opacity: 0.6;
 }
+
+/* Decorative social proof — recede on mobile so the artwork leads. */
+@media (max-width: 900px) {
+  .site-stats {
+    font-size: 10px;
+    margin-top: 2px;
+  }
+}

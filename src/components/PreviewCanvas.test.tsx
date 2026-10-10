@@ -69,4 +69,25 @@ describe('PreviewCanvas (empty state)', () => {
     expect(container.querySelector('.empty-state')).toBeNull();
     expect(container.querySelector('canvas.preview')).toBeTruthy();
   });
+
+  it('renders the status slot as the first child of the preview card', () => {
+    const { container } = render(
+      <PreviewCanvas
+        result={result}
+        palette={palette}
+        cellPx={24}
+        isRecomputing={false}
+        statusSlot={
+          <p className="preview-status">
+            <strong>2,633</strong> 颗
+          </p>
+        }
+      />
+    );
+    const status = container.querySelector('.preview-status');
+
+    expect(status).toBeTruthy();
+    expect(status?.textContent).toMatch(/2,633 颗/);
+    expect(container.querySelector('.preview-wrap')?.firstElementChild).toBe(status);
+  });
 });

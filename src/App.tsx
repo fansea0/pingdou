@@ -109,7 +109,10 @@ export function App() {
     <div className="app">
       <header>
         <h1>🐰 拼豆图生成器</h1>
-        <p className="subtitle">上传图片 → 一键生成你的拼豆图纸（MARD {palette.length} 色）</p>
+        <p className="subtitle">
+          上传图片 → 一键生成你的拼豆图纸
+          <span className="subtitle-palette">（MARD {palette.length} 色）</span>
+        </p>
         <SiteStats />
       </header>
 
@@ -153,6 +156,23 @@ export function App() {
             palette={palette}
             cellPx={PREVIEW_CELL_PX}
             isRecomputing={status === 'recomputing'}
+            statusSlot={
+              /* Desktop already shows this inside ParamPanel; the strip only
+                 renders on mobile, where the toolbar used to carry it. */
+              <p className="preview-status">
+                {beanCount > 0 ? (
+                  <>
+                    <strong>{beanCount.toLocaleString()}</strong> 颗
+                    {estimateLabel && <span> · {estimateLabel}</span>}
+                    {removeBackground && (
+                      <span className="preview-status-flag"> · 已去背景</span>
+                    )}
+                  </>
+                ) : (
+                  <span>未上传图片</span>
+                )}
+              </p>
+            }
           />
         </section>
 
@@ -172,8 +192,6 @@ export function App() {
 
       <MobileActionBar
         gridSize={gridSize}
-        beanCount={beanCount}
-        estimateLabel={estimateLabel}
         removeBackground={removeBackground}
         simplifyColors={simplifyColors}
         onGridSizeChange={n => {
@@ -201,7 +219,7 @@ export function App() {
 
       {exportFlash === 'done' && (
         <div className="export-toast" role="status" aria-live="polite">
-          <span className="export-toast-text">导出成功！到下载文件夹找它吧～</span>
+          <span className="export-toast-text">下载成功！到下载文件夹找它吧～</span>
         </div>
       )}
     </div>

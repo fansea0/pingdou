@@ -7,9 +7,10 @@ interface Props {
   palette: Palette;
   cellPx: number;
   isRecomputing: boolean;
+  statusSlot?: React.ReactNode;
 }
 
-export function PreviewCanvas({ result, palette, cellPx, isRecomputing }: Props) {
+export function PreviewCanvas({ result, palette, cellPx, isRecomputing, statusSlot }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -23,6 +24,7 @@ export function PreviewCanvas({ result, palette, cellPx, isRecomputing }: Props)
 
   return (
     <div className="preview-wrap">
+      {statusSlot}
       <div className={isRecomputing ? 'preview-scroll dim' : 'preview-scroll'}>
         {result ? (
           <canvas ref={ref} className="preview" />

@@ -41,8 +41,8 @@ export function ExportPanel({ onExport, disabled, exporting, flash }: Props) {
   const label = exporting
     ? '正在生成…'
     : flash === 'done'
-    ? '已导出 ✓'
-    : '导出图片';
+    ? '已下载 ✓'
+    : '下载';
 
   return (
     <div className="export-panel">

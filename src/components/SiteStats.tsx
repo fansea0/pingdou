@@ -38,7 +38,7 @@ export function SiteStats() {
     <p className="site-stats" aria-label="站点统计">
       <span>浏览 {format(snapshot.pv)}</span>
       <span className="site-stats-dot" aria-hidden="true">·</span>
-      <span>导出 {format(snapshot.exports)}</span>
+      <span>下载 {format(snapshot.exports)}</span>
     </p>
   );
 }

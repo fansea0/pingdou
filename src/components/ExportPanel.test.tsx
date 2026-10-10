@@ -3,10 +3,10 @@ import { render, fireEvent } from '@testing-library/react';
 import { ExportPanel } from '@/components/ExportPanel';
 
 describe('ExportPanel', () => {
-  it('renders the export button labeled "导出图片"', () => {
+  it('renders the export button labeled "下载"', () => {
     const { container } = render(<ExportPanel onExport={() => {}} disabled={false} />);
     const btn = container.querySelector('button.primary');
-    expect(btn?.textContent).toMatch(/导出图片/);
+    expect(btn?.textContent).toMatch(/下载/);
   });
 
   it('shows "正在生成…" while exporting', () => {
@@ -17,12 +17,12 @@ describe('ExportPanel', () => {
     expect(btn?.textContent).toMatch(/正在生成/);
   });
 
-  it('shows "已导出 ✓" after flash', () => {
+  it('shows "已下载 ✓" after flash', () => {
     const { container } = render(
       <ExportPanel onExport={() => {}} disabled={false} flash="done" />
     );
     const btn = container.querySelector('button.primary');
-    expect(btn?.textContent).toMatch(/已导出/);
+    expect(btn?.textContent).toMatch(/已下载/);
   });
 
   it('clicking the button triggers onExport', () => {
