@@ -37,7 +37,14 @@ export function ProductShowcase() {
   return (
     <section className="product-showcase">
       <header className="product-showcase-header">
-        <h2>购买拼豆材料</h2>
+        {/* 《广告法》第十四条 + 《互联网广告管理办法》第九条：以知识介绍/
+            体验分享推销商品并附加购买方式的，必须显著标明「广告」。
+            监管口径里「标注了但消费者不易识别」同样算违规，所以这里跟标题
+            同级、带边框，不用灰色小字糊弄过去。 */}
+        <h2>
+          购买拼豆材料
+          <span className="ad-badge">广告</span>
+        </h2>
         <p>基于 MARD 色板，一站式购齐</p>
       </header>
       <div className="product-grid" ref={scrollRef} onScroll={onScroll}>

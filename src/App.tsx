@@ -215,6 +215,13 @@ export function App() {
 
       <footer className="app-footer">
         <p>© 拼豆图生成器 · 仅作手工参考 · 颜色归各品牌所有</p>
+        {/* 《非经营性互联网信息服务备案管理办法》第十三条：主页底部中央标明
+            备案编号，并链接工信部备案管理系统。 */}
+        <p className="app-footer-filing">
+          <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
+            鄂ICP备2026055552号-1
+          </a>
+        </p>
       </footer>
 
       {exportFlash === 'done' && (

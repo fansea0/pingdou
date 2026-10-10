@@ -18,6 +18,23 @@
   font-size: var(--text-sm);
 }
 
+/* 广告标识：法规要求「显著标明」，灰色小字会被认定为不易识别，
+   所以用描边 + 实底，与标题视觉同级但尺寸克制。 */
+.ad-badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 6px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+}
+
 /* Desktop: 3-column grid */
 .product-grid {
   display: grid;

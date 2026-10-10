@@ -42,6 +42,20 @@ describe('ProductShowcase', () => {
     expect(screen.getByText('新品')).toBeTruthy();
   });
 
+  it('marks the product block as advertising, as required by 广告法第十四条', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockProducts,
+    } as Response);
+
+    const { container } = render(<ProductShowcase />);
+    await waitFor(() => expect(container.querySelectorAll('.product-card')).toHaveLength(2));
+
+    // 「标注了但不易识别」在监管口径里同样算违规，所以断言的是独立徽标
+    const badge = container.querySelector('.product-showcase-header .ad-badge');
+    expect(badge?.textContent).toBe('广告');
+  });
+
   it('shows error state on fetch failure', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('network'));
     const { container } = render(<ProductShowcase />);

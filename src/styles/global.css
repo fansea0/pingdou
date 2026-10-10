@@ -538,3 +538,18 @@ button.primary:disabled {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
 }
+/* ICP 备案号：法规要求在主页底部中央标明并链接工信部备案系统，
+   样式上刻意做轻，避免喧宾夺主。 */
+.app-footer-filing {
+  margin-top: var(--space-1);
+}
+.app-footer-filing a {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.app-footer-filing a:hover {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}

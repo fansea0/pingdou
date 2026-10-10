@@ -65,6 +65,27 @@ describe('homepage SEO contract', () => {
     );
   });
 
+  it('publishes the ICP filing number in both the static HTML and the rendered footer', () => {
+    const FILING_NUMBER = '鄂ICP备2026055552号-1';
+    const MIIT_FILING_URL = 'https://beian.miit.gov.cn/';
+
+    // 只抓原始 HTML、不执行 JS 的合规核查工具看不到 React 页脚，
+    // 所以两处都要有，且编号不能漂移。
+    const indexHtml = readProjectFile('index.html');
+    expect(indexHtml).toContain(FILING_NUMBER);
+    expect(indexHtml).toContain(MIIT_FILING_URL);
+
+    const appTsx = readProjectFile('src/App.tsx');
+    expect(appTsx).toContain(FILING_NUMBER);
+    expect(appTsx).toContain(MIIT_FILING_URL);
+
+    // 编号下方必须链接工信部备案管理系统（《非经营性互联网信息服务
+    // 备案管理办法》第十三条 / 第二十五条）
+    const document = new DOMParser().parseFromString(indexHtml, 'text/html');
+    const filingLink = document.querySelector(`#seo-fallback a[href="${MIIT_FILING_URL}"]`);
+    expect(filingLink?.textContent?.trim()).toBe(FILING_NUMBER);
+  });
+
   it('allows crawling while publishing the sitemap location', () => {
     const robotsTxt = readProjectFile('public/robots.txt');
 
