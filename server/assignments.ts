@@ -2,7 +2,7 @@ import { queryAll, runStmt, runInTransaction } from './db.js';
 
 export interface AssignmentRow {
   id: number;
-  productId: string;
+  productId: number;
   userId: number;
   assignedAt: number;
   revokedAt: number | null;
@@ -11,7 +11,7 @@ export interface AssignmentRow {
 function map(r: Record<string, unknown>): AssignmentRow {
   return {
     id: Number(r.id),
-    productId: String(r.product_id),
+    productId: Number(r.product_id),
     userId: Number(r.user_id),
     assignedAt: Number(r.assigned_at),
     revokedAt: r.revoked_at == null ? null : Number(r.revoked_at),
@@ -26,7 +26,7 @@ export function getActiveAssignmentsForUser(userId: number): AssignmentRow[] {
   return rows.map(map);
 }
 
-export function hasActiveAssignment(userId: number, productId: string): boolean {
+export function hasActiveAssignment(userId: number, productId: number): boolean {
   const rows = queryAll<{ n: number }>(
     `SELECT COUNT(*) AS n FROM product_assignments
        WHERE user_id = ? AND product_id = ? AND revoked_at IS NULL`,
@@ -35,7 +35,7 @@ export function hasActiveAssignment(userId: number, productId: string): boolean 
   return (rows[0]?.n ?? 0) > 0;
 }
 
-export function reconcileAssignments(userId: number, newProductIds: readonly string[]): void {
+export function reconcileAssignments(userId: number, newProductIds: readonly number[]): void {
   const ts = Date.now();
   const unique = Array.from(new Set(newProductIds));
   runInTransaction(() => {
@@ -64,7 +64,7 @@ export function reconcileAssignments(userId: number, newProductIds: readonly str
   });
 }
 
-export function revokeAllForProduct(productId: string): void {
+export function revokeAllForProduct(productId: number): void {
   const ts = Date.now();
   runStmt(
     `UPDATE product_assignments SET revoked_at = ?

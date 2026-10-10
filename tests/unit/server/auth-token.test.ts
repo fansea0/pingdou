@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { existsSync, unlinkSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
-let dbPath = '';
+let tmp: string;
 
 async function freshDb() {
-  dbPath = join(tmpdir(), `auth-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-  process.env.STATS_DB_PATH = dbPath;
+  tmp = mkdtempSync(join(tmpdir(), `auth-test-${Date.now()}-${Math.random().toString(36).slice(2)}`));
+  process.env.PINGDOU_DATA_DIR = tmp;
   vi.resetModules();
   const db = await import('../../../server/db.js');
   await db.initDb();
@@ -16,7 +16,12 @@ async function freshDb() {
 }
 
 beforeEach(() => {
-  if (dbPath && existsSync(dbPath)) unlinkSync(dbPath);
+  delete process.env.PINGDOU_DATA_DIR;
+});
+
+afterEach(() => {
+  delete process.env.PINGDOU_DATA_DIR;
+  if (tmp && existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
 });
 
 describe('auth tokens', () => {
