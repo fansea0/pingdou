@@ -13,7 +13,7 @@ export function useProducts(): {
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/data/products.json')
+    fetch('/api/public/products')
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json() as Promise<Product[]>;

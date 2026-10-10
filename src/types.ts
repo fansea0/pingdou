@@ -49,12 +49,12 @@ export interface ExportItem {
 }
 
 export interface Product {
-  readonly id: string;
+  readonly id: number;
   readonly name: string;
   readonly image: string;
-  readonly price: number;
-  readonly currency: 'CNY';
+  readonly price: number;        // 单位：分
   readonly description: string;
-  readonly url: string;
+  readonly url: string;          // 外部购买链接
   readonly badge?: string;
+  readonly order: number;
 }

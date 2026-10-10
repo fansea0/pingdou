@@ -11,7 +11,6 @@
                     │  ├─ /             静态文件    │  root /var/www/pingdou
                     │  ├─ /assets/      长缓存 1y   │
                     │  ├─ /static-data/ 前端静态数据│  mard.json / 默认图
-                    │  ├─ /data/    ──► alias       │  /var/lib/pingdou/data
                     │  ├─ /products/──► alias       │  /var/lib/pingdou/images
                     │  └─ /api/    ──► 127.0.0.1:3000│  Express
                     └──────────────────────────────┘
@@ -24,7 +23,7 @@
 
 **端口约定**：前端不再跑 Node 进程（nginx 直接托管静态文件），后端 `3000`，对外只有 `80` / `443`。
 
-**运行时数据分离**：商品数据 / 图片 / 统计库都在 `/var/lib/pingdou/`，由 systemd env 显式指向。
+**运行时数据分离**：商品（SQLite）/ 图片 / 统计库都在 `/var/lib/pingdou/`，由 `PINGDOU_DATA_DIR` env 指向。
 源码、`/var/www/pingdou/`、`/var/lib/pingdou/` 三者互不污染。详见末尾「运行时数据管理」一节。
 
 ## 关键决策（排错时先看这里）
@@ -33,7 +32,7 @@
 |---|---|---|
 | 前端托管方式 | nginx 直接托管 `dist/` | 省一个 Node 进程；`vite preview` 是预览服务器，不适合生产 |
 | 静态文件放在 `/var/www/pingdou` 而**不是** `/root/project/pingdou/dist` | 必须复制出来 | `/root` 权限是 `550`，nginx worker 以 `nginx` 用户运行，**穿不透**，直接 root 到那里会 403 |
-| 运行时数据（products / images / stats.db）放在 `/var/lib/pingdou/`，由 env 指向 | 不放源码、不放 deploy 产物 | admin 改了**立刻生效**，且 deploy 脚本不会踩到 |
+| 运行时数据（SQLite / images）放在 `/var/lib/pingdou/`，由 `PINGDOU_DATA_DIR` env 指向 | 不放源码、不放 deploy 产物 | admin 改了**立刻生效**，且 deploy 脚本不会踩到 |
 | 后端 `.env` 的 `PORT` | `3000`，**不能是 80** | 80 被 nginx 占用；后端有端口回退逻辑，会静默跑到 81 且 nginx 反代不到 |
 | nginx 配置目录 | `/etc/nginx/conf.d/*.conf` | RHEL 系没有 Debian 的 `sites-available/sites-enabled` |
 | certbot 安装方式 | `python3 -m venv /opt/certbot` + pip | alinux4 仓库里没有 certbot，也没有 epel |
@@ -66,13 +65,13 @@ certbot --version
 
 ### 2. 修正 `.env` 端口 + 准备运行时目录
 
-`/root/project/pingdou/.env` 里的 `PORT` 必须是 `3000`，并且**必填 4 个 env**（详见末尾「运行时数据管理」）。
+`/root/project/pingdou/.env` 里的 `PORT` 必须是 `3000`，并且**必填 `PINGDOU_DATA_DIR`**（详见末尾「运行时数据管理」）。
 
 ```bash
 cd /root/project/pingdou
 cp -a .env .env.bak.$(date +%Y%m%d%H%M%S)
 sed -i 's/^PORT=80$/PORT=3000/' .env
-grep -E '^(PORT|PRODUCTS_JSON_PATH|PRODUCTS_IMAGES_DIR|STATS_DB_PATH|ROOT_PASSWORD)=' .env
+grep -E '^(PORT|PINGDOU_DATA_DIR)=' .env
 ```
 
 ### 3. 运行时数据目录权限（必做）
@@ -81,11 +80,11 @@ grep -E '^(PORT|PRODUCTS_JSON_PATH|PRODUCTS_IMAGES_DIR|STATS_DB_PATH|ROOT_PASSWO
 但**权限**不会自动设置成 nginx 可读。手动设一次：
 
 ```bash
-mkdir -p /var/lib/pingdou/{data,images,db}
+mkdir -p /var/lib/pingdou/images
 chown -R root:root /var/lib/pingdou
-chmod 755 /var/lib/pingdou /var/lib/pingdou/{data,images,db}
-chmod -R a+rX /var/lib/pingdou/data /var/lib/pingdou/images
-# db 不需要 nginx 读——统计库只给后端用
+chmod 755 /var/lib/pingdou /var/lib/pingdou/images
+chmod -R a+rX /var/lib/pingdou/images
+# stats.db 不需要 nginx 读——统计库只给后端用
 ```
 
 ### 4. 构建
@@ -107,10 +106,7 @@ chmod -R a+rX /var/www/pingdou
 
 # /etc/pingdou-backend.env —— 必填 env 集中在这里，权限锁死
 cat > /etc/pingdou-backend.env <<'EOF'
-PRODUCTS_JSON_PATH=/var/lib/pingdou/data/products.json
-PRODUCTS_IMAGES_DIR=/var/lib/pingdou/images
-STATS_DB_PATH=/var/lib/pingdou/db/stats.db
-ROOT_PASSWORD=<一串至少 8 位的随机密码，建议 openssl rand -base64 24>
+PINGDOU_DATA_DIR=/var/lib/pingdou
 EOF
 chmod 600 /etc/pingdou-backend.env
 
@@ -141,7 +137,7 @@ journalctl -u pingdou-backend -n 20 --no-pager
 # 期望看到：[pingdou-server] seeded default admin (root)
 ```
 
-> ⚠️ 首次登入后**立刻在 admin 后台改掉 root 密码**，然后从 `/etc/pingdou-backend.env` 删掉 `ROOT_PASSWORD=...`（重新 `daemon-reload` + `restart`）。`ROOT_PASSWORD` 是种子密码，seed 完成后不再需要。
+> ⚠️ 首次登入后**立刻在 admin 后台改掉 root 密码**（种子密码 `12345678` 是硬编码的——不改等于无密码）。详见后面「首次登录流程」。
 
 ### 6. nginx：先只配 80
 
@@ -156,12 +152,11 @@ journalctl -u pingdou-backend -n 20 --no-pager
   真正必需的是 `Host` / `X-Forwarded-For` / `X-Forwarded-Proto`（nginx 不会替你设成你想要的值）。
   详见 [`tutorial-nginx-https.md`](./tutorial-nginx-https.md) 的"坑 5"。
 - `location /` 用 `try_files $uri $uri/ /index.html` 做 SPA 回退
-- **运行时数据 location**（必须配，不然 admin 编辑的商品/图片访客看不到）：
+- **运行时数据 location**（必须配，不然 admin 上传的图片访客看不到）：
   ```nginx
-  location /data/     { alias /var/lib/pingdou/data/; }
   location /products/ { alias /var/lib/pingdou/images/; }
   ```
-  `alias` 结尾的 `/` 必须有
+  `alias` 结尾的 `/` 必须有。**不要**配 `location /data/`（旧版本产物，新版不再使用）。
 
 ```bash
 nginx -t && systemctl enable --now nginx
@@ -300,9 +295,9 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 |---|---|
 | 首页 403 | 静态文件放回了 `/root/...`，nginx 穿不透 `/root`（550） |
 | `/api/*` 502 | 后端没起来，或 `.env` 里 `PORT` 不是 3000 |
-| 后端启动直接 fail，报 `PRODUCTS_JSON_PATH env var is required` 等 | systemd unit 缺必填 env，参考「运行时数据管理」配置 `/etc/pingdou-backend.env` |
+| 后端启动报 `PINGDOU_DATA_DIR env var is required` | systemd unit 缺 PINGDOU_DATA_DIR | 见「运行时数据管理」 |
 | 登录后立刻掉登录态 | 先确认 cookie 有没有到后端：`curl -i -X POST localhost/api/auth/logout \| grep -ci '^set-cookie:'`。nginx 默认会透传，所以更可能是 `secure` 属性（`NODE_ENV=production` 时 cookie 只在 HTTPS 下发）或前端没带 `credentials:'include'` |
-| admin 改了商品链接，访客没看到 | 检查 nginx 是否有 `location /data/ { alias /var/lib/pingdou/data/; }`；`cat /var/lib/pingdou/data/products.json` 看是不是真的改了；浏览器可能缓存，强制刷新 |
+| admin 改了商品，访客没看到 | 商品走 SQLite，不会被 deploy 覆盖；浏览器可能缓存，强制刷新或加 `?t=<timestamp>` |
 | 商品图片 403 | `chmod -R a+rX /var/lib/pingdou/images` + nginx `location /products/` 的 `alias` 路径 |
 | 续期报 `Another instance of Certbot is already running` | `/var/log/letsencrypt/.certbot.lock` 残留（多半是上次续期被强杀），删掉即可 |
 | 续期报 `Timeout during connect` / `DNS SERVFAIL` | 正常现象，见上面「证书续期」一节，靠重试兜底 |
@@ -344,62 +339,47 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 └── samples/                             ← SEO 用示例图
 
 /var/lib/pingdou/                        # ★ 运行时数据（重点保护）
-├── data/
-│   └── products.json                    ← 商品列表（admin 编辑）
-├── images/
-│   └── *.jpg, *.png                     ← 商品图片（admin 上传）
-└── db/
-    └── stats.db                         ← SQLite 统计库（后端写）
+├── stats.db                             ← SQLite：商品表 + 用户表 + 事件表（后端写）
+└── images/
+    └── *.jpg, *.png                     ← 商品图片（admin 上传）
 ```
 
 ### 启动必填的 env（缺一不可，少一个启动直接 fail）
 
 | env | 含义 | 路径必须存在 |
 |---|---|---|
-| `PRODUCTS_JSON_PATH` | 商品数据 JSON 文件 | 父目录 |
-| `PRODUCTS_IMAGES_DIR` | 商品图片目录 | 是 |
-| `STATS_DB_PATH` | SQLite 统计库 | 父目录 |
-| `ROOT_PASSWORD` | **首次启动**用来 seed root 账户的密码 | — |
+| `PINGDOU_DATA_DIR` | 运行时数据根目录（含 `stats.db` 与 `images/`） | 是 |
 
 **校验时机**：进程启动时第一件事。任一缺失或路径不存在，进程抛错退出，不会"静默 fallback"。
 
-**ROOT_PASSWORD 特殊说明**：
-- ⚠️ **这是"种子密码"，不是 root 的日常密码**——只在 `users` 表为空时（首次启动）使用，seed 完成后这个 env 不会再被读取
-- 后续改 root 密码请走 admin 后台（`/api/admin/users/:id`）或登录后改
-- 长度必须 ≥ 8 位
-- **不要把同一个密码写在两个环境里**（dev 用了 X 就别让 prod 也用 X）
+**默认 seed 账户**：首次启动（`users` 表为空时）后端会自动 seed 一个 `root` 管理员，**种子密码硬编码为 `12345678`**——这不是 env、不能改；登录后强制改密（见下面「首次登录流程」）。
 
 ### 权限模型
 
 | 进程 | 用户 | 需要的权限 |
 |---|---|---|
-| `pingdou-backend` (systemd) | root（systemd unit 默认） | 写 `/var/lib/pingdou/{data,images,db}` |
-| `nginx` (worker) | nginx | **读** `/var/lib/pingdou/{data,images}`（仅 nginx 服务这两类，不写） |
+| `pingdou-backend` (systemd) | root（systemd unit 默认） | 写 `/var/lib/pingdou`（含 `stats.db` 和 `images/`） |
+| `nginx` (worker) | nginx | **读** `/var/lib/pingdou/images`（不写） |
 
 ```bash
 # 后端以 root 跑（systemd 默认），拥有写权限
 chown -R root:root /var/lib/pingdou
-chmod 755 /var/lib/pingdou /var/lib/pingdou/{data,images,db}
+chmod 755 /var/lib/pingdou /var/lib/pingdou/images
 
-# nginx worker 需要能读 data/ 和 images/（不写）
-chmod -R a+rX /var/lib/pingdou/data /var/lib/pingdou/images
+# nginx worker 需要能读 images/（不写）
+chmod -R a+rX /var/lib/pingdou/images
 ```
 
-> **不要把 `/var/lib/pingdou/db/stats.db` 给 nginx 读**——统计库**只**给后端用，不需要暴露到外网。
+> **不要把 `/var/lib/pingdou/stats.db` 给 nginx 读**——统计库**只**给后端用，不需要暴露到外网。
 
 ### nginx alias 配置
 
-让前端请求 `/data/products.json` 和 `/products/xxx.jpg` 走运行时目录：
+让前端请求 `/products/xxx.jpg` 走运行时目录：
 
 ```nginx
 # /etc/nginx/conf.d/pingdou.conf
 server {
     root /var/www/pingdou;
-
-    # ★ 运行时数据：从 /var/lib/pingdou/data/ 服务
-    location /data/ {
-        alias /var/lib/pingdou/data/;
-    }
 
     # ★ 商品图片：从 /var/lib/pingdou/images/ 服务
     location /products/ {
@@ -414,7 +394,7 @@ server {
 
 **关键细节**：
 - `alias` 结尾的 `/` 必须有，否则会拼错路径
-- 不要给 `/data/` 加 `Cache-Control: immutable`——admin 编辑后必须能让浏览器拿到新版本
+- 新版本不再使用 `/data/` alias；删除 nginx conf 中的 `location /data/` 块
 - `public/static-data/` 下的 `mard.json` 和 `default-product.png` 走 nginx 默认静态服务（`root /var/www/pingdou`），**不需要**额外 alias——`vite build` 会把整个 `public/` 复制到 `dist/static-data/`
 
 ### 首次启动验证
@@ -424,17 +404,30 @@ systemctl daemon-reload
 systemctl restart pingdou-backend
 systemctl status pingdou-backend    # 期望 active (running)
 journalctl -u pingdou-backend -n 30 --no-pager
-# 期望看到：seeded default admin (root)
+# 期望看到：seeded default admin (root) — login with username=root, password=12345678
 
 # 用 seed 密码登入，验证 admin 后台能进
 curl -sk -c /tmp/c.txt -b /tmp/c.txt \
   -H 'Content-Type: application/json' \
-  -d "{\"username\":\"root\",\"password\":\"$ROOT_PASSWORD\"}" \
+  -d '{"username":"root","password":"12345678"}' \
   https://xn--muu023g.xyz/api/auth/login
-# 期望：返回 role=admin
+# 期望：返回 role=admin（并带 mustChangePassword: true）
 ```
 
-登入后**立刻**在 admin 后台改掉 root 密码（这一步必须做，否则 `ROOT_PASSWORD` 是明文落盘的等效凭据）。
+登入后**立刻**在 `/statics` 后台改掉 root 密码——种子密码 `12345678` 是**硬编码**的（不是 env），所有部署都一样，**不改等于无密码**。详见下面「首次登录流程」。
+
+### 首次登录流程
+
+> **首次登录流程**：
+>
+> 部署完成后：
+>
+> 1. 打开 `https://<域名>/statics`
+> 2. 用户名 `root`，密码 `12345678`
+> 3. 登录后弹出强制改密 modal，输入旧密码 `12345678` + 新密码（≥ 4 位）
+> 4. 改密成功后才能进入业务页
+>
+> **不要**保留默认密码；改密后通过 admin 后台管理其他账号。
 
 ### 备份与恢复
 
@@ -454,8 +447,7 @@ tar czf dist-$(date +%Y%m%d).tar.gz /var/www/pingdou
 
 | 数据 | 频率 | 理由 |
 |---|---|---|
-| `/var/lib/pingdou/db/stats.db` | 每天 | 增量数据，丢了不可恢复 |
-| `/var/lib/pingdou/data/products.json` | 每次修改后 | 不频繁，可手动 |
+| `/var/lib/pingdou/stats.db` | 每天 | 含商品 / 用户 / 事件，丢了不可恢复 |
 | `/var/lib/pingdou/images/` | 每次上传后 | 不频繁，可手动 |
 
 最简单：`tar` 整个 `/var/lib/pingdou/` 放进 cron：
@@ -473,11 +465,10 @@ tar czf dist-$(date +%Y%m%d).tar.gz /var/www/pingdou
 # 3. 恢复数据
 tar xzf pingdou-backup.tar.gz -C /
 chown -R root:root /var/lib/pingdou
-chmod 755 /var/lib/pingdou /var/lib/pingdou/{data,images,db}
-chmod -R a+rX /var/lib/pingdou/data /var/lib/pingdou/images
+chmod 755 /var/lib/pingdou /var/lib/pingdou/images
+chmod -R a+rX /var/lib/pingdou/images
 
-# 4. 写 /etc/pingdou-backend.env（必填 env）
-# 注意：ROOT_PASSWORD 在新服务器首次启动时不会被读（users 表非空 → seedDefaultAdminIfEmpty 早返回）
+# 4. 写 /etc/pingdou-backend.env（必填 env：PINGDOU_DATA_DIR）
 # 5. 启动
 systemctl restart pingdou-backend
 ```
@@ -486,19 +477,15 @@ systemctl restart pingdou-backend
 
 | 启动报错 | 原因 | 怎么查 |
 |---|---|---|
-| `PRODUCTS_JSON_PATH env var is required` | 没设这个 env | `cat /etc/pingdou-backend.env` |
-| `PRODUCTS_IMAGES_DIR env var is required` | 同上 | 同上 |
-| `STATS_DB_PATH env var is required` | 同上 | 同上 |
-| `products.json is corrupt: ...` | products.json JSON 损坏 | `python3 -m json.tool /var/lib/pingdou/data/products.json` 单独测 |
-| `ROOT_PASSWORD env var is required ...` | 首次启动没配这个 env | 在 `/etc/pingdou-backend.env` 里加 |
-| `ROOT_PASSWORD must be at least 8 characters` | 密码太短 | 换个 ≥ 8 位的 |
+| `PINGDOU_DATA_DIR env var is required` | systemd unit 缺这个 env | `cat /etc/pingdou-backend.env` |
+| `PINGDOU_DATA_DIR 路径不存在` | 数据目录没建 | 跑「运行时数据目录权限」那段的 `mkdir -p` |
 
 **调试技巧**：先把 `journalctl -u pingdou-backend -n 50` 看一遍，绝大部分启动问题都在这里有明确的错误信息。
 
 ### 排错清单（动手前问自己）
 
-1. **admin 改了商品链接，访客没看到？** — 99% 是 `PRODUCTS_JSON_PATH` 还指着源码路径或 deploy 时被覆盖。`cat /var/lib/pingdou/data/products.json` 看是不是真的改了。
+1. **admin 改了商品，访客没看到？** — 商品走 SQLite (`products` 表)，不会因 deploy 被覆盖；如果是图片，看 `ls /var/lib/pingdou/images/` 有没有，浏览器强制刷新或加 `?t=<timestamp>` cache-bust。
 2. **访客看到 502？** — 后端没起来。看 `journalctl -u pingdou-backend`。
 3. **图片显示不出来？** — 服务端会 fallback 到 `/static-data/default-product.png`（在 `public/` 下）；如果连这个都看不到，说明 nginx 配置里 `/static-data/` 没被服务到。
-4. **改完 admin 链接需要重启吗？** — 不需要。后端写完 `products.json` 后，下次 `GET /api/products` 请求就拿到新的了。访客可能因为浏览器缓存看不到，强制刷新或加 `?t=<timestamp>` cache-bust。
-5. **nginx 报 403？** — 大概率是 `/var/lib/pingdou/data` 或 `/var/lib/pingdou/images` 的权限没设对，`chmod -R a+rX` 一次。
+4. **改完商品需要重启后端吗？** — 不需要。后端写完 `products` 表后，下次 `GET /api/products` 请求就拿到新的了。访客可能因为浏览器缓存看不到，强制刷新或加 `?t=<timestamp>` cache-bust。
+5. **nginx 报 403？** — 大概率是 `/var/lib/pingdou/images` 的权限没设对，`chmod -R a+rX` 一次。

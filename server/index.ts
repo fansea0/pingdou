@@ -3,11 +3,11 @@ import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
-import { loadProductsCache, getAllProducts, updateProduct, createProduct, deleteProduct, replaceProductImage } from './products.js';
+import { loadProductsCache, getAllProducts, updateProduct, createProduct, deleteProduct, replaceProductImage, cleanupOrphanImages, reorderProducts } from './products.js';
+import { PATHS } from './paths.js';
 import {
   verifySessionFromRequest, clearAuthCookies, clearSessionForCurrentToken, setAuthCookies,
   clearSessionForUser, issueSession, type AuthedUser,
@@ -30,52 +30,13 @@ if (process.env.STATICS_PASSWORD) {
 }
 
 /**
- * 启动时校验：env 必填；目录不存在则自动创建（首次部署 / 自动化场景友好）。
- * products.json 不存在 → 创建空数组（首次部署场景）。
- * products.json 损坏 → 显式报错（不静默 fallback）。
+ * 启动时校验：PINGDOU_DATA_DIR 必填（由 paths.ts 顶层 throw 兜底）；目录不存在则自动创建。
  */
 function assertRuntimePaths(): void {
-  const jsonPath = process.env.PRODUCTS_JSON_PATH;
-  const imgDir = process.env.PRODUCTS_IMAGES_DIR;
-  const dbPath = process.env.STATS_DB_PATH;
-
-  // 缺少 env 时给开发者一个明确的下一步指引
-  // （本地开发跑 npm run dev:init 一键创建 .env）
-  const devHint = !process.env.PRODUCTS_JSON_PATH
-    && !process.env.PRODUCTS_IMAGES_DIR
-    && !process.env.STATS_DB_PATH
-    && process.env.NODE_ENV !== 'production';
-
-  if (!jsonPath) throw new Error(
-    'PRODUCTS_JSON_PATH env var is required' +
-    (devHint ? '\n\n本地开发：先跑 `npm run dev:init` 生成 .env，再 `npm run dev:server`\n生产部署：见 docs/DEPLOY.md 的「运行时数据管理」一节' : '')
-  );
-  if (!imgDir) throw new Error('PRODUCTS_IMAGES_DIR env var is required');
-  if (!dbPath) throw new Error('STATS_DB_PATH env var is required');
-
-  const jsonAbs = resolve(jsonPath);
-  const imgAbs = resolve(imgDir);
-  const dbAbs = resolve(dbPath);
-  const jsonParent = dirname(jsonAbs);
-  const dbParent = dirname(dbAbs);
-
-  // 目录不存在 → 自动创建（首次部署 / 自动化场景更顺手；
-  // env 必填，路径不会被误指向到奇怪位置）
-  mkdirSync(jsonParent, { recursive: true });
-  mkdirSync(imgAbs,     { recursive: true });
-  mkdirSync(dbParent,   { recursive: true });
-
-  // products.json 不存在 → seed 空数组（首次部署场景，不算错）
-  if (!existsSync(jsonAbs)) {
-    writeFileSync(jsonAbs, '[]\n', 'utf-8');
-    console.warn(`[seed] created empty ${jsonAbs}`);
-  }
-  // products.json 损坏 → fail 启动，给运维明确信号
-  try {
-    JSON.parse(readFileSync(jsonAbs, 'utf-8'));
-  } catch (e) {
-    throw new Error(`products.json is corrupt: ${(e as Error).message}`);
-  }
+  // PATHS 已经从 paths.ts 顶层 throw；这里只做目录兜底
+  mkdirSync(PATHS.imagesDir, { recursive: true });
+  // db 文件由 initDb 自己处理（如果 PINGDOU_DATA_DIR 不存在 initDb 会写不到，先建根目录兜底）
+  mkdirSync(PATHS.dataDir, { recursive: true });
 }
 
 const upload = multer({
@@ -121,7 +82,7 @@ function requireAdmin(req: AuthedRequest, res: express.Response, next: express.N
 function requireProductAccess(req: AuthedRequest, res: express.Response, next: express.NextFunction) {
   if (!req.user) return res.status(401).json({ error: 'unauthorized' });
   if (req.user.role === 'admin') return next();
-  const productId = String(req.params.id);
+  const productId = Number(req.params.id);
   if (!hasActiveAssignment(req.user.id, productId)) return res.status(403).json({ error: 'not assigned' });
   next();
 }
@@ -306,7 +267,7 @@ app.put('/api/products/:id', requireAuth, requireProductAccess, (req: AuthedRequ
   if (typeof url === 'string') patch.url = url;
   if (badge === null || typeof badge === 'string') patch.badge = badge ?? undefined;
   try {
-    return res.json(updateProduct(String(req.params.id), patch));
+    return res.json(updateProduct(Number(req.params.id), patch));
   } catch (e: any) {
     return res.status(400).json({ error: e.message ?? 'update failed' });
   }
@@ -315,7 +276,7 @@ app.put('/api/products/:id', requireAuth, requireProductAccess, (req: AuthedRequ
 app.post('/api/products/:id/image', requireAuth, requireProductAccess, upload.single('file'), (req: AuthedRequest, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
   try {
-    return res.json(replaceProductImage(String(req.params.id), req.file.buffer, req.file.mimetype));
+    return res.json(replaceProductImage(Number(req.params.id), req.file.buffer, req.file.mimetype));
   } catch (e: any) {
     return res.status(400).json({ error: e.message ?? 'upload failed' });
   }
@@ -331,11 +292,34 @@ app.post('/api/products', requireAuth, requireAdmin, (req: AuthedRequest, res) =
 
 app.delete('/api/products/:id', requireAuth, requireAdmin, (req: AuthedRequest, res) => {
   try {
-    deleteProduct(String(req.params.id));
-    revokeAllForProduct(String(req.params.id));
+    const id = Number(req.params.id);
+    deleteProduct(id);
+    revokeAllForProduct(id);
     return res.json({ ok: true });
   } catch (e: any) {
     return res.status(404).json({ error: e.message ?? 'delete failed' });
+  }
+});
+
+app.get('/api/public/products', (_req, res) => {
+  try {
+    return res.json(getAllProducts());
+  } catch (e) {
+    console.error('[public/products]', e);
+    return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+app.post('/api/admin/products/reorder', requireAuth, requireAdmin, (req, res) => {
+  const { orderedIds } = req.body ?? {};
+  if (!Array.isArray(orderedIds) || !orderedIds.every((x: unknown) => typeof x === 'number')) {
+    return res.status(400).json({ error: 'orderedIds must be number[]' });
+  }
+  try {
+    const next = reorderProducts(orderedIds);
+    return res.json({ ok: true, products: next });
+  } catch (e: any) {
+    return res.status(400).json({ error: e.message ?? 'reorder failed' });
   }
 });
 
@@ -509,6 +493,7 @@ export async function start(): Promise<void> {
   await initDb();
   seedDefaultAdminIfEmpty();
   loadProductsCache();
+  cleanupOrphanImages();
 
   const requested = PORT;
   const actual = await findFreePort(requested);

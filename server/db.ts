@@ -1,10 +1,9 @@
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { PATHS } from './paths.js';
 
-const DB_PATH_RAW = process.env.STATS_DB_PATH;
-if (!DB_PATH_RAW) throw new Error('STATS_DB_PATH env var is required');
-const DB_PATH = resolve(DB_PATH_RAW);
+const DB_PATH = PATHS.dbPath;
 const WASM_PATH = resolve(process.cwd(), 'node_modules/sql.js/dist/sql-wasm.wasm');
 
 let SQL: SqlJsStatic | null = null;
@@ -66,7 +65,7 @@ export async function initDb(): Promise<void> {
 
     CREATE TABLE IF NOT EXISTS product_assignments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      product_id TEXT NOT NULL,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       assigned_at INTEGER NOT NULL,
       revoked_at INTEGER
@@ -75,6 +74,21 @@ export async function initDb(): Promise<void> {
       ON product_assignments(product_id) WHERE revoked_at IS NULL;
     CREATE INDEX IF NOT EXISTS idx_assignments_user_active
       ON product_assignments(user_id, revoked_at);
+
+    CREATE TABLE IF NOT EXISTS products (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT    NOT NULL DEFAULT '',
+      image       TEXT    NOT NULL DEFAULT '',
+      price       INTEGER NOT NULL DEFAULT 0,
+      description TEXT    NOT NULL DEFAULT '',
+      url         TEXT    NOT NULL DEFAULT '',
+      badge       TEXT,
+      "order"     INTEGER NOT NULL DEFAULT 1,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL,
+      CHECK ("order" >= 1)
+    );
+    CREATE INDEX IF NOT EXISTS idx_products_order ON products("order");
 
     CREATE TABLE IF NOT EXISTS auth_tokens (
       token_hash TEXT PRIMARY KEY,

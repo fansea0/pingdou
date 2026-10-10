@@ -1,50 +1,33 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync, statSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { existsSync, mkdirSync, unlinkSync, statSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-
-export interface Product {
-  id: string;
-  name: string;
-  image: string;
-  price: number;
-  currency: string;
-  description: string;
-  url: string;
-  badge?: string;
-}
+import { PATHS } from './paths.js';
+import { queryAll, runStmt, runInTransaction, flushNow } from './db.js';
 
 export const DEFAULT_PRODUCT_IMAGE = '/static-data/default-product.png';
 
-function productsJsonPath(): string {
-  const p = process.env.PRODUCTS_JSON_PATH;
-  if (!p) throw new Error('PRODUCTS_JSON_PATH env var is required');
-  return resolve(p);
-}
-function dataDir(): string {
-  return resolve(productsJsonPath(), '..');
-}
-function productsDir(): string {
-  const p = process.env.PRODUCTS_IMAGES_DIR;
-  if (!p) throw new Error('PRODUCTS_IMAGES_DIR env var is required');
-  return resolve(p);
+export interface Product {
+  id: number;
+  name: string;
+  image: string;
+  price: number;        // 单位：分
+  description: string;
+  url: string;
+  badge?: string;
+  order: number;
 }
 
-// 空值 / 路径指向文件不存在 → 返回 true（需要替换为默认图）
-function isImageMissing(imageUrl: string): boolean {
-  if (!imageUrl) return true;
-  // 仅检查以 /products/ 开头的本地文件；外部 URL、default-image、其他不检查
-  if (!imageUrl.startsWith('/products/')) return false;
-  const filename = imageUrl.slice('/products/'.length);
-  if (!filename || filename.includes('..') || filename.includes('/')) return true;
-  try {
-    return !existsSync(join(productsDir(), filename));
-  } catch {
-    // productsDir() 必填校验抛错时，保守当作"缺失"
-    return true;
+const PRODUCT_IMAGE_RE = /^\/products\/[a-z0-9-]+\.(jpg|jpeg|png|webp)$/;
+
+function normalizeProductImage(raw: unknown): string {
+  if (typeof raw !== 'string') throw new Error('image must be a string');
+  if (raw === '') return '';
+  if (!PRODUCT_IMAGE_RE.test(raw)) {
+    throw new Error('image must be empty or match /products/<file>.(jpg|jpeg|png|webp)');
   }
+  return raw;
 }
 
-// 校验 URL：空字符串允许（表示不跳转），非空必须是 http(s) URL
 function normalizeProductUrl(url: unknown): string {
   if (typeof url !== 'string') throw new Error('url must be a string');
   if (url === '') return '';
@@ -54,19 +37,43 @@ function normalizeProductUrl(url: unknown): string {
       throw new Error('url must start with http:// or https://');
     }
   } catch {
-    // new URL 抛错（缺协议头、非法字符等）也归到这一类
     throw new Error('url must start with http:// or https://');
   }
   return url;
 }
 
+function isImageMissing(imageUrl: string): boolean {
+  if (!imageUrl) return true;
+  if (!imageUrl.startsWith('/products/')) return false;
+  const filename = imageUrl.slice('/products/'.length);
+  if (!filename || filename.includes('..') || filename.includes('/')) return true;
+  try {
+    return !existsSync(join(PATHS.imagesDir, filename));
+  } catch {
+    return true;
+  }
+}
+
+function rowToProduct(row: Record<string, unknown>): Product {
+  return {
+    id: Number(row.id),
+    name: String(row.name ?? ''),
+    image: String(row.image ?? ''),
+    price: Number(row.price ?? 0),
+    description: String(row.description ?? ''),
+    url: String(row.url ?? ''),
+    badge: row.badge == null ? undefined : String(row.badge),
+    order: Number(row.order ?? 1),
+  };
+}
+
 let cache: Product[] | null = null;
 
 export function loadProductsCache(): Product[] {
-  const path = productsJsonPath();
-  const raw = readFileSync(path, 'utf-8');
-  const parsed = JSON.parse(raw) as Product[];
-  cache = parsed;
+  const rows = queryAll<Record<string, unknown>>(
+    `SELECT * FROM products ORDER BY "order" ASC, id ASC`,
+  );
+  cache = rows.map(rowToProduct);
   return cache;
 }
 
@@ -82,63 +89,87 @@ export function getAllProducts(): Product[] {
   }));
 }
 
-export function getProductById(id: string): Product | null {
+export function getProductById(id: number): Product | null {
   const p = ensureCache().find(x => x.id === id);
   if (!p) return null;
   return { ...p, image: isImageMissing(p.image) ? DEFAULT_PRODUCT_IMAGE : p.image };
 }
 
-function writeAtomic(products: Product[]): void {
-  mkdirSync(dataDir(), { recursive: true });
-  const finalPath = productsJsonPath();
-  const tmpPath = `${finalPath}.tmp`;
-  writeFileSync(tmpPath, JSON.stringify(products, null, 2), 'utf-8');
-  renameSync(tmpPath, finalPath);
-  cache = products;
+export function createProduct(input: Omit<Product, 'id' | 'order' | 'image'> & { image?: string }): Product {
+  const list = ensureCache();
+  const nextOrder = list.reduce((m, p) => Math.max(m, p.order), 0) + 1;
+
+  const image = normalizeProductImage(input.image ?? '');
+  const url = normalizeProductUrl(input.url);
+  const now = Date.now();
+
+  runStmt(
+    `INSERT INTO products (name, image, price, description, url, badge, "order", created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [input.name, image, input.price, input.description, url, input.badge ?? null, nextOrder, now, now],
+  );
+
+  const refreshed = loadProductsCache();
+  const created = refreshed.find(p => p.order === nextOrder && p.name === input.name);
+  if (!created) throw new Error('createProduct: missing after insert');
+  flushNow();
+  return { ...created };
 }
 
-export function updateProduct(id: string, patch: Partial<Omit<Product, 'id'>>): Product {
+export function updateProduct(id: number, patch: Partial<Omit<Product, 'id'>>): Product {
   const list = ensureCache();
   const idx = list.findIndex(p => p.id === id);
   if (idx === -1) throw new Error('product not found');
-  if (typeof patch.url === 'string') {
-    patch.url = normalizeProductUrl(patch.url);
+
+  const old = list[idx];
+  const next: Product = { ...old };
+
+  if (typeof patch.name === 'string') next.name = patch.name;
+  if (typeof patch.description === 'string') next.description = patch.description;
+  if (typeof patch.price === 'number') next.price = patch.price;
+  if (typeof patch.url === 'string') next.url = normalizeProductUrl(patch.url);
+  if (typeof patch.image === 'string') next.image = normalizeProductImage(patch.image);
+  if (patch.badge === null) next.badge = undefined;
+  else if (typeof patch.badge === 'string') next.badge = patch.badge;
+  // NOTE: order cannot be patched here — use reorderProducts
+  if (typeof patch.order === 'number') {
+    throw new Error('order cannot be changed via updateProduct; use /api/admin/products/reorder');
   }
-  const next = { ...list[idx], ...patch, id };
+
+  next.id = id;
+  const now = Date.now();
+  next.order = old.order;
+
+  runStmt(
+    `UPDATE products SET name=?, image=?, price=?, description=?, url=?, badge=?, updated_at=? WHERE id=?`,
+    [next.name, next.image, next.price, next.description, next.url, next.badge ?? null, now, id],
+  );
+
+  // image 字段值变了 + 旧值是 /products/... + 新旧不同 → 删旧文件
+  if (
+    typeof patch.image === 'string' &&
+    old.image !== patch.image &&
+    old.image.startsWith('/products/')
+  ) {
+    removeOldImageFile(old.image);
+  }
+
   list[idx] = next;
-  writeAtomic(list);
+  flushNow();
   return { ...next };
 }
 
-export function createProduct(input: Omit<Product, 'image'> & { image?: string }): Product {
-  const list = ensureCache();
-  if (!/^[a-z0-9-]+$/.test(input.id)) throw new Error('invalid product id');
-  if (list.find(p => p.id === input.id)) throw new Error('product id already exists');
-  const product: Product = {
-    id: input.id,
-    name: input.name,
-    image: input.image ?? DEFAULT_PRODUCT_IMAGE,
-    price: input.price,
-    currency: input.currency,
-    description: input.description,
-    url: normalizeProductUrl(input.url),
-    badge: input.badge,
-  };
-  list.push(product);
-  writeAtomic(list);
-  return { ...product };
-}
-
-export function deleteProduct(id: string): void {
+export function deleteProduct(id: number): void {
   const list = ensureCache();
   const idx = list.findIndex(p => p.id === id);
   if (idx === -1) throw new Error('product not found');
   const removed = list[idx];
   list.splice(idx, 1);
-  writeAtomic(list);
+  runStmt(`DELETE FROM products WHERE id=?`, [id]);
+  flushNow();
   try {
     if (removed.image && removed.image.startsWith('/products/')) {
-      const onDisk = join(productsDir(), removed.image.slice('/products/'.length));
+      const onDisk = join(PATHS.imagesDir, removed.image.slice('/products/'.length));
       if (existsSync(onDisk) && statSync(onDisk).isFile()) unlinkSync(onDisk);
     }
   } catch (e) {
@@ -154,12 +185,12 @@ const IMG_EXTS: Record<string, string> = {
 
 export interface SavedImage { image: string; }
 
-export function saveImageFile(productId: string, buffer: Buffer, mime: string): SavedImage {
+export function saveImageFile(productId: number, buffer: Buffer, mime: string): SavedImage {
   const ext = IMG_EXTS[mime];
   if (!ext) throw new Error('unsupported image mime type');
-  mkdirSync(productsDir(), { recursive: true });
+  mkdirSync(PATHS.imagesDir, { recursive: true });
   const filename = `${productId}-${randomBytes(6).toString('hex')}${ext}`;
-  const finalPath = join(productsDir(), filename);
+  const finalPath = join(PATHS.imagesDir, filename);
   writeFileSync(finalPath, buffer);
   return { image: `/products/${filename}` };
 }
@@ -167,14 +198,14 @@ export function saveImageFile(productId: string, buffer: Buffer, mime: string): 
 export function removeOldImageFile(imagePath: string): void {
   try {
     if (!imagePath || !imagePath.startsWith('/products/')) return;
-    const onDisk = join(productsDir(), imagePath.slice('/products/'.length));
+    const onDisk = join(PATHS.imagesDir, imagePath.slice('/products/'.length));
     if (existsSync(onDisk) && statSync(onDisk).isFile()) unlinkSync(onDisk);
   } catch (e) {
     console.warn('[products] failed to remove old image file', e);
   }
 }
 
-export function replaceProductImage(productId: string, buffer: Buffer, mime: string): Product {
+export function replaceProductImage(productId: number, buffer: Buffer, mime: string): Product {
   const product = getProductById(productId);
   if (!product) throw new Error('product not found');
   const { image } = saveImageFile(productId, buffer, mime);
@@ -182,4 +213,59 @@ export function replaceProductImage(productId: string, buffer: Buffer, mime: str
   const updated = updateProduct(productId, { image });
   if (oldImage && oldImage !== image) removeOldImageFile(oldImage);
   return updated;
+}
+
+export function cleanupOrphanImages(): { removed: string[] } {
+  const referenced = new Set(
+    getAllProducts()
+      .map(p => p.image)
+      .filter(u => u.startsWith('/products/'))
+      .map(u => u.slice('/products/'.length)),
+  );
+  const onDisk = readdirSync(PATHS.imagesDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
+  const removed: string[] = [];
+  for (const file of onDisk) {
+    if (!referenced.has(file)) {
+      try {
+        unlinkSync(join(PATHS.imagesDir, file));
+        removed.push(file);
+      } catch (e) {
+        console.warn('[products] failed to remove orphan image', file, e);
+      }
+    }
+  }
+  if (removed.length > 0) {
+    console.warn(`[products] cleanupOrphanImages removed ${removed.length} orphan file(s)`);
+  }
+  return { removed };
+}
+
+export function reorderProducts(orderedIds: number[]): Product[] {
+  if (orderedIds.length === 0) return [];
+  if (new Set(orderedIds).size !== orderedIds.length) {
+    throw new Error('orderedIds must be unique');
+  }
+  const current = getAllProducts();
+  if (orderedIds.length !== current.length) {
+    throw new Error(
+      `orderedIds length (${orderedIds.length}) must equal current product count (${current.length})`,
+    );
+  }
+  const knownIds = new Set(current.map(p => p.id));
+  for (const id of orderedIds) {
+    if (!knownIds.has(id)) throw new Error(`unknown product id: ${id}`);
+  }
+  const now = Date.now();
+  runInTransaction(() => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      runStmt(
+        `UPDATE products SET "order" = ?, updated_at = ? WHERE id = ?`,
+        [i + 1, now, orderedIds[i]],
+      );
+    }
+  });
+  cache = null;
+  ensureCache();
+  flushNow();
+  return getAllProducts();
 }

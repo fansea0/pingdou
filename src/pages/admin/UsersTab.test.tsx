@@ -13,7 +13,7 @@ vi.mock('@/api/users', () => ({
 }));
 vi.mock('@/api/products', () => ({
   listProducts: vi.fn().mockResolvedValue([
-    { id: 'p-a', name: 'A', image: '', price: 1, currency: 'CNY', description: '', url: '' },
+    { id: 1, name: 'A', image: '', price: 1, currency: 'CNY', description: '', url: '' },
   ]),
 }));
 

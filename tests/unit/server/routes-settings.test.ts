@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -8,13 +8,8 @@ let requestMod: any;
 
 async function buildAppFixture() {
   const base = tmpdir_;
-  process.env.STATS_DB_PATH = join(base, 'stats.db');
-  process.env.PRODUCTS_JSON_PATH = join(base, 'public/data/products.json');
-  process.env.ROOT_PASSWORD = 'test-seed-password-1234';
-  mkdirSync(resolve(process.env.PRODUCTS_JSON_PATH, '..'), { recursive: true });
-  writeFileSync(process.env.PRODUCTS_JSON_PATH, JSON.stringify([
-    { id: 'p-a', name: 'A', image: '', price: 1, currency: 'CNY', description: '', url: '' },
-  ]));
+  process.env.PINGDOU_DATA_DIR = base;
+  mkdirSync(resolve(base, 'images'), { recursive: true });
 
   vi.resetModules();
   const db = await import('../../../server/db.js');
@@ -36,9 +31,7 @@ describe('site config routes', () => {
 
   afterEach(() => {
     if (tmpdir_ && existsSync(tmpdir_)) rmSync(tmpdir_, { recursive: true, force: true });
-    delete process.env.STATS_DB_PATH;
-    delete process.env.PRODUCTS_JSON_PATH;
-    delete process.env.ROOT_PASSWORD;
+    delete process.env.PINGDOU_DATA_DIR;
   });
 
   const request = () => requestMod.default ?? requestMod;
@@ -66,7 +59,7 @@ describe('site config routes', () => {
 
   it('GET /api/admin/settings returns list including showProducts for admin', async () => {
     const { app } = await buildAppFixture();
-    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: process.env.ROOT_PASSWORD });
+    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: '12345678' });
     const cookies = login.headers['set-cookie']?.map((c: string) => c.split(';')[0]).join('; ');
     const r = await request()(app).get('/api/admin/settings').set('Cookie', cookies);
     expect(r.status).toBe(200);
@@ -76,7 +69,7 @@ describe('site config routes', () => {
 
   it('PUT /api/admin/settings flips showProducts and reflects in /api/config', async () => {
     const { app } = await buildAppFixture();
-    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: process.env.ROOT_PASSWORD });
+    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: '12345678' });
     const cookies = login.headers['set-cookie']?.map((c: string) => c.split(';')[0]).join('; ');
     const put = await request()(app).put('/api/admin/settings').set('Cookie', cookies).send({ key: 'showProducts', value: 'false' });
     expect(put.status).toBe(200);
@@ -89,7 +82,7 @@ describe('site config routes', () => {
 
   it('PUT /api/admin/settings rejects unknown keys (400)', async () => {
     const { app } = await buildAppFixture();
-    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: process.env.ROOT_PASSWORD });
+    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: '12345678' });
     const cookies = login.headers['set-cookie']?.map((c: string) => c.split(';')[0]).join('; ');
     const r = await request()(app).put('/api/admin/settings').set('Cookie', cookies).send({ key: 'anything-else', value: 'true' });
     expect(r.status).toBe(400);
@@ -98,7 +91,7 @@ describe('site config routes', () => {
 
   it('PUT /api/admin/settings rejects missing fields (400)', async () => {
     const { app } = await buildAppFixture();
-    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: process.env.ROOT_PASSWORD });
+    const login = await request()(app).post('/api/auth/login').send({ username: 'root', password: '12345678' });
     const cookies = login.headers['set-cookie']?.map((c: string) => c.split(';')[0]).join('; ');
     const r = await request()(app).put('/api/admin/settings').set('Cookie', cookies).send({ key: 'showProducts' });
     expect(r.status).toBe(400);

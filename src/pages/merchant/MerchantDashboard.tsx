@@ -71,7 +71,7 @@ export function MerchantDashboard() {
             </thead>
             <tbody>
               {products.map(p => {
-                const stat = summary?.productBreakdown.find(b => b.productId === p.id);
+                const stat = summary?.productBreakdown.find(b => b.productId === String(p.id));
                 return (
                   <tr key={p.id}>
                     <td>{p.name} ({p.id})</td>

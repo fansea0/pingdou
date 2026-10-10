@@ -1,32 +1,26 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { existsSync, unlinkSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-let dbPath = '';
-let origSeedPw: string | undefined;
+let tmp: string;
 
 async function freshDb() {
-  dbPath = join(tmpdir(), `users-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-  process.env.STATS_DB_PATH = dbPath;
-  origSeedPw = process.env.ROOT_PASSWORD;
-  process.env.ROOT_PASSWORD = 'test-seed-password-1234';
+  tmp = mkdtempSync(join(tmpdir(), `users-test-${Date.now()}-${Math.random().toString(36).slice(2)}`));
+  process.env.PINGDOU_DATA_DIR = tmp;
   vi.resetModules();
   const db = await import('../../../server/db.js');
   await db.initDb();
   return db;
 }
 
-import { vi } from 'vitest';
-
-function cleanup() {
-  if (dbPath && existsSync(dbPath)) unlinkSync(dbPath);
-  if (origSeedPw === undefined) delete process.env.ROOT_PASSWORD;
-  else process.env.ROOT_PASSWORD = origSeedPw;
-}
-
 beforeEach(() => {
-  cleanup();
+  delete process.env.PINGDOU_DATA_DIR;
+});
+
+afterEach(() => {
+  delete process.env.PINGDOU_DATA_DIR;
+  if (tmp && existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
 });
 
 describe('users', () => {
@@ -81,6 +75,7 @@ describe('users', () => {
     seedDefaultAdminIfEmpty();
     const root = getUserByUsername('root');
     expect(root?.role).toBe('admin');
+    expect(root?.mustChangePassword).toBe(1);
     expect(root?.expiresAt).toBeNull();
     db.flushNow();
   });
@@ -119,44 +114,6 @@ describe('users', () => {
     createUser({ username: 'a2', password: 'pw1234', role: 'admin' });
     createUser({ username: 'm1', password: 'pw1234', role: 'merchant' });
     expect(countAdmins()).toBe(2);
-    db.flushNow();
-  });
-
-  it('seedDefaultAdminIfEmpty throws when ROOT_PASSWORD is missing', async () => {
-    // 全新 db（空 users 表） + 清空 env：seedDefaultAdminIfEmpty 应该 fail
-    cleanup();
-    dbPath = join(tmpdir(), `users-test-noseed-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-    process.env.STATS_DB_PATH = dbPath;
-    delete process.env.ROOT_PASSWORD;
-    vi.resetModules();
-    const db = await import('../../../server/db.js');
-    await db.initDb();
-    const { seedDefaultAdminIfEmpty } = await import('../../../server/users.js');
-    expect(() => seedDefaultAdminIfEmpty()).toThrow(/ROOT_PASSWORD/);
-  });
-
-  it('seedDefaultAdminIfEmpty throws when ROOT_PASSWORD is too short', async () => {
-    cleanup();
-    dbPath = join(tmpdir(), `users-test-shortpw-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-    process.env.STATS_DB_PATH = dbPath;
-    process.env.ROOT_PASSWORD = 'short';
-    vi.resetModules();
-    const db = await import('../../../server/db.js');
-    await db.initDb();
-    const { seedDefaultAdminIfEmpty } = await import('../../../server/users.js');
-    expect(() => seedDefaultAdminIfEmpty()).toThrow(/at least 8/i);
-  });
-
-  it('seedDefaultAdminIfEmpty is no-op when ROOT_PASSWORD missing but users already exist', async () => {
-    const db = await freshDb();  // 全新 db（空 users 表）
-    const { createUser, seedDefaultAdminIfEmpty, getUserByUsername } = await import('../../../server/users.js');
-    // users 表非空后，seedDefaultAdminIfEmpty 应该早返回
-    createUser({ username: 'preset-merchant', password: 'pw1234', role: 'merchant' });
-    // 清空 env：seedDefaultAdminIfEmpty 应该不抛错（因为 users 表非空）
-    delete process.env.ROOT_PASSWORD;
-    expect(() => seedDefaultAdminIfEmpty()).not.toThrow();
-    // root 仍不存在（说明 seedDefaultAdminIfEmpty 早返回，没有创建 root）
-    expect(getUserByUsername('root')).toBeNull();
     db.flushNow();
   });
 });

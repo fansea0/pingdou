@@ -74,7 +74,7 @@ function ProductCard({ product }: { product: Product }) {
       <div className="product-info">
         <h3 className="product-name">{product.name}</h3>
         <p className="product-desc">{product.description}</p>
-        <div className="product-price">¥{product.price.toFixed(2)}</div>
+        <div className="product-price">¥{(product.price / 100).toFixed(2)}</div>
       </div>
     </>
   );
@@ -85,7 +85,7 @@ function ProductCard({ product }: { product: Product }) {
       href={product.url}
       target="_blank"
       rel="noopener noreferrer"
-      onClick={() => trackProductClick(product.id)}
+      onClick={() => trackProductClick(String(product.id))}
     >
       {inner}
     </a>

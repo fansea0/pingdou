@@ -68,24 +68,35 @@ info "已发布 $(find "$WWW_ROOT" -type f | wc -l) 个文件 -> $WWW_ROOT"
 echo "=========================================="
 echo " [4.5/6] 检查运行时环境"
 echo "=========================================="
-# 运行时目录不存在则自动建（并设权限让 nginx 能读 data/ 和 images/）
+# 运行时目录不存在则自动建（并设权限让 nginx 能读 images/）
 # 后端启动时也会兜底 mkdir，但**权限**不会自动设，这里一次性设好
 if [[ ! -d /var/lib/pingdou ]]; then
-  info "运行时目录不存在，自动创建 /var/lib/pingdou/{data,images,db}"
-  mkdir -p /var/lib/pingdou/{data,images,db}
+  info "运行时目录不存在，自动创建 /var/lib/pingdou/images（stats.db 落在根目录）"
+  mkdir -p /var/lib/pingdou/images
   chown -R root:root /var/lib/pingdou
-  chmod 755 /var/lib/pingdou /var/lib/pingdou/{data,images,db}
-  chmod -R a+rX /var/lib/pingdou/data /var/lib/pingdou/images
+  chmod 755 /var/lib/pingdou /var/lib/pingdou/images
+  chmod -R a+rX /var/lib/pingdou/images
 fi
 
-# systemd unit 必须包含 3 个必填 env（ROOT_PASSWORD 是种子密码，
-# 用完可删，不强制要求）。直接读 unit 文件，不依赖 systemctl show 格式。
+# systemd unit 必须包含 1 个必填 env：PINGDOU_DATA_DIR。
+# 直接读 unit 文件 + 它引用的 EnvironmentFile，不依赖 systemctl show 格式。
 UNIT_FILE="/etc/systemd/system/pingdou-backend.service"
 [[ -f "$UNIT_FILE" ]] || err "systemd unit 不存在: $UNIT_FILE（首次部署见 docs/DEPLOY.md）"
-UNIT_CONTENT=$(cat "$UNIT_FILE")
-for key in PRODUCTS_JSON_PATH PRODUCTS_IMAGES_DIR STATS_DB_PATH; do
-  if ! grep -q "$key" <<<"$UNIT_CONTENT"; then
-    err "systemd unit 缺少 $key（首次部署见 docs/DEPLOY.md#运行时数据管理）"
+ALL_CONTENT=$(cat "$UNIT_FILE")
+# 把 unit 里 EnvironmentFile= 指向的文件内容也并入，便于一次 grep 完
+# （PINGDOU_DATA_DIR 既可能在 unit 里，也可能在外部 env 文件里 —— 见 DEPLOY.md 的 systemd 示例）
+while IFS= read -r line; do
+  ef=$(awk -F= '{print $2}' <<<"$line" | sed 's/^[-]//; s/^["'\'']//; s/["'\'']$//')
+  [[ -z "$ef" ]] && continue
+  if [[ "$ef" != /* ]]; then ef="/etc/systemd/system/$ef"; fi
+  [[ -f "$ef" ]] && ALL_CONTENT+=$'\n'"$(cat "$ef")"
+done < <(grep -E '^EnvironmentFile=' "$UNIT_FILE")
+if ! grep -q "^PINGDOU_DATA_DIR" <<<"$ALL_CONTENT"; then
+  err "systemd 配置缺少 PINGDOU_DATA_DIR（首次部署见 docs/DEPLOY.md#运行时数据管理）"
+fi
+for old_key in PRODUCTS_JSON_PATH PRODUCTS_IMAGES_DIR STATS_DB_PATH ROOT_PASSWORD; do
+  if grep -q "^$old_key" <<<"$ALL_CONTENT"; then
+    warn "检测到旧 env $old_key 仍在 systemd 配置中，新代码不再识别，请删除"
   fi
 done
 

@@ -1,13 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { existsSync, unlinkSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-let dbPath = '';
+let tmp: string;
 
 async function freshDb() {
-  dbPath = join(tmpdir(), `settings-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-  process.env.STATS_DB_PATH = dbPath;
+  tmp = mkdtempSync(join(tmpdir(), `settings-test-${Date.now()}-${Math.random().toString(36).slice(2)}`));
+  process.env.PINGDOU_DATA_DIR = tmp;
   vi.resetModules();
   const db = await import('../../../server/db.js');
   await db.initDb();
@@ -15,7 +15,12 @@ async function freshDb() {
 }
 
 beforeEach(() => {
-  if (dbPath && existsSync(dbPath)) unlinkSync(dbPath);
+  delete process.env.PINGDOU_DATA_DIR;
+});
+
+afterEach(() => {
+  delete process.env.PINGDOU_DATA_DIR;
+  if (tmp && existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
 });
 
 describe('settings table', () => {
@@ -52,21 +57,19 @@ describe('settings table', () => {
     first.setSetting('showProducts', 'false', 'alice');
     first.flushNow();
 
+    // simulate restart by switching to a fresh tmpdir with the persisted db copied in
+    const tmp2 = mkdtempSync(join(tmpdir(), `settings-test-${Date.now()}-${Math.random().toString(36).slice(2)}`));
+    process.env.PINGDOU_DATA_DIR = tmp2;
     vi.resetModules();
-    const dbPath2 = join(tmpdir(), `settings-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-    process.env.STATS_DB_PATH = dbPath2;
-    if (existsSync(dbPath2)) unlinkSync(dbPath2);
 
-    // simulate restart by copying the persisted file
     const { copyFileSync } = await import('node:fs');
-    copyFileSync(dbPath, dbPath2);
-    process.env.STATS_DB_PATH = dbPath2;
-    vi.resetModules();
+    copyFileSync(join(tmp, 'stats.db'), join(tmp2, 'stats.db'));
     const second = await import('../../../server/db.js');
     await second.initDb();
     const row = second.getSetting('showProducts');
     expect(row?.value).toBe('false');
     expect(row?.updatedBy).toBe('alice');
     second.flushNow();
+    rmSync(tmp2, { recursive: true, force: true });
   });
 });
