@@ -1,13 +1,10 @@
 import { resolve, join } from 'node:path';
 
-const RAW = process.env.PINGDOU_DATA_DIR;
-if (!RAW) {
-  throw new Error(
-    'PINGDOU_DATA_DIR env var is required (e.g. /var/lib/pingdou)\n' +
-    '本地开发：先跑 npm run dev:init；生产部署：见 docs/DEPLOY.md 的「运行时数据管理」一节',
-  );
-}
-
+// 运行时数据根目录。生产环境（systemd / 部署脚本）通常显式注入；
+// 本地开发 / 临时启动不设时，fallback 到 /var/lib/pingdou，
+// 由 imagesDir + dbPath 派生 images/ 和 stats.db。
+const DEFAULT_DATA_DIR = '/var/lib/pingdou';
+const RAW = process.env.PINGDOU_DATA_DIR?.trim() || DEFAULT_DATA_DIR;
 const DATA_DIR = resolve(RAW);
 
 export const PATHS = {

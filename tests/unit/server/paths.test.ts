@@ -16,11 +16,12 @@ afterEach(() => {
 });
 
 describe('PATHS', () => {
-  it('throws when PINGDOU_DATA_DIR is missing', async () => {
+  it('falls back to /var/lib/pingdou when PINGDOU_DATA_DIR is missing', async () => {
     // @ts-expect-error -- query string busts module cache; runtime resolves fine, TS static analysis doesn't
-    await expect(import('../../../server/paths.js?throw=1')).rejects.toThrow(
-      /PINGDOU_DATA_DIR env var is required/,
-    );
+    const { PATHS } = await import('../../../server/paths.js?default=1');
+    expect(PATHS.dataDir).toBe(resolve('/var/lib/pingdou'));
+    expect(PATHS.imagesDir).toBe(join(resolve('/var/lib/pingdou'), 'images'));
+    expect(PATHS.dbPath).toBe(join(resolve('/var/lib/pingdou'), 'stats.db'));
   });
 
   it('derives imagesDir and dbPath from PINGDOU_DATA_DIR', async () => {

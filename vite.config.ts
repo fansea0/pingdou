@@ -37,6 +37,14 @@ export default defineConfig({
         target: BACKEND_DEV_URL,
         changeOrigin: false,
       },
+      // 本地 dev：商品图存到 PINGDOU_DATA_DIR/images/，前端直接访问 /products/<file>
+      // 生产由 nginx `location /products/ { alias ...; }` 直接 serve 文件；
+      // 这里把请求转发到后端的 GET /products/:filename 路由，
+      // 由后端读盘返回（dev-only 兜底）。
+      '/products': {
+        target: BACKEND_DEV_URL,
+        changeOrigin: false,
+      },
     },
   },
   preview: {
@@ -45,6 +53,10 @@ export default defineConfig({
     allowedHosts,
     proxy: {
       '/api': {
+        target: BACKEND_DEV_URL,
+        changeOrigin: false,
+      },
+      '/products': {
         target: BACKEND_DEV_URL,
         changeOrigin: false,
       },

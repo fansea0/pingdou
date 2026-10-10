@@ -4,9 +4,11 @@ import {
   adminCreateProduct,
   adminDeleteProduct,
   adminReorderProducts,
+  uploadProductImage,
   type Product,
 } from '@/api/products';
 import { ProductEditModal } from '@/components/ProductEditModal';
+import { validateProductImageFile as validateImageFile } from '@/utils/imageFile';
 
 export function ProductsTab() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -170,6 +172,32 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
+  const [pickedPreview, setPickedPreview] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null);
+    setError(null);
+    const file = e.target.files?.[0] ?? null;
+    if (!file) {
+      setPickedFile(null);
+      setPickedPreview(null);
+      return;
+    }
+    const err = validateImageFile(file);
+    if (err) {
+      e.target.value = '';
+      setPickedFile(null);
+      setPickedPreview(null);
+      setFileError(err);
+      return;
+    }
+    setPickedFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setPickedPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,7 +208,7 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
       if (Number.isNaN(numericYuan)) throw new Error('价格格式不正确');
       if (numericYuan < 0) throw new Error('价格不能为负数');
       const numericCents = Math.round(numericYuan * 100);
-      await adminCreateProduct({
+      const created = await adminCreateProduct({
         // server auto-generates id; placeholder satisfies FE type signature
         id: 0,
         name,
@@ -189,6 +217,17 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
         description,
         url,
       });
+      if (pickedFile) {
+        try {
+          await uploadProductImage(created.id, pickedFile);
+        } catch (uploadErr: any) {
+          // 商品已创建但图片上传失败 — 提示用户去编辑页补图
+          setError(`商品已创建（#${created.id}），但图片上传失败：${uploadErr?.message ?? '未知错误'}`);
+          setBusy(false);
+          onCreated();
+          return;
+        }
+      }
       onCreated();
     } catch (err: any) {
       setError(err.message ?? 'create failed');
@@ -199,19 +238,59 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
     <div className="modal-backdrop modal-backdrop--product" onClick={onClose}>
       <form className="modal-card modal-card--product" onClick={e => e.stopPropagation()} onSubmit={submit}>
         <button type="button" className="modal-close" aria-label="close" onClick={onClose} disabled={busy}>×</button>
-        <h3>新建商品</h3>
+        <h3>
+          新建商品
+          <span className="modal-subtitle">添加到主页商品栏，访客可见</span>
+        </h3>
         <fieldset className="modal-form-section">
           <legend>基础信息</legend>
           <div className="modal-form-grid">
-            <label className="modal-form-field modal-form-field--wide">名称<input value={name} onChange={e => setName(e.target.value)} disabled={busy} placeholder="如：马卡龙色拼豆套装" maxLength={50} /></label>
+            <label className="modal-form-field modal-form-field--wide">
+              名称
+              <input value={name} onChange={e => setName(e.target.value)} disabled={busy} placeholder="如：马卡龙色拼豆套装" maxLength={50} />
+            </label>
           </div>
         </fieldset>
         <fieldset className="modal-form-section">
           <legend>商品详情</legend>
           <div className="modal-form-grid">
-            <label className="modal-form-field">价格（元）<input value={price} onChange={e => setPrice(e.target.value)} disabled={busy} inputMode="decimal" placeholder="0.00" /></label>
-            <label className="modal-form-field">链接<input value={url} onChange={e => setUrl(e.target.value)} disabled={busy} placeholder="https://..." /></label>
-            <label className="modal-form-field modal-form-field--wide">介绍<textarea value={description} onChange={e => setDescription(e.target.value)} disabled={busy} placeholder="简单描述商品亮点和规格" rows={3} /></label>
+            <label className="modal-form-field">
+              <span className="modal-form-label">价格 <em>元</em></span>
+              <input value={price} onChange={e => setPrice(e.target.value)} disabled={busy} inputMode="decimal" placeholder="0.00" />
+            </label>
+            <label className="modal-form-field">
+              链接
+              <input value={url} onChange={e => setUrl(e.target.value)} disabled={busy} placeholder="https://..." />
+            </label>
+            <label className="modal-form-field modal-form-field--wide">
+              介绍
+              <textarea value={description} onChange={e => setDescription(e.target.value)} disabled={busy} placeholder="简单描述商品亮点和规格" rows={3} />
+            </label>
+          </div>
+        </fieldset>
+        <fieldset className="modal-form-section">
+          <legend>封面图（可选）</legend>
+          <div className="product-image-row">
+            <div className="product-image-preview" data-empty={!pickedPreview}>
+              {pickedPreview
+                ? <img src={pickedPreview} alt="封面预览" />
+                : <span className="product-image-placeholder">暂无图片<br/>建议 1:1 比例</span>
+              }
+            </div>
+            <div className="product-image-controls">
+              <label className="product-image-pick">
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  disabled={busy}
+                  onChange={handleFileChange}
+                  aria-label="选择封面图"
+                />
+                <span>{pickedFile ? '更换图片' : '选择图片'}</span>
+              </label>
+              <p className="product-image-hint">jpeg / png / webp，≤ 5 MB</p>
+              {fileError && <p className="modal-error">{fileError}</p>}
+            </div>
           </div>
         </fieldset>
         {error && <p className="modal-error">{error}</p>}

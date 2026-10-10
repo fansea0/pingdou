@@ -39,7 +39,7 @@
 | 证书校验方式 | `--webroot`（不是 `--nginx`） | pip 装的 certbot 没带 nginx 插件；且自己写配置比让 certbot 改配置更可控 |
 | OCSP stapling | **不开启** | Let's Encrypt 已于 2025 年停止在证书里带 OCSP 地址 |
 | nginx 启动方式 | 交给 systemd | 阿里云镜像默认是手动 `nginx` 拉的裸进程，重启后不自启、挂了不拉起 |
-| 启动必填 env 校验 | 缺一 fail-fast，不静默 fallback | 配置错误不能被"自动回退"掩盖——具体见「运行时数据管理」 |
+| 启动必填 env 校验 | `PINGDOU_DATA_DIR` 默认 `/var/lib/pingdou`，可省略；生产仍建议显式注入 | 默认值保证本地一键启动，生产以 systemd `EnvironmentFile` 为准——具体见「运行时数据管理」 |
 
 ## 首次部署步骤
 
@@ -65,7 +65,7 @@ certbot --version
 
 ### 2. 修正 `.env` 端口 + 准备运行时目录
 
-`/root/project/pingdou/.env` 里的 `PORT` 必须是 `3000`，并且**必填 `PINGDOU_DATA_DIR`**（详见末尾「运行时数据管理」）。
+`/root/project/pingdou/.env` 里的 `PORT` 必须是 `3000`，并显式注入 `PINGDOU_DATA_DIR=/var/lib/pingdou`（虽然代码默认就是这个值，但生产建议显式写出来，便于运维一眼看到数据根；详见末尾「运行时数据管理」）。
 
 ```bash
 cd /root/project/pingdou
@@ -104,7 +104,7 @@ mkdir -p /var/www/pingdou /var/www/certbot-webroot
 cp -a /root/project/pingdou/dist/. /var/www/pingdou/
 chmod -R a+rX /var/www/pingdou
 
-# /etc/pingdou-backend.env —— 必填 env 集中在这里，权限锁死
+# /etc/pingdou-backend.env —— 运行时 env 集中在这里，权限锁死
 cat > /etc/pingdou-backend.env <<'EOF'
 PINGDOU_DATA_DIR=/var/lib/pingdou
 EOF
@@ -218,7 +218,7 @@ bash /root/project/pingdou/scripts/deploy-server.sh
 ```
 
 脚本会做：构建前后端 → 复制 `dist/` 到 `/var/www/pingdou` →
-检查运行时目录 + systemd env 必填项 → 重启 `pingdou-backend` →
+检查运行时目录 + systemd env (`PINGDOU_DATA_DIR`) → 重启 `pingdou-backend` →
 `nginx -t && reload` → 健康检查。
 
 > **如果改了 systemd env**（`/etc/pingdou-backend.env`），记得：
@@ -295,7 +295,7 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 |---|---|
 | 首页 403 | 静态文件放回了 `/root/...`，nginx 穿不透 `/root`（550） |
 | `/api/*` 502 | 后端没起来，或 `.env` 里 `PORT` 不是 3000 |
-| 后端启动报 `PINGDOU_DATA_DIR env var is required` | systemd unit 缺 PINGDOU_DATA_DIR | 见「运行时数据管理」 |
+| 后端启动报 `PINGDOU_DATA_DIR env var is required` | systemd unit 缺 PINGDOU_DATA_DIR | 见「运行时数据管理」（旧版本行为；当前版本未设置会 fallback 到 `/var/lib/pingdou`，如看到此报错说明在跑旧代码，先 `npm run build:server`） |
 | 登录后立刻掉登录态 | 先确认 cookie 有没有到后端：`curl -i -X POST localhost/api/auth/logout \| grep -ci '^set-cookie:'`。nginx 默认会透传，所以更可能是 `secure` 属性（`NODE_ENV=production` 时 cookie 只在 HTTPS 下发）或前端没带 `credentials:'include'` |
 | admin 改了商品，访客没看到 | 商品走 SQLite，不会被 deploy 覆盖；浏览器可能缓存，强制刷新或加 `?t=<timestamp>` |
 | 商品图片 403 | `chmod -R a+rX /var/lib/pingdou/images` + nginx `location /products/` 的 `alias` 路径 |
@@ -344,13 +344,13 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
     └── *.jpg, *.png                     ← 商品图片（admin 上传）
 ```
 
-### 启动必填的 env（缺一不可，少一个启动直接 fail）
+### 启动 env（`PINGDOU_DATA_DIR` 默认 `/var/lib/pingdou`，可不设）
 
-| env | 含义 | 路径必须存在 |
-|---|---|---|
-| `PINGDOU_DATA_DIR` | 运行时数据根目录（含 `stats.db` 与 `images/`） | 是 |
+| env | 必填 | 默认 | 含义 |
+|---|---|---|---|
+| `PINGDOU_DATA_DIR` | ❌（生产建议显式） | `/var/lib/pingdou` | 运行时数据根目录，含 `stats.db` 与 `images/` |
 
-**校验时机**：进程启动时第一件事。任一缺失或路径不存在，进程抛错退出，不会"静默 fallback"。
+**校验时机**：进程启动时第一件事。如果 `PINGDOU_DATA_DIR` 没设，使用默认 `/var/lib/pingdou`（`resolve()` 后再拼 `images/` 和 `stats.db`），不会抛错退出。本地开发 / 临时启动可以直接用默认值；生产建议通过 systemd `EnvironmentFile` 显式注入，便于运维核对。
 
 **默认 seed 账户**：首次启动（`users` 表为空时）后端会自动 seed 一个 `root` 管理员，**种子密码硬编码为 `12345678`**——这不是 env、不能改；登录后强制改密（见下面「首次登录流程」）。
 
@@ -468,7 +468,7 @@ chown -R root:root /var/lib/pingdou
 chmod 755 /var/lib/pingdou /var/lib/pingdou/images
 chmod -R a+rX /var/lib/pingdou/images
 
-# 4. 写 /etc/pingdou-backend.env（必填 env：PINGDOU_DATA_DIR）
+# 4. 写 /etc/pingdou-backend.env（含 PINGDOU_DATA_DIR，未设则代码默认 /var/lib/pingdou）
 # 5. 启动
 systemctl restart pingdou-backend
 ```
@@ -477,8 +477,8 @@ systemctl restart pingdou-backend
 
 | 启动报错 | 原因 | 怎么查 |
 |---|---|---|
-| `PINGDOU_DATA_DIR env var is required` | systemd unit 缺这个 env | `cat /etc/pingdou-backend.env` |
-| `PINGDOU_DATA_DIR 路径不存在` | 数据目录没建 | 跑「运行时数据目录权限」那段的 `mkdir -p` |
+| `PINGDOU_DATA_DIR env var is required` | 旧版本行为；当前版本未设置会 fallback 到 `/var/lib/pingdou`。如看到这条报错说明在跑旧代码 → 先 `npm run build:server` 后再 deploy | — |
+| `PINGDOU_DATA_DIR 路径不存在` | 数据目录没建（注意：当前代码不会检查路径是否存在，只有真正写 stats.db / 写 image 时才会报错） | 跑「运行时数据目录权限」那段的 `mkdir -p` |
 
 **调试技巧**：先把 `journalctl -u pingdou-backend -n 50` 看一遍，绝大部分启动问题都在这里有明确的错误信息。
 

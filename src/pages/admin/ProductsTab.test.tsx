@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   adminCreateProduct: vi.fn(),
   adminDeleteProduct: vi.fn(),
   adminReorderProducts: vi.fn(),
+  uploadProductImage: vi.fn(),
 }));
 
 vi.mock('@/api/products', () => ({
@@ -13,6 +14,7 @@ vi.mock('@/api/products', () => ({
   adminCreateProduct: (...args: unknown[]) => mocks.adminCreateProduct(...args),
   adminDeleteProduct: (...args: unknown[]) => mocks.adminDeleteProduct(...args),
   adminReorderProducts: (...args: unknown[]) => mocks.adminReorderProducts(...args),
+  uploadProductImage: (...args: unknown[]) => mocks.uploadProductImage(...args),
 }));
 
 import { ProductsTab } from './ProductsTab';
@@ -43,6 +45,7 @@ beforeEach(() => {
   mocks.adminCreateProduct.mockReset().mockResolvedValue({ id: 99, name: 'X', image: '', price: 0, description: '', url: '', order: 1 });
   mocks.adminDeleteProduct.mockReset().mockResolvedValue({ ok: true });
   mocks.adminReorderProducts.mockReset();
+  mocks.uploadProductImage.mockReset().mockResolvedValue({ id: 99, name: 'X', image: '/products/x.jpg', price: 0, description: '', url: '', order: 1 });
 });
 
 afterEach(() => {

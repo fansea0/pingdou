@@ -333,6 +333,26 @@ app.delete('/api/products/:id', requireAuth, requireAdmin, (req: AuthedRequest, 
   }
 });
 
+// dev-only 兜底：把 /products/<id>-<hex>.<ext> 静态 serve 给前端。
+// 生产部署走 nginx `location /products/ { alias <PINGDOU_DATA_DIR>/images/; }` 直接读盘，
+// 性能更高；这条路由仅在 vite dev/preview 反代场景下生效。
+const PRODUCT_IMAGE_FILENAME_RE = /^[0-9]+-[a-z0-9]+\.(jpg|jpeg|png|webp)$/i;
+app.get('/products/:filename', (req, res) => {
+  const filename = String(req.params.filename ?? '');
+  if (!PRODUCT_IMAGE_FILENAME_RE.test(filename)) {
+    return res.status(400).json({ error: 'invalid filename' });
+  }
+  const fullPath = `${PATHS.imagesDir}/${filename}`;
+  res.sendFile(fullPath, (err) => {
+    if (!err) return;
+    if (err && (err as any).code === 'ENOENT') {
+      return res.status(404).json({ error: 'not found' });
+    }
+    console.error('[products/:filename] sendFile failed', err);
+    if (!res.headersSent) res.status(500).json({ error: 'serve failed' });
+  });
+});
+
 app.get('/api/public/products', (_req, res) => {
   try {
     return res.json(getAllProducts());
