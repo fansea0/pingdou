@@ -646,11 +646,11 @@ code {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   width: min(100%, 680px);
   max-height: calc(100vh - var(--space-6));
   margin: auto;
-  padding: var(--space-5);
+  padding: var(--space-5) var(--space-5) var(--space-4);
   overflow-y: auto;
   background: var(--color-surface);
   border-radius: var(--radius-md);
@@ -659,7 +659,7 @@ code {
 
 .modal-card--product h3 {
   padding-right: var(--space-5);
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   font-weight: 600;
 }
 
@@ -678,22 +678,25 @@ code {
 
 .modal-card--product .modal-form-section {
   min-width: 0;
-  padding: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
 }
 
 .modal-card--product .modal-form-section legend {
-  padding: 0 var(--space-1);
+  padding: 0 var(--space-2);
   color: var(--color-text);
   font-size: var(--text-sm);
   font-weight: 600;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
 }
 
 .modal-card--product .modal-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-3) var(--space-4);
 }
 
 .modal-card--product .modal-form-field {
@@ -703,6 +706,7 @@ code {
   min-width: 0;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+  font-weight: 500;
 }
 
 .modal-card--product .modal-form-field--wide {
@@ -718,11 +722,27 @@ code {
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
+  font-size: var(--text-base);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.modal-card--product input::placeholder,
+.modal-card--product textarea::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.7;
+}
+
+.modal-card--product input:disabled,
+.modal-card--product textarea:disabled {
+  background: var(--color-border);
+  cursor: not-allowed;
 }
 
 .modal-card--product textarea {
   min-height: 88px;
   resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
 }
 
 .modal-card--product input:focus,
@@ -735,10 +755,11 @@ code {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+  margin-top: var(--space-1);
 }
 
 .modal-card--product .modal-actions button {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -746,12 +767,35 @@ code {
   font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.modal-card--product .modal-actions button:not(.primary):hover:not(:disabled) {
+  background: var(--color-surface-alt);
+  border-color: var(--color-border-strong);
 }
 
 .modal-card--product .modal-actions .primary {
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: #fff;
+  font-weight: 500;
+  padding: var(--space-2) var(--space-5);
+}
+
+.modal-card--product .modal-actions .primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.modal-card--product .modal-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-error-bg);
+  color: var(--color-error-fg);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  text-align: center;
 }
 
 .modal-card--product .modal-actions button:disabled,

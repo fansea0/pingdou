@@ -25,7 +25,13 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
     try {
       const body = await res.json();
       if (body?.error) msg = body.error;
-    } catch {}
+    } catch {
+      // body 不是 JSON（很可能是 nginx/proxy 兜底页面），保留状态码原文
+    }
+    // 413 通常意味着文件过大；状态码原文对用户不友好，给个明确提示
+    if (res.status === 413 && !/超过|过大|MB/i.test(msg)) {
+      msg = `请求体过大（${msg}），请检查上传内容`;
+    }
     throw new Error(msg);
   }
   return res.json() as Promise<T>;

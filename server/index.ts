@@ -39,15 +39,47 @@ function assertRuntimePaths(): void {
   mkdirSync(PATHS.dataDir, { recursive: true });
 }
 
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: MAX_IMAGE_BYTES },
   fileFilter: (_req, file, cb) => {
     const ok = ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype);
     if (ok) cb(null, true);
     else cb(new Error('unsupported mime'));
   },
 });
+
+function multerErrorPayload(err: any): { status: number; body: { error: string } } | null {
+  if (!err) return null;
+  // multer 错误都带 code；其他 upload 中间件抛的 Error 不带
+  const code = (err as any).code as string | undefined;
+  if (code === 'LIMIT_FILE_SIZE') {
+    return { status: 413, body: { error: `图片超过 ${MAX_IMAGE_BYTES / 1024 / 1024} MB，请压缩后再上传` } };
+  }
+  if (code === 'LIMIT_UNEXPECTED_FILE') {
+    return { status: 400, body: { error: '上传字段名错误' } };
+  }
+  if (err.message === 'unsupported mime') {
+    return { status: 400, body: { error: '仅支持 jpeg / png / webp 格式' } };
+  }
+  if (err instanceof multer.MulterError || code) {
+    return { status: 400, body: { error: `上传失败：${err.message}` } };
+  }
+  return null;
+}
+
+function handleUpload(fieldName: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    upload.single(fieldName)(req, res, (err: any) => {
+      if (!err) return next();
+      const payload = multerErrorPayload(err);
+      if (payload) return res.status(payload.status).json(payload.body);
+      return next(err);
+    });
+  };
+}
 
 export const app = express();
 
@@ -273,7 +305,7 @@ app.put('/api/products/:id', requireAuth, requireProductAccess, (req: AuthedRequ
   }
 });
 
-app.post('/api/products/:id/image', requireAuth, requireProductAccess, upload.single('file'), (req: AuthedRequest, res) => {
+app.post('/api/products/:id/image', requireAuth, requireProductAccess, handleUpload('file'), (req: AuthedRequest, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
   try {
     return res.json(replaceProductImage(Number(req.params.id), req.file.buffer, req.file.mimetype));
@@ -473,6 +505,17 @@ app.put('/api/admin/settings', requireAuth, requireAdmin, (req: AuthedRequest, r
 // 健康检查根路径，方便部署时做存活探测。
 app.get('/', (_req, res) => {
   res.type('text/plain').send(`pingdou api is running on port ${PORT}`);
+});
+
+// 全局兜底：保证任何未捕获错误都返回 JSON，而不是 HTML 错误页
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[unhandled]', err);
+  if (res.headersSent) return;
+  // express.json 在 body 超 limit 时抛 entity.too.large，type=entity，status=413
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: '请求体过大，请检查上传内容' });
+  }
+  res.status(500).json({ error: err?.message ?? 'internal error' });
 });
 
 async function findFreePort(start: number): Promise<number> {

@@ -131,4 +131,18 @@ describe('ProductsTab', () => {
 
     consoleErrorSpy.mockRestore();
   });
+
+  it('renders price column as yuan (divides cents by 100)', async () => {
+    mocks.listProducts.mockResolvedValue([
+      { id: 1, name: 'X', image: '', price: 1700000, description: '', url: '', order: 1 },
+      { id: 2, name: 'Y', image: '', price: 120080, description: '', url: '', order: 2 },
+    ]);
+    render(<ProductsTab />);
+    await waitFor(() => expect(screen.queryByText('加载中...')).toBeNull());
+
+    // 1700000 cents = 17000.00 元
+    expect(screen.getByText('¥17000.00')).toBeTruthy();
+    // 120080 cents = 1200.80 元
+    expect(screen.getByText('¥1200.80')).toBeTruthy();
+  });
 });

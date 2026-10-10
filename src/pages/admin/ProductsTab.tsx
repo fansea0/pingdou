@@ -113,7 +113,7 @@ export function ProductsTab() {
               >
                 <td>{p.id}</td>
                 <td>{p.name}</td>
-                <td>{p.price}</td>
+                <td>¥{(p.price / 100).toFixed(2)}</td>
                 <td>
                   <OrderInput
                     order={p.order}
@@ -177,7 +177,8 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
     setError(null);
     try {
       const numericYuan = Number(price);
-      if (Number.isNaN(numericYuan)) throw new Error('invalid price');
+      if (Number.isNaN(numericYuan)) throw new Error('价格格式不正确');
+      if (numericYuan < 0) throw new Error('价格不能为负数');
       const numericCents = Math.round(numericYuan * 100);
       await adminCreateProduct({
         // server auto-generates id; placeholder satisfies FE type signature
@@ -202,21 +203,21 @@ function CreateProductModal({ onClose, onCreated }: { onClose: () => void; onCre
         <fieldset className="modal-form-section">
           <legend>基础信息</legend>
           <div className="modal-form-grid">
-            <label className="modal-form-field">名称<input value={name} onChange={e => setName(e.target.value)} disabled={busy} /></label>
+            <label className="modal-form-field modal-form-field--wide">名称<input value={name} onChange={e => setName(e.target.value)} disabled={busy} placeholder="如：马卡龙色拼豆套装" maxLength={50} /></label>
           </div>
         </fieldset>
         <fieldset className="modal-form-section">
           <legend>商品详情</legend>
           <div className="modal-form-grid">
-            <label className="modal-form-field">价格（元）<input value={price} onChange={e => setPrice(e.target.value)} disabled={busy} inputMode="decimal" /></label>
-            <label className="modal-form-field modal-form-field--wide">链接<input value={url} onChange={e => setUrl(e.target.value)} disabled={busy} /></label>
-            <label className="modal-form-field modal-form-field--wide">介绍<textarea value={description} onChange={e => setDescription(e.target.value)} disabled={busy} /></label>
+            <label className="modal-form-field">价格（元）<input value={price} onChange={e => setPrice(e.target.value)} disabled={busy} inputMode="decimal" placeholder="0.00" /></label>
+            <label className="modal-form-field">链接<input value={url} onChange={e => setUrl(e.target.value)} disabled={busy} placeholder="https://..." /></label>
+            <label className="modal-form-field modal-form-field--wide">介绍<textarea value={description} onChange={e => setDescription(e.target.value)} disabled={busy} placeholder="简单描述商品亮点和规格" rows={3} /></label>
           </div>
         </fieldset>
         {error && <p className="modal-error">{error}</p>}
         <div className="modal-actions">
           <button type="button" onClick={onClose} disabled={busy}>取消</button>
-          <button type="submit" className="primary" disabled={busy || name.length === 0}>{busy ? '创建中...' : '创建'}</button>
+          <button type="submit" className="primary" disabled={busy || name.trim().length === 0}>{busy ? '创建中...' : '创建'}</button>
         </div>
       </form>
     </div>
