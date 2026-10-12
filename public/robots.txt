@@ -1,5 +1,13 @@
+# 全站权威域写死为 www + punycode（xn--muu023g.xyz）。
+# nginx 必须把裸域 301 到这里，否则 canonical 指向的 URL 与实际
+# 可访问的 www URL 不一致，属于重复内容。
 User-agent: *
 Allow: /
+
+# 登录后的统计后台，不要进入索引
 Disallow: /statics
 
-Sitemap: https://拼豆.xyz/sitemap.xml
+# 纯 JSON 接口，抓取没有内容价值，只浪费抓取预算
+Disallow: /api/
+
+Sitemap: https://www.xn--muu023g.xyz/sitemap.xml

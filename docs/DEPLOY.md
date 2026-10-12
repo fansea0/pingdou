@@ -40,6 +40,7 @@
 | OCSP stapling | **不开启** | Let's Encrypt 已于 2025 年停止在证书里带 OCSP 地址 |
 | nginx 启动方式 | 交给 systemd | 阿里云镜像默认是手动 `nginx` 拉的裸进程，重启后不自启、挂了不拉起 |
 | 启动必填 env 校验 | `PINGDOU_DATA_DIR` 默认 `/var/lib/pingdou`，可省略；生产仍建议显式注入 | 默认值保证本地一键启动，生产以 systemd `EnvironmentFile` 为准——具体见「运行时数据管理」 |
+| SEO 权威域 | **`https://www.xn--muu023g.xyz/`**（www + punycode） | canonical / sitemap / robots 里都写死这个形式，所以裸域必须 301 到 www，否则两个 URL 内容相同 = 重复内容。配置片段见 [`2026-10-12-seo-canonical-and-sitemap-design.md`](./superpowers/specs/2026-10-12-seo-canonical-and-sitemap-design.md) |
 
 ## 首次部署步骤
 

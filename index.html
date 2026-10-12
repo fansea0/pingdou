@@ -7,22 +7,26 @@
     <meta name="description" content="在线上传图片生成拼豆图纸，并提供 MARD 色号对照。" />
     <meta name="robots" content="index,follow" />
     <meta name="theme-color" content="#f97316" />
-    <link rel="canonical" href="https://拼豆.xyz/" />
+    <!-- 全站权威域写死为 www + punycode（xn--muu023g.xyz）。
+         nginx 侧必须配套把裸域 301 到这个形式，否则 canonical 指向的
+         页面和实际可访问的 www 页面是两个 URL，属于重复内容。 -->
+    <link rel="canonical" href="https://www.xn--muu023g.xyz/" />
     <meta property="og:title" content="拼豆图生成器｜在线生成拼豆图纸与 MARD 色号对照" />
     <meta property="og:description" content="在线上传图片生成拼豆图纸，并提供 MARD 色号对照。" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://拼豆.xyz/" />
+    <meta property="og:url" content="https://www.xn--muu023g.xyz/" />
     <meta property="og:site_name" content="拼豆图生成器" />
     <meta property="og:locale" content="zh_CN" />
-    <meta property="og:image" content="https://拼豆.xyz/samples/rabbit.jpg" />
+    <meta property="og:image" content="https://www.xn--muu023g.xyz/samples/rabbit.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1260" />
     <meta property="og:image:height" content="1258" />
     <meta property="og:image:alt" content="拼豆图生成器示例：兔子拼豆图纸预览" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="拼豆图生成器｜在线生成拼豆图纸与 MARD 色号对照" />
     <meta name="twitter:description" content="在线上传图片生成拼豆图纸，并提供 MARD 色号对照。" />
-    <meta name="twitter:image" content="https://拼豆.xyz/samples/rabbit.jpg" />
-    <meta name="twitter:url" content="https://拼豆.xyz/" />
+    <meta name="twitter:image" content="https://www.xn--muu023g.xyz/samples/rabbit.jpg" />
+    <meta name="twitter:url" content="https://www.xn--muu023g.xyz/" />
     <style>
       #root:not(:empty) + #seo-fallback { display: none; }
     </style>
@@ -32,15 +36,15 @@
         "@graph": [
           {
             "@type": "WebSite",
-            "@id": "https://拼豆.xyz/#website",
-            "url": "https://拼豆.xyz/",
+            "@id": "https://www.xn--muu023g.xyz/#website",
+            "url": "https://www.xn--muu023g.xyz/",
             "name": "拼豆图生成器",
             "inLanguage": "zh-CN"
           },
           {
             "@type": "WebApplication",
-            "@id": "https://拼豆.xyz/#webapplication",
-            "url": "https://拼豆.xyz/",
+            "@id": "https://www.xn--muu023g.xyz/#webapplication",
+            "url": "https://www.xn--muu023g.xyz/",
             "name": "拼豆图生成器",
             "description": "在线上传图片生成拼豆图纸，并提供 MARD 色号对照。",
             "applicationCategory": "UtilitiesApplication",
