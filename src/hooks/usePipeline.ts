@@ -19,7 +19,7 @@ export function usePipeline(palette: Palette | null) {
     removeBackground: false,
     simplifyColors: false,
     tightCrop: true,
-    colorBudget: 'off' as ColorBudgetLevel,
+    colorBudget: 'standard' as ColorBudgetLevel,
   });
 
   useEffect(() => {

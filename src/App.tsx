@@ -40,7 +40,7 @@ export function App() {
   const [removeBackground, setRemoveBackground] = useState(true);
   const [simplifyColors, setSimplifyColors] = useState(true);
   const [tightCrop, setTightCrop] = useState(true);
-  const [colorBudget, setColorBudget] = useState<ColorBudgetLevel>('off');
+  const [colorBudget, setColorBudget] = useState<ColorBudgetLevel>('standard');
   const [exporting, setExporting] = useState(false);
   const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
 
