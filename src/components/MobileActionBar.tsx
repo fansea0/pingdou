@@ -32,9 +32,11 @@ interface Props {
   gridSize: number;
   removeBackground: boolean;
   simplifyColors: boolean;
+  tightCrop: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
   onSimplifyColorsChange: (enabled: boolean) => void;
+  onTightCropChange: (enabled: boolean) => void;
   onLoad: (imageData: ImageData) => void;
   onExport: () => void;
   canExport: boolean;
@@ -46,9 +48,11 @@ export function MobileActionBar({
   gridSize,
   removeBackground,
   simplifyColors,
+  tightCrop,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
+  onTightCropChange,
   onLoad,
   onExport,
   canExport,
@@ -315,6 +319,16 @@ export function MobileActionBar({
                 onChange={e => onRemoveBackgroundChange(e.target.checked)}
               />
               自动去纯色背景
+            </label>
+
+            <label className="mobile-toggle-row">
+              <input
+                type="checkbox"
+                checked={tightCrop}
+                disabled={!removeBackground}
+                onChange={e => onTightCropChange(e.target.checked)}
+              />
+              紧裁边缘 · 裁掉主体外的空白格
             </label>
 
             <label className="mobile-toggle-row">

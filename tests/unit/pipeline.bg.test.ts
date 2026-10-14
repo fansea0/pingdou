@@ -38,6 +38,7 @@ async function runProcess(
       gridSize: 30,
       removeBackground,
       simplifyColors: false,
+      tightCrop: false,
     },
     () => {},
     r => {

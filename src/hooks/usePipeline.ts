@@ -9,7 +9,7 @@ export function usePipeline(palette: Palette | null) {
   const [status, setStatus] = useState<UIStatus>('idle');
   const [error, setError] = useState<Error | null>(null);
   const srcRef = useRef<ImageData | null>(null);
-  const settingsRef = useRef({ removeBackground: false, simplifyColors: false });
+  const settingsRef = useRef({ removeBackground: false, simplifyColors: false, tightCrop: true });
 
   useEffect(() => {
     if (!palette) return;
@@ -23,6 +23,7 @@ export function usePipeline(palette: Palette | null) {
       settingsRef.current = {
         removeBackground: params.removeBackground,
         simplifyColors: params.simplifyColors,
+        tightCrop: params.tightCrop,
       };
       await pipelineRef.current.process(src, params, setStatus, setResult);
       setError(null);
@@ -36,6 +37,7 @@ export function usePipeline(palette: Palette | null) {
     settingsRef.current = {
       removeBackground: params.removeBackground,
       simplifyColors: params.simplifyColors,
+      tightCrop: params.tightCrop,
     };
     return throttledProcess(src, params);
   }, [throttledProcess]);
@@ -45,6 +47,7 @@ export function usePipeline(palette: Palette | null) {
       settingsRef.current = {
         removeBackground: params.removeBackground,
         simplifyColors: params.simplifyColors,
+        tightCrop: params.tightCrop,
       };
       throttledProcess(srcRef.current, params);
     }
@@ -64,7 +67,8 @@ export function usePipeline(palette: Palette | null) {
         selectedGridSize,
         extraGridSizes,
         settingsRef.current.removeBackground,
-        settingsRef.current.simplifyColors
+        settingsRef.current.simplifyColors,
+        settingsRef.current.tightCrop
       );
       return out;
     } finally {

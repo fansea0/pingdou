@@ -8,9 +8,11 @@ const baseProps = () => ({
   totalCells: 10000,
   removeBackground: false,
   simplifyColors: false,
+  tightCrop: true,
   onGridSizeChange: () => {},
   onRemoveBackgroundChange: () => {},
   onSimplifyColorsChange: () => {},
+  onTightCropChange: () => {},
 });
 
 describe('ParamPanel', () => {
@@ -57,12 +59,39 @@ describe('ParamPanel', () => {
     expect(valueBadge?.textContent).toBe('50');
   });
 
-  it('exposes distinct background removal and color simplification options (no dither)', () => {
+  it('exposes distinct background removal, tight crop and color simplification options (no dither)', () => {
     const { container } = render(<ParamPanel {...baseProps()} />);
     const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes).toHaveLength(3);
     expect(within(container).getByRole('checkbox', { name: /自动去背景/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /紧裁边缘/ })).toBeTruthy();
     expect(within(container).getByRole('checkbox', { name: /自动简化颜色/ })).toBeTruthy();
+  });
+
+  it('defaults tight crop to on and disables it without background removal', () => {
+    const on = render(<ParamPanel {...baseProps()} removeBackground />);
+    const tightCrop = within(on.container).getByRole('checkbox', { name: /紧裁边缘/ }) as HTMLInputElement;
+    expect(tightCrop.checked).toBe(true);
+    expect(tightCrop.disabled).toBe(false);
+    on.unmount();
+
+    const off = render(<ParamPanel {...baseProps()} removeBackground={false} />);
+    const disabled = within(off.container).getByRole('checkbox', { name: /紧裁边缘/ }) as HTMLInputElement;
+    expect(disabled.disabled).toBe(true);
+  });
+
+  it('reports the cropped chart size once cropping kicked in', () => {
+    const { container } = render(
+      <ParamPanel {...baseProps()} actualSize={{ width: 57, height: 63, cropped: true }} />
+    );
+    expect(container.textContent).toMatch(/图纸 57 × 63 格/);
+  });
+
+  it('hides the cropped size hint when nothing was cropped', () => {
+    const { container } = render(
+      <ParamPanel {...baseProps()} actualSize={{ width: 100, height: 100, cropped: false }} />
+    );
+    expect(container.textContent).not.toMatch(/图纸 100 × 100 格/);
   });
 
   it('renders automatic color simplification off by default with its hint', () => {

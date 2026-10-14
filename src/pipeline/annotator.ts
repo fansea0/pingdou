@@ -7,23 +7,50 @@ export function pickTextColor(rgb: readonly [number, number, number]): string {
 
 const CHECK_LIGHT = '#f4f4f5';
 const CHECK_DARK = '#e4e4e7';
+const FONT_FAMILY = '-apple-system, "PingFang SC", sans-serif';
+
+/** 色号最小可用格子尺寸：低于此值写了也认不出来 */
+const MIN_ANNOTATED_CELL_PX = 16;
+/** 色号再长也至少保留的字号 */
+const MIN_CODE_FONT_PX = 7;
+
+export interface AnnotateOptions {
+  readonly cellPx: number;
+  readonly fontPx: number;
+  readonly mask?: BackgroundMask | null;
+  /**
+   * checker = 网页预览用的棋盘格透明底；
+   * plain = 导出用的纯色底（棋盘格真打印出来会被当成花纹）。
+   */
+  readonly backgroundStyle?: 'checker' | 'plain';
+  readonly showCodes?: boolean;
+  readonly backgroundColor?: string;
+}
+
+export const DEFAULT_BACKGROUND_COLOR = '#ffffff';
 
 /**
- * Render a bead image with color-code annotations on each cell.
- * Canvas dimensions are outW × outH cells (rectangular grids supported).
- * mask[i]===1 的格子渲染为棋盘格透明背景（不打码色 + 不写字）。
+ * 渲染「色块 + 色号」图层，画布尺寸 = outW × outH 格，不含网格线与行列标号。
+ * 标尺/网格线由 board.ts 在外层叠加，方便在方形板子上复用同一套绘制。
+ *
+ * 色号按实际文本宽度自动降档（不同品牌色号有 2~5 字符），
+ * 同一色号的字号只算一次——一整张图最多几十种色，不会有性能问题。
  */
 export function renderAnnotatedImage(
   indices: Uint8Array,
   outW: number,
   outH: number,
   palette: Palette,
-  cellPx: number,
-  fontPx: number,
-  mask: BackgroundMask | null = null
+  options: AnnotateOptions
 ): HTMLCanvasElement {
-  if (cellPx < 24) {
-    throw new Error('Annotated image requires cellPx >= 24');
+  const { cellPx, fontPx } = options;
+  const mask = options.mask ?? null;
+  const showCodes = options.showCodes ?? true;
+  const plain = (options.backgroundStyle ?? 'checker') === 'plain';
+  const baseColor = options.backgroundColor ?? DEFAULT_BACKGROUND_COLOR;
+
+  if (showCodes && cellPx < MIN_ANNOTATED_CELL_PX) {
+    throw new Error(`Annotated image requires cellPx >= ${MIN_ANNOTATED_CELL_PX}`);
   }
 
   const w = outW * cellPx;
@@ -33,14 +60,26 @@ export function renderAnnotatedImage(
   canvas.height = h;
   const ctx = canvas.getContext('2d')!;
 
-  if (mask) {
-    ctx.fillStyle = CHECK_LIGHT;
-    ctx.fillRect(0, 0, w, h);
-  }
+  ctx.fillStyle = plain ? baseColor : CHECK_LIGHT;
+  ctx.fillRect(0, 0, w, h);
 
-  ctx.font = `bold ${fontPx}px -apple-system, "PingFang SC", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+
+  const codeFontCache = new Map<string, number>();
+  const maxCodeWidth = cellPx - 3;
+  const fitCodeFont = (code: string): number => {
+    const cached = codeFontCache.get(code);
+    if (cached !== undefined) return cached;
+    let size = fontPx;
+    ctx.font = `${size}px ${FONT_FAMILY}`;
+    while (size > MIN_CODE_FONT_PX && ctx.measureText(code).width > maxCodeWidth) {
+      size -= 1;
+      ctx.font = `${size}px ${FONT_FAMILY}`;
+    }
+    codeFontCache.set(code, size);
+    return size;
+  };
 
   for (let y = 0; y < outH; y++) {
     for (let x = 0; x < outW; x++) {
@@ -48,7 +87,7 @@ export function renderAnnotatedImage(
       const px = x * cellPx;
       const py = y * cellPx;
       if (mask && mask[i]) {
-        if ((x + y) & 1) {
+        if (!plain && (x + y) & 1) {
           ctx.fillStyle = CHECK_DARK;
           ctx.fillRect(px, py, cellPx, cellPx);
         }
@@ -58,8 +97,11 @@ export function renderAnnotatedImage(
       const [r, g, b] = palette[idx].rgb;
       ctx.fillStyle = `rgb(${r},${g},${b})`;
       ctx.fillRect(px, py, cellPx, cellPx);
-      ctx.fillStyle = pickTextColor([r, g, b]);
+
+      if (!showCodes) continue;
       const code = palette[idx].id;
+      ctx.font = `bold ${fitCodeFont(code)}px ${FONT_FAMILY}`;
+      ctx.fillStyle = pickTextColor([r, g, b]);
       ctx.fillText(code, px + cellPx / 2, py + cellPx / 2);
     }
   }

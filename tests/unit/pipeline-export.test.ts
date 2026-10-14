@@ -16,7 +16,7 @@ vi.mock('@/pipeline/exporter', () => ({
 vi.mock('@/pipeline/watermark', () => ({ applyWatermark }));
 
 import { Pipeline } from '@/pipeline/pipeline';
-import type { Palette } from '@/types';
+import type { Palette, PipelineResult } from '@/types';
 
 const palette: Palette = [{ id: 'A01', rgb: [255, 0, 0], name: '红' }];
 
@@ -26,6 +26,49 @@ function source(width: number, height: number): ImageData {
   return new ImageData(pixels, width, height);
 }
 
+/** 白底 + 居中一块深色主体，用于验证去背景 + 裁边 */
+function paddedSubjectSource(): ImageData {
+  const width = 100;
+  const height = 100;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      const isSubject = x >= 40 && x < 60 && y >= 30 && y < 50;
+      const value = isSubject ? 20 : 255;
+      pixels[offset] = value;
+      pixels[offset + 1] = value;
+      pixels[offset + 2] = value;
+      pixels[offset + 3] = 255;
+    }
+  }
+  return new ImageData(pixels, width, height);
+}
+
+function baseResult(overrides: Partial<PipelineResult> = {}): PipelineResult {
+  return {
+    indices: new Uint8Array([0]),
+    gridSize: 1,
+    outW: 1,
+    outH: 1,
+    sourceW: 1,
+    sourceH: 1,
+    cropped: false,
+    token: 1,
+    mask: new Uint8Array(1),
+    simplifyColors: false,
+    colorSimplification: {
+      beforeColorCount: 1,
+      afterColorCount: 1,
+      mergedColorCount: 0,
+      rareColorCountBefore: 0,
+      rareColorCountAfter: 0,
+      minimumColorCountSatisfied: false,
+    },
+    ...overrides,
+  };
+}
+
 describe('Pipeline.exportMulti', () => {
   beforeEach(() => {
     canvasToBlob.mockClear();
@@ -33,7 +76,7 @@ describe('Pipeline.exportMulti', () => {
     applyWatermark.mockClear();
   });
 
-  it('exports the selected square board with its legend and watermark', async () => {
+  it('exports the board with its legend and watermark', async () => {
     const pipeline = new Pipeline();
     pipeline.init(palette);
     await pipeline.exportMulti(source(40, 20), 24, 4, [], false, false);
@@ -45,7 +88,96 @@ describe('Pipeline.exportMulti', () => {
     expect(applyWatermark.mock.invocationCallOrder[0]).toBeLessThan(
       canvasToBlob.mock.invocationCallOrder[0]
     );
+  });
+
+  it('names the file after the real output size, not the board preset', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    // 40x20 源图 → 采样成 4x2（非方图）
+    await pipeline.exportMulti(source(40, 20), 24, 4, [], false, false);
+
+    expect(triggerDownload).toHaveBeenCalledWith(expect.any(Blob), 'pingdou-4x2.png');
+  });
+
+  it('names the file with the square board size when tight crop is off', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    await pipeline.exportMulti(source(40, 20), 24, 4, [], false, false, false);
+
     expect(triggerDownload).toHaveBeenCalledWith(expect.any(Blob), 'pingdou-4x4.png');
+  });
+
+  it('exports one image per requested grid size', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    await pipeline.exportMulti(source(40, 20), 24, 8, [4], false, false);
+
+    expect(triggerDownload).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('Pipeline tight crop', () => {
+  beforeEach(() => {
+    canvasToBlob.mockClear();
+    triggerDownload.mockClear();
+    applyWatermark.mockClear();
+  });
+
+  it('shrinks the output grid to the subject plus padding', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    let result: PipelineResult | undefined;
+
+    await pipeline.process(
+      paddedSubjectSource(),
+      { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: true },
+      () => {},
+      value => {
+        result = value;
+      }
+    );
+
+    expect(result).toBeDefined();
+    expect(result!.cropped).toBe(true);
+    // 主体 20x20 + 四周各 2 格 padding
+    expect(result!.outW).toBeLessThan(result!.sourceW);
+    expect(result!.indices).toHaveLength(result!.outW * result!.outH);
+    expect(result!.mask).toHaveLength(result!.outW * result!.outH);
+  });
+
+  it('keeps the sampled grid untouched when tight crop is off', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    let result: PipelineResult | undefined;
+
+    await pipeline.process(
+      paddedSubjectSource(),
+      { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: false },
+      () => {},
+      value => {
+        result = value;
+      }
+    );
+
+    expect(result!.cropped).toBe(false);
+    expect([result!.outW, result!.outH]).toEqual([result!.sourceW, result!.sourceH]);
+  });
+
+  it('never crops when background removal is off (nothing to detect)', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    let result: PipelineResult | undefined;
+
+    await pipeline.process(
+      paddedSubjectSource(),
+      { gridSize: 20, removeBackground: false, simplifyColors: false, tightCrop: true },
+      () => {},
+      value => {
+        result = value;
+      }
+    );
+
+    expect(result!.cropped).toBe(false);
   });
 });
 
@@ -59,23 +191,7 @@ describe('Pipeline.exportComposite', () => {
   it('applies the watermark before serializing the composite', async () => {
     const pipeline = new Pipeline();
     pipeline.init(palette);
-    await pipeline.exportComposite({
-      indices: new Uint8Array([0]),
-      gridSize: 1,
-      outW: 1,
-      outH: 1,
-      token: 1,
-      mask: new Uint8Array(1),
-      simplifyColors: false,
-      colorSimplification: {
-        beforeColorCount: 1,
-        afterColorCount: 1,
-        mergedColorCount: 0,
-        rareColorCountBefore: 0,
-        rareColorCountAfter: 0,
-        minimumColorCountSatisfied: false,
-      },
-    });
+    await pipeline.exportComposite(baseResult());
 
     const compositeCanvas = canvasToBlob.mock.calls[0][0];
     expect(applyWatermark).toHaveBeenCalledWith(compositeCanvas);

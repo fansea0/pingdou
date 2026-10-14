@@ -3,9 +3,9 @@ import type { BackgroundMask, Palette, PipelineResult } from '@/types';
 
 const {
   canvasToBlob,
+  renderBeadBoard,
   renderComposite,
   renderCompositeFromBoard,
-  renderSquareBoard,
   triggerDownload,
 } = vi.hoisted(() => ({
   canvasToBlob: vi.fn<(canvas: HTMLCanvasElement) => Promise<Blob>>(
@@ -25,26 +25,29 @@ const {
     (
       boardCanvas: HTMLCanvasElement,
       indices: Uint8Array,
+      outW: number,
+      outH: number,
       palette: Palette,
       mask: BackgroundMask | null,
     ) => HTMLCanvasElement
   >(() => document.createElement('canvas')),
-  renderSquareBoard: vi.fn<
+  renderBeadBoard: vi.fn<
     (
       indices: Uint8Array,
       outW: number,
       outH: number,
       palette: Palette,
-      boardSize: number,
-      cellPx: number,
-      fontPx: number,
-      mask?: BackgroundMask | null,
+      options?: { readonly mask?: BackgroundMask | null },
     ) => HTMLCanvasElement
   >(() => document.createElement('canvas')),
   triggerDownload: vi.fn<(blob: Blob, filename: string) => void>(),
 }));
 
-vi.mock('@/pipeline/squareBoard', () => ({ renderSquareBoard }));
+// 只替换图纸渲染，padToSquareGrid 保持真实实现（方板路径依赖它）
+vi.mock('@/pipeline/board', async () => {
+  const actual = await vi.importActual<typeof import('@/pipeline/board')>('@/pipeline/board');
+  return { ...actual, renderBeadBoard };
+});
 vi.mock('@/pipeline/composite', () => ({
   DEFAULT_COMPOSITE_OPTIONS: { cellPx: 32 },
   renderComposite,
@@ -117,7 +120,7 @@ async function process(simplifyColors: boolean): Promise<PipelineResult> {
 
   await pipeline.process(
     source(),
-    { gridSize: 11, removeBackground: false, simplifyColors },
+    { gridSize: 11, removeBackground: false, simplifyColors, tightCrop: false },
     () => {},
     value => {
       result = value;
@@ -167,35 +170,61 @@ describe('Pipeline color simplification', () => {
     const pipeline = new Pipeline();
     pipeline.init(palette);
 
-    await pipeline.exportMulti(backgroundMaskedSource(), 24, 11, [8], true, true);
+    // tightCrop = false → 保留原采样网格并贴到 gridSize 标准方板
+    await pipeline.exportMulti(backgroundMaskedSource(), 24, 11, [8], true, true, false);
 
-    expect(renderSquareBoard).toHaveBeenCalledTimes(2);
+    expect(renderBeadBoard).toHaveBeenCalledTimes(2);
     expect(renderCompositeFromBoard).toHaveBeenCalledTimes(2);
-    expect(renderSquareBoard.mock.calls.map(([, , , , gridSize]) => gridSize)).toEqual([11, 8]);
+    // 方板路径下输出尺寸等于板子尺寸
+    expect(renderBeadBoard.mock.calls.map(([, outW, outH]) => [outW, outH])).toEqual([
+      [11, 11],
+      [8, 8],
+    ]);
 
-    const expectedDimensions = [[11, 6], [8, 4]];
-    for (let callIndex = 0; callIndex < renderSquareBoard.mock.calls.length; callIndex += 1) {
-      const [indices, outW, outH, , , , , mask] = renderSquareBoard.mock.calls[callIndex];
+    // 方板路径下整张图纸就是板子尺寸，页眉报的就是这块板
+    const expectedDimensions = [[11, 11], [8, 8]];
+    for (let callIndex = 0; callIndex < renderBeadBoard.mock.calls.length; callIndex += 1) {
+      const [indices, outW, outH, , boardOptions] = renderBeadBoard.mock.calls[callIndex];
+      const mask = boardOptions?.mask;
       const compositeCall = renderCompositeFromBoard.mock.calls[callIndex];
+      const [, compositeIndices, compositeW, compositeH] = compositeCall;
 
       expect([outW, outH]).toEqual(expectedDimensions[callIndex]);
+      expect([compositeW, compositeH]).toEqual(expectedDimensions[callIndex]);
       expect(mask).toBeInstanceOf(Uint8Array);
       expect(mask).toHaveLength(indices.length);
       expect(mask?.some(value => value === 1)).toBe(true);
       const visibleCounts = visibleColorCounts(indices, mask!);
       expect(visibleCounts).not.toHaveLength(0);
       expect(visibleCounts.every(count => count >= 10)).toBe(true);
-      expect(compositeCall[1]).toEqual(indices);
-      expect(compositeCall[3]).toEqual(mask);
-
-      // At 8×4, the eight masked white cells are below the rare-color limit;
-      // simplifying before applying the mask would force them away from index 3.
-      for (let position = 0; position < indices.length; position += 1) {
-        if (mask?.[position] === 1) {
-          expect(indices[position]).toBe(3);
-          expect(compositeCall[1][position]).toBe(3);
-        }
-      }
+      expect(compositeIndices).toEqual(indices);
+      expect(compositeCall[5]).toEqual(mask);
     }
+  });
+
+  it('simplifies before masking so background cells keep their own color', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    let result: PipelineResult | undefined;
+
+    await pipeline.process(
+      backgroundMaskedSource(),
+      { gridSize: 11, removeBackground: true, simplifyColors: true, tightCrop: false },
+      () => {},
+      value => {
+        result = value;
+      }
+    );
+
+    const { indices, mask } = result!;
+    let maskedCells = 0;
+    for (let position = 0; position < indices.length; position += 1) {
+      if (mask[position] !== 1) continue;
+      maskedCells += 1;
+      // 被判定为背景的格子必须保持白色（index 3），
+      // 否则简化步骤会把它们改色，导出时会凭空多出一堆豆子。
+      expect(indices[position]).toBe(3);
+    }
+    expect(maskedCells).toBeGreaterThan(0);
   });
 });

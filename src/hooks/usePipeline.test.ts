@@ -11,6 +11,7 @@ const { exportMultiMock, initMock, processMock } = vi.hoisted(() => ({
       extraGridSizes: number[],
       removeBackground: boolean,
       simplifyColors: boolean,
+      tightCrop: boolean,
     ) => Promise<{ success: number; failed: number }>
   >(),
   initMock: vi.fn<(palette: Palette) => void>(),
@@ -46,6 +47,7 @@ vi.mock('@/pipeline/pipeline', () => ({
       extraGridSizes: number[],
       removeBackground: boolean,
       simplifyColors: boolean,
+      tightCrop: boolean,
     ): Promise<{ success: number; failed: number }> {
       return exportMultiMock(
         src,
@@ -54,6 +56,7 @@ vi.mock('@/pipeline/pipeline', () => ({
         extraGridSizes,
         removeBackground,
         simplifyColors,
+        tightCrop,
       );
     }
   },
@@ -67,6 +70,9 @@ const pipelineResult: PipelineResult = {
   gridSize: 32,
   outW: 1,
   outH: 1,
+  sourceW: 1,
+  sourceH: 1,
+  cropped: false,
   token: 1,
   mask: new Uint8Array([0]),
   simplifyColors: false,
@@ -109,21 +115,25 @@ describe('usePipeline throttled settings', () => {
         gridSize: 19,
         removeBackground: true,
         simplifyColors: true,
+        tightCrop: true,
       });
       result.current.reprocess({
         gridSize: 24,
         removeBackground: false,
         simplifyColors: true,
+        tightCrop: true,
       });
       result.current.reprocess({
         gridSize: 40,
         removeBackground: true,
         simplifyColors: false,
+        tightCrop: true,
       });
       result.current.reprocess({
         gridSize: 32,
         removeBackground: false,
         simplifyColors: false,
+        tightCrop: true,
       });
       await vi.advanceTimersByTimeAsync(200);
     });
@@ -133,12 +143,13 @@ describe('usePipeline throttled settings', () => {
       gridSize: 32,
       removeBackground: false,
       simplifyColors: false,
+      tightCrop: true,
     });
 
     await act(async () => {
       await result.current.exportMulti(24, 32, []);
     });
 
-    expect(exportMultiMock).toHaveBeenCalledWith(image, 24, 32, [], false, false);
+    expect(exportMultiMock).toHaveBeenCalledWith(image, 24, 32, [], false, false, true);
   });
 });

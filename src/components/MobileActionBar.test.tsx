@@ -10,6 +10,8 @@ function renderBar(overrides: Partial<BarProps> = {}) {
     gridSize: 100,
     removeBackground: false,
     simplifyColors: false,
+    tightCrop: true,
+    onTightCropChange: () => {},
     onGridSizeChange: () => {},
     onRemoveBackgroundChange: () => {},
     onSimplifyColorsChange: () => {},

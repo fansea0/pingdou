@@ -40,6 +40,27 @@ if (typeof globalThis.HTMLCanvasElement !== 'undefined') {
   const probe = document.createElement('canvas');
   if (!proto.getContext.call(probe, '2d')) {
     type PixelBufferKey = { __pingdouPixels?: Uint8ClampedArray; __pingdouLastSize?: { w: number; h: number } };
+
+    /** jsdom 的 canvas 桩要支持渲染层实际用到的颜色写法：hex / rgb() / rgba() */
+    function parseColor(input: string): [number, number, number] {
+      const value = (input || '').trim();
+      const rgbMatch = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(value);
+      if (rgbMatch) {
+        return [Number(rgbMatch[1]), Number(rgbMatch[2]), Number(rgbMatch[3])];
+      }
+      const hexMatch = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value);
+      if (hexMatch) {
+        let hex = hexMatch[1];
+        if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+        return [
+          parseInt(hex.slice(0, 2), 16),
+          parseInt(hex.slice(2, 4), 16),
+          parseInt(hex.slice(4, 6), 16),
+        ];
+      }
+      return [0, 0, 0];
+    }
+
     proto.getContext = function (id: string): unknown {
       if (id !== '2d') return null;
       const w = (this as HTMLCanvasElement).width;
@@ -53,19 +74,52 @@ if (typeof globalThis.HTMLCanvasElement !== 'undefined') {
       const width = w;
       const height = h;
       const self = this as HTMLCanvasElement;
-      const ctx = {
-        canvas: self,
+
+      // fillText/stroke 不落像素，但渲染层依赖 font/measureText 做色号排版与
+      // 底部色号表折行，所以状态必须真的被 get/set。
+      interface DrawState {
+        fillStyle: string;
+        strokeStyle: string;
+        lineWidth: number;
+        font: string;
+        textAlign: CanvasTextAlign;
+        textBaseline: CanvasTextBaseline;
+      }
+      let state: DrawState = {
         fillStyle: '#000',
         strokeStyle: '#000',
         lineWidth: 1,
         font: '10px sans-serif',
-        textAlign: 'start' as const,
-        textBaseline: 'alphabetic' as const,
+        textAlign: 'start',
+        textBaseline: 'alphabetic',
+      };
+      const stack: DrawState[] = [];
+
+      const ctx = {
+        canvas: self,
+        get fillStyle() { return state.fillStyle; },
+        set fillStyle(v: string) { state.fillStyle = v; },
+        get strokeStyle() { return state.strokeStyle; },
+        set strokeStyle(v: string) { state.strokeStyle = v; },
+        get lineWidth() { return state.lineWidth; },
+        set lineWidth(v: number) { state.lineWidth = v; },
+        get font() { return state.font; },
+        set font(v: string) { state.font = v; },
+        get textAlign() { return state.textAlign; },
+        set textAlign(v: CanvasTextAlign) { state.textAlign = v; },
+        get textBaseline() { return state.textBaseline; },
+        set textBaseline(v: CanvasTextBaseline) { state.textBaseline = v; },
+        save(): void { stack.push({ ...state }); },
+        restore(): void { const prev = stack.pop(); if (prev) state = prev; },
+        /** 近似字宽：够用来触发色号降档与色号表折行，不必像素级精确 */
+        measureText(text: string): { width: number } {
+          const size = parseFloat(state.font) || 10;
+          let width = 0;
+          for (const ch of text) width += ch.charCodeAt(0) > 255 ? size : size * 0.55;
+          return { width };
+        },
         fillRect(x: number, y: number, ww: number, hh: number): void {
-          const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(ctx.fillStyle);
-          const r = m ? +m[1] : 0;
-          const g = m ? +m[2] : 0;
-          const b = m ? +m[3] : 0;
+          const [r, g, b] = parseColor(state.fillStyle);
           const x0 = Math.max(0, Math.floor(x));
           const y0 = Math.max(0, Math.floor(y));
           const x1 = Math.min(width, Math.floor(x + ww));
@@ -123,10 +177,7 @@ if (typeof globalThis.HTMLCanvasElement !== 'undefined') {
         lineTo(_x: number, _y: number): void {},
         stroke(): void {},
         strokeRect(x: number, y: number, ww: number, hh: number): void {
-          const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(ctx.strokeStyle);
-          const r = m ? +m[1] : 0;
-          const g = m ? +m[2] : 0;
-          const b = m ? +m[3] : 0;
+          const [r, g, b] = parseColor(state.strokeStyle);
           const x0 = Math.max(0, Math.floor(x));
           const y0 = Math.max(0, Math.floor(y));
           const x1 = Math.min(width, Math.floor(x + ww));

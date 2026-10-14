@@ -5,12 +5,15 @@ interface Props {
   gridSize: number;
   beanCount: number;
   totalCells: number;
+  actualSize?: { width: number; height: number; cropped: boolean } | null;
   estimateLabel?: string | null;
   removeBackground: boolean;
   simplifyColors: boolean;
+  tightCrop: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
   onSimplifyColorsChange: (enabled: boolean) => void;
+  onTightCropChange: (enabled: boolean) => void;
   disabled?: boolean;
 }
 
@@ -111,12 +114,15 @@ export function ParamPanel({
   gridSize,
   beanCount,
   totalCells,
+  actualSize,
   estimateLabel,
   removeBackground,
   simplifyColors,
+  tightCrop,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
+  onTightCropChange,
   disabled,
 }: Props) {
   const removed = totalCells > 0 ? totalCells - beanCount : 0;
@@ -157,6 +163,12 @@ export function ParamPanel({
           （{gridSize} × {gridSize} = {totalCells.toLocaleString()} 格）
         </span>
         {estimateLabel && <span className="assembly-time"> · {estimateLabel}</span>}
+        {actualSize?.cropped && (
+          <span className="bean-count-grid">
+            {' '}
+            · 图纸 {actualSize.width} × {actualSize.height} 格
+          </span>
+        )}
         {removeBackground && removed > 0 && (
           <span className="bean-count-removed">
             {' '}
@@ -176,6 +188,22 @@ export function ParamPanel({
         <span>
           自动去背景
           <span className="param-toggle-hint"> · 适合卡通插画</span>
+        </span>
+      </label>
+
+      <label className="checkbox param-toggle">
+        <input
+          type="checkbox"
+          checked={tightCrop}
+          onChange={e => onTightCropChange(e.target.checked)}
+          disabled={disabled || !removeBackground}
+        />
+        <span>
+          紧裁边缘
+          <span className="param-toggle-hint">
+            {' '}
+            {removeBackground ? '· 裁掉主体外的空白格' : '· 需先开启去背景'}
+          </span>
         </span>
       </label>
 

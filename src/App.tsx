@@ -35,6 +35,7 @@ export function App() {
   const [gridSize, setGridSize] = useState(100);
   const [removeBackground, setRemoveBackground] = useState(true);
   const [simplifyColors, setSimplifyColors] = useState(true);
+  const [tightCrop, setTightCrop] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
 
@@ -64,7 +65,7 @@ export function App() {
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
     if (sample && palette && status === 'idle') {
-      process(sample, { gridSize, removeBackground, simplifyColors });
+      process(sample, { gridSize, removeBackground, simplifyColors, tightCrop });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample, palette, status]);
@@ -120,25 +121,33 @@ export function App() {
 
       <main className="layout-3col">
         <aside className="left">
-          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors })} />
+          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors, tightCrop })} />
           <ParamPanel
             gridSize={gridSize}
             beanCount={beanCount}
             totalCells={totalCells}
+            actualSize={
+              result ? { width: result.outW, height: result.outH, cropped: result.cropped } : null
+            }
             estimateLabel={estimateLabel}
             removeBackground={removeBackground}
             simplifyColors={simplifyColors}
+            tightCrop={tightCrop}
             onGridSizeChange={n => {
               setGridSize(n);
-              reprocess({ gridSize: n, removeBackground, simplifyColors });
+              reprocess({ gridSize: n, removeBackground, simplifyColors, tightCrop });
             }}
             onRemoveBackgroundChange={b => {
               setRemoveBackground(b);
-              reprocess({ gridSize, removeBackground: b, simplifyColors });
+              reprocess({ gridSize, removeBackground: b, simplifyColors, tightCrop });
             }}
             onSimplifyColorsChange={enabled => {
               setSimplifyColors(enabled);
-              reprocess({ gridSize, removeBackground, simplifyColors: enabled });
+              reprocess({ gridSize, removeBackground, simplifyColors: enabled, tightCrop });
+            }}
+            onTightCropChange={enabled => {
+              setTightCrop(enabled);
+              reprocess({ gridSize, removeBackground, simplifyColors, tightCrop: enabled });
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
@@ -194,19 +203,24 @@ export function App() {
         gridSize={gridSize}
         removeBackground={removeBackground}
         simplifyColors={simplifyColors}
+        tightCrop={tightCrop}
         onGridSizeChange={n => {
           setGridSize(n);
-          reprocess({ gridSize: n, removeBackground, simplifyColors });
+          reprocess({ gridSize: n, removeBackground, simplifyColors, tightCrop });
         }}
         onRemoveBackgroundChange={b => {
           setRemoveBackground(b);
-          reprocess({ gridSize, removeBackground: b, simplifyColors });
+          reprocess({ gridSize, removeBackground: b, simplifyColors, tightCrop });
         }}
         onSimplifyColorsChange={enabled => {
           setSimplifyColors(enabled);
-          reprocess({ gridSize, removeBackground, simplifyColors: enabled });
+          reprocess({ gridSize, removeBackground, simplifyColors: enabled, tightCrop });
         }}
-        onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors })}
+        onTightCropChange={enabled => {
+          setTightCrop(enabled);
+          reprocess({ gridSize, removeBackground, simplifyColors, tightCrop: enabled });
+        }}
+        onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors, tightCrop })}
         onExport={handleExport}
         canExport={!!result}
         exporting={exporting}
