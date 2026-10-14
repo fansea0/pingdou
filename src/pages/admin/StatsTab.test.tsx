@@ -7,12 +7,25 @@ const mocks = vi.hoisted(() => ({
     perDay: [],
     productClicks: [],
   }),
+  fetchRegions: vi.fn().mockResolvedValue({
+    days: 30,
+    totals: { pv: 0, uv: 0, selfPv: 0, selfUv: 0, externalPv: 0, externalUv: 0, unknownPv: 0, unknownUv: 0 },
+    provinces: [],
+    cities: [],
+    perDay: [],
+    coverage: { resolvedPv: 0, resolvedUv: 0, totalPv: 0, totalUv: 0 },
+    geo: { available: true, cached: 0 },
+    selfFingerprintEnabled: false,
+  }),
+  setSelfFingerprint: vi.fn(),
   listSettings: vi.fn(),
   putSetting: vi.fn(),
 }));
 
 vi.mock('@/api/statics', () => ({
   fetchSummary: mocks.fetchSummary,
+  fetchRegions: mocks.fetchRegions,
+  setSelfFingerprint: mocks.setSelfFingerprint,
 }));
 
 vi.mock('@/api/settings', () => ({

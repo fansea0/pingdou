@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>拼豆.xyz 后台 · 来源地与自我访问统计（展示设计稿）</title>
+<style>
+  :root {
+    --color-bg: #fdf6f0;
+    --color-surface: #ffffff;
+    --color-surface-alt: #f5ede5;
+    --color-text: #2d2a26;
+    --color-text-muted: #968b80;
+    --color-border: #f0e6dc;
+    --color-border-strong: #d9c9b9;
+    --color-accent: #e07856;
+    --color-accent-hover: #c95f3f;
+    --color-accent-soft: #fce0d6;
+    --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px;
+    --radius-sm: 8px; --radius-md: 16px; --radius-lg: 24px;
+    --shadow-sm: 0 2px 6px rgba(180,130,100,.08);
+    --shadow-md: 0 6px 20px rgba(180,130,100,.12);
+    --text-xs: 11px; --text-sm: 12px; --text-base: 14px; --text-lg: 16px; --text-xl: 22px; --text-2xl: 28px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--color-bg); color: var(--color-text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: var(--text-base); padding: var(--space-6) var(--space-4);
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+
+  /* ── 设计稿外壳 ── */
+  .draft-bar {
+    display: flex; justify-content: space-between; align-items: center; gap: var(--space-3);
+    background: var(--color-text); color: #fff; border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4);
+    font-size: var(--text-sm); flex-wrap: wrap;
+  }
+  .draft-bar b { font-weight: 600; }
+  .draft-bar button {
+    background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); color: #fff;
+    border-radius: 999px; padding: 5px 14px; font-size: var(--text-xs); cursor: pointer; font-family: inherit;
+  }
+  .draft-bar button:hover { background: rgba(255,255,255,.24); }
+
+  .notes { display: none; margin-bottom: var(--space-4); }
+  .notes.on { display: block; }
+  .note {
+    display: flex; gap: var(--space-3); align-items: flex-start;
+    background: #fff; border: 1px solid var(--color-accent-soft); border-left: 3px solid var(--color-accent);
+    border-radius: var(--radius-sm); padding: var(--space-3); margin-bottom: var(--space-2);
+    font-size: var(--text-sm); line-height: 1.6; position: relative;
+  }
+  .note__n {
+    flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--color-accent); color: #fff; font-size: var(--text-xs);
+    display: grid; place-items: center; font-weight: 700;
+  }
+  .note b { color: var(--color-accent-hover); }
+
+  /* ── 模拟现有后台外壳 ── */
+  .card-shell { background: var(--color-surface); border: 1px solid var(--color-border);
+    border-radius: var(--radius-md); padding: var(--space-5); box-shadow: var(--shadow-sm); }
+  .tabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-4); }
+  .tabs button { border: 1px solid var(--color-border-strong); background: var(--color-surface);
+    border-radius: 999px; padding: 5px 16px; font-size: var(--text-sm); color: var(--color-text-muted);
+    font-family: inherit; cursor: pointer; }
+  .tabs button.active { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent-hover); font-weight: 600; }
+
+  h2.sec { font-size: var(--text-xl); margin-bottom: var(--space-4); }
+  h3.sec3 { font-size: var(--text-lg); margin-bottom: var(--space-3); }
+  .muted { color: var(--color-text-muted); font-size: var(--text-xs); }
+
+  /* 现有统计概览（保持不变，只加一行 hint 说明口径） */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
+  .card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md);
+    padding: var(--space-4); box-shadow: var(--shadow-sm); }
+  .card .v { font-size: 28px; font-weight: 700; color: var(--color-accent); font-variant-numeric: tabular-nums; }
+  .card .l { font-size: var(--text-sm); color: var(--color-text-muted); margin-top: var(--space-1); }
+  .card .h { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 2px; }
+
+  /* ── 新增板块 ── */
+  .region { margin-top: var(--space-6); padding-top: var(--space-5); border-top: 1px solid var(--color-border); }
+  .region__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-4); }
+  .region__title { font-size: var(--text-lg); }
+  .region__sub { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: var(--space-1); }
+  select { padding: var(--space-1) var(--space-2); border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm); font-family: inherit; font-size: var(--text-sm); background: var(--color-surface); color: var(--color-text); }
+
+  .rcards { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-4); }
+  .rcard { padding: var(--space-3); border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface); }
+  .rcard--external { border-color: var(--color-accent-soft); }
+  .rcard--self { background: var(--color-surface-alt); }
+  .rcard .v { font-size: var(--text-2xl); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .rcard--external .v { color: var(--color-accent-hover); }
+  .rcard--self .v { color: var(--color-text-muted); }
+  .rcard .l { font-size: var(--text-sm); margin-top: var(--space-1); }
+  .rcard .h { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 2px; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4);
+    padding: var(--space-3); margin-bottom: var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-alt); }
+  .switch { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); cursor: pointer; }
+  .switch input { cursor: pointer; }
+  .switch .hint { font-size: var(--text-xs); color: var(--color-text-muted); }
+  .coverage { margin-left: auto; font-size: var(--text-xs); color: var(--color-text-muted); }
+
+  .body { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); gap: var(--space-4); align-items: start; }
+  @media (max-width: 720px) { .body { grid-template-columns: 1fr; } .coverage { margin-left: 0; } }
+
+  .tilemap svg { width: 100%; height: auto; max-width: 460px; }
+  .tile { cursor: pointer; }
+  .tile rect { transition: fill .12s ease, stroke .12s ease; }
+  .tile:hover rect { stroke: var(--color-accent); }
+  .tile.dim { opacity: .32; }
+  .legend { display: flex; align-items: center; gap: 4px; margin-top: var(--space-2); font-size: var(--text-xs); color: var(--color-text-muted); }
+  .legend i { width: 18px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  .rank { border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); padding: var(--space-3); }
+  .rank__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2); }
+  .rank__title { font-size: var(--text-sm); font-weight: 600; }
+  .rank__back { border: none; background: none; color: var(--color-accent-hover); font-size: var(--text-xs); cursor: pointer; }
+  .rank ul { list-style: none; }
+  .rank li { display: grid; grid-template-columns: 5.5em 1fr 3.5em 3.5em; align-items: center;
+    gap: var(--space-2); padding: 5px 0; font-size: var(--text-sm); border-bottom: 1px solid var(--color-border); }
+  .rank li:last-child { border-bottom: none; }
+  .rank li.click { cursor: pointer; }
+  .rank li.click:hover { background: var(--color-surface-alt); }
+  .bar { display: block; height: 8px; border-radius: 4px; background: var(--color-surface-alt); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 4px; background: var(--color-accent); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .uv { text-align: right; font-size: var(--text-xs); color: var(--color-text-muted); }
+
+  .trend__head { display: flex; justify-content: space-between; align-items: center; margin: var(--space-5) 0 var(--space-2); }
+  .trend__title { font-size: var(--text-base); }
+  .modes { display: flex; gap: var(--space-1); }
+  .modes button { border: 1px solid var(--color-border-strong); background: var(--color-surface); border-radius: var(--radius-sm);
+    padding: 3px 10px; font-size: var(--text-xs); font-family: inherit; color: var(--color-text-muted); cursor: pointer; }
+  .modes button.active { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent-hover); }
+  .trend svg { width: 100%; height: 150px; }
+  .empty { color: var(--color-text-muted); font-size: var(--text-sm); padding: var(--space-4) 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="draft-bar">
+    <span><b>展示设计稿</b> · 可交互原型，模拟真实数据形态（站主视角：广东为主，杭州有一波自然流量）</span>
+    <button id="notesBtn">显示 / 隐藏设计说明</button>
+  </div>
+
+  <div class="notes" id="notes">
+    <div class="note"><span class="note__n">1</span><span><b>概览卡把「外部 / 内部」直接并列，而不是把旧 UV 拆开放进二级面板。</b>需求是「分不清是不是我自己」，答案必须在第一眼。外部用主色橙、内部用中性灰，视觉权重天然区分，不需要读文字就知道哪个是主角。</span></div>
+    <div class="note"><span class="note__n">2</span><span><b>旧卡片保留但加口径提示。</b>不改动原有 <code>/api/statics/summary</code> 行为，只在 UV 卡下面加一行「含内部访问，看下方拆分」，避免两个口径的数字打架。</span></div>
+    <div class="note"><span class="note__n">3</span><span><b>「排除我的访问」默认开启。</b>因为用户每次打开后台想问的就是「外面的人有没有变多」。关掉它可以看全量，但那是次要场景。</span></div>
+    <div class="note"><span class="note__n">4</span><span><b>「标记我的访问」是可选项而非前置。</b>主要判定靠登录 Cookie；指纹只是补「退出登录 / 换设备」的场景。IP 由后端从请求里取，浏览器永远碰不到。</span></div>
+    <div class="note"><span class="note__n">5</span><span><b>覆盖率如实写出来。</b>老数据和库未覆盖的 IP 永远补不回来，藏起来只会让人误判「流量都在广东」。未归属量单独成桶，不伪装成某个省份。</span></div>
+    <div class="note"><span class="note__n">6</span><span><b>方块地图 + 排行榜左右分栏，互为索引。</b>地图给空间直觉但精确度低，排行给数字但没有形状。点省份只换右栏内容、不跳页，保持上下文，避免「点进去忘了自己在看什么」。</span></div>
+    <div class="note"><span class="note__n">7</span><span><b>等面积方块，不画真实省界。</b>个人站的量级看不出省界形状差异，用户要的是排序不是空间；真实多边形要 1MB GeoJSON + 图表库，不值。也不会被「四川比海南大 8 倍」误导。</span></div>
+    <div class="note"><span class="note__n">9</span><span><b>本原型的核心演示场景：广东总 PV 268 看着最高，但外部只有 58。</b>因为剩下 210 PV 全是站主自己在广东 IP 上调试产生的。没有自我访问拆分，「广东是最大的流量来源」是一个会把你带偏的结论；有了拆分，一眼就看出广东是自己人。</span></div>
+    <div class="note"><span class="note__n">8</span><span><b>趋势堆叠柱：外部在左（主色）、内部在右（灰）。</b>一眼看出每天的构成，而不是两条线要对照着看。三种口径切换，默认「外部」，与概览卡默认一致。</span></div>
+  </div>
+
+  <div class="card-shell">
+    <div class="tabs"><button class="active">统计</button><button>账号</button><button>商品</button></div>
+
+    <h2 class="sec">统计概览</h2>
+    <div class="cards">
+      <div class="card"><div class="v">281</div><div class="l">独立访客 (UV)</div><div class="h">含内部访问，看下方拆分</div></div>
+      <div class="card"><div class="v">1,046</div><div class="l">浏览量 (PV)</div></div>
+      <div class="card"><div class="v">37</div><div class="l">商品点击</div></div>
+      <div class="card"><div class="v">12</div><div class="l">图片导出</div></div>
+    </div>
+
+    <!-- 新增板块 -->
+    <div class="region">
+      <div class="region__head">
+        <div>
+          <div class="region__title">谁来看我了</div>
+          <div class="region__sub">内部访问 = 已登录后台账号或你标记过的设备；外部访客 = 匿名访问者</div>
+        </div>
+        <select id="days"><option value="7">最近 7 天</option><option value="30" selected>最近 30 天</option><option value="90">最近 90 天</option></select>
+      </div>
+
+      <div class="rcards">
+        <div class="rcard rcard--external"><div class="v" id="kExtUv">268</div><div class="l">外部访客 UV</div><div class="h">真正的新面孔</div></div>
+        <div class="rcard rcard--self"><div class="v" id="kSelfUv">13</div><div class="l">内部访问 UV</div><div class="h">我 / 商户账号</div></div>
+        <div class="rcard rcard--external"><div class="v" id="kExtPv">512</div><div class="l">外部 PV</div><div class="h">外部访问次数</div></div>
+        <div class="rcard rcard--self"><div class="v" id="kSelfPv">534</div><div class="l">内部 PV</div><div class="h">内部访问次数</div></div>
+      </div>
+
+      <div class="controls">
+        <label class="switch"><input type="checkbox" id="exclude" checked><span>排除我的访问</span><span class="hint" id="excludeHint">当前只看外部访客</span></label>
+        <label class="switch"><input type="checkbox" id="mark"><span>标记我的访问</span><span class="hint" id="markHint">退出登录后也会认得我</span></label>
+        <span class="coverage" id="cov"></span>
+      </div>
+
+      <div class="body">
+        <div class="tilemap" id="map"></div>
+        <div class="rank">
+          <div class="rank__head">
+            <span class="rank__title" id="rankTitle">省份排行</span>
+            <button class="rank__back" id="back" style="display:none">回到全国</button>
+          </div>
+          <div id="rankBody"></div>
+        </div>
+      </div>
+
+      <div class="trend__head">
+        <span class="trend__title">每日访问趋势</span>
+        <div class="modes">
+          <button data-mode="external" class="active">外部</button>
+          <button data-mode="self">内部</button>
+          <button data-mode="all">全部</button>
+        </div>
+      </div>
+      <div class="trend" id="trend"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── 模拟数据（30 天窗口，真实形态） ───────────────────────────── */
+const DATA = {
+  totals: { pv: 1046, uv: 281, selfPv: 534, selfUv: 13, externalPv: 512, externalUv: 268, unknownPv: 61, unknownUv: 41 },
+  coverage: { resolvedPv: 985, totalPv: 1046 },
+  provinces: [
+    { p: '广东省', pv: 268, uv: 96, selfPv: 210, extPv: 58, extUv: 42 },
+    { p: '浙江省', pv: 121, uv: 41, selfPv: 12,  extPv: 109, extUv: 38 },
+    { p: '江苏省', pv: 96,  uv: 33, selfPv: 8,   extPv: 88,  extUv: 31 },
+    { p: '上海市', pv: 84,  uv: 28, selfPv: 6,   extPv: 78,  extUv: 26 },
+    { p: '北京市', pv: 76,  uv: 26, selfPv: 31,  extPv: 45,  extUv: 21 },
+    { p: '四川省', pv: 58,  uv: 22, selfPv: 5,   extPv: 53,  extUv: 20 },
+    { p: '福建省', pv: 41,  uv: 18, selfPv: 3,   extPv: 38,  extUv: 16 },
+    { p: '山东省', pv: 38,  uv: 14, selfPv: 4,   extPv: 34,  extUv: 13 },
+    { p: '湖南省', pv: 34,  uv: 13, selfPv: 2,   extPv: 32,  extUv: 12 },
+    { p: '湖北省', pv: 29,  uv: 12, selfPv: 2,   extPv: 27,  extUv: 11 },
+    { p: '河南省', pv: 24,  uv: 10, selfPv: 3,   extPv: 21,  extUv: 9 },
+    { p: '陕西省', pv: 21,  uv: 9,  selfPv: 6,   extPv: 15,  extUv: 7 },
+    { p: '河北省', pv: 18,  uv: 9,  selfPv: 2,   extPv: 16,  extUv: 8 },
+    { p: '安徽省', pv: 16,  uv: 8,  selfPv: 1,   extPv: 15,  extUv: 7 },
+    { p: '重庆市', pv: 14,  uv: 7,  selfPv: 2,   extPv: 12,  extUv: 6 },
+    { p: '辽宁省', pv: 11,  uv: 6,  selfPv: 1,   extPv: 10,  extUv: 5 },
+    { p: '江西省', pv: 9,   uv: 5,  selfPv: 1,   extPv: 8,   extUv: 4 },
+    { p: '天津市', pv: 8,   uv: 5,  selfPv: 2,   extPv: 6,   extUv: 4 },
+    { p: '广西壮族自治区', pv: 7, uv: 4, selfPv: 0, extPv: 7,  extUv: 4 },
+    { p: '云南省', pv: 6, uv: 4, selfPv: 0, extPv: 6, extUv: 3 },
+    { p: '贵州省', pv: 5, uv: 3, selfPv: 0, extPv: 5, extUv: 3 },
+    { p: '山西省', pv: 4, uv: 3, selfPv: 1, extPv: 3,  extUv: 2 },
+    { p: '黑龙江省', pv: 3, uv: 2, selfPv: 0, extPv: 3, extUv: 2 },
+    { p: '吉林省', pv: 3, uv: 2, selfPv: 0, extPv: 3, extUv: 2 },
+    { p: '内蒙古自治区', pv: 2, uv: 2, selfPv: 0, extPv: 2, extUv: 2 },
+    { p: '甘肃省', pv: 2, uv: 2, selfPv: 0, extPv: 2, extUv: 1 },
+    { p: '新疆维吾尔自治区', pv: 1, uv: 1, selfPv: 0, extPv: 1, extUv: 1 },
+    { p: '西藏自治区', pv: 1, uv: 1, selfPv: 0, extPv: 1, extUv: 1 },
+    { p: '青海省', pv: 1, uv: 1, selfPv: 0, extPv: 1, extUv: 1 },
+    { p: '宁夏回族自治区', pv: 1, uv: 1, selfPv: 0, extPv: 1, extUv: 1 },
+    { p: '海南省', pv: 1, uv: 1, selfPv: 0, extPv: 1, extUv: 1 },
+    { p: '台湾省', pv: 1, uv: 1, selfPv: 0, extPv: 1, extUv: 1 },
+    { p: '香港', pv: 1, uv: 1, selfPv: 0, extPv: 1, extUv: 1 },
+    { p: '澳门', pv: 0, uv: 0, selfPv: 0, extPv: 0, extUv: 0 },
+  ],
+  cities: {
+    '广东': [['深圳市',38,16],['广州市',12,7],['东莞市',5,4],['佛山市',3,3]],
+    '浙江': [['杭州市',41,17],['宁波市',26,9],['温州市',19,7],['金华市',12,5],['嘉兴市',7,4]],
+    '江苏': [['南京市',29,12],['苏州市',22,9],['无锡市',16,7],['常州市',11,5],['南通市',6,4]],
+    '上海': [['上海市',78,26]],
+    '北京': [['北京市',45,21]],
+  },
+  perDay: [
+    [12,9,3],[15,11,4],[9,7,2],[18,14,4],[22,17,5],[14,10,4],[11,8,3],
+    [16,12,4],[24,19,5],[19,15,4],[13,10,3],[10,8,2],[15,11,4],[21,17,4],
+    [17,13,4],[12,9,3],[26,21,5],[31,26,5],[23,18,5],[18,14,4],[14,11,3],
+    [9,7,2],[11,9,2],[16,12,4],[20,16,4],[28,23,5],[34,29,5],[25,21,4],
+    [19,15,4],[13,10,3],[8,6,2],
+  ],
+};
+
+const LAYOUT = [
+  ['黑龙江',9,0],['吉林',11,0],['辽宁',10,1],
+  ['新疆',3,2],['内蒙古',8,2],
+  ['甘肃',6,3],['山西',7,3],['河北',8,3],['北京',9,3],['天津',10,3],
+  ['青海',5,4],['宁夏',6,4],['陕西',7,4],['河南',8,4],['山东',9,4],
+  ['西藏',3,5],['四川',6,5],['重庆',7,5],['湖北',8,5],['安徽',9,5],['江苏',10,5],['上海',11,5],
+  ['贵州',7,6],['湖南',8,6],['江西',9,6],['浙江',10,6],
+  ['云南',6,7],['广西',7,7],['广东',8,7],['福建',9,7],['台湾',10,7],
+  ['海南',8,8],['港澳',9,8],
+];
+const SHORT = {'内蒙古自治区':'内蒙古','广西壮族自治区':'广西','西藏自治区':'西藏','宁夏回族自治区':'宁夏',
+  '新疆维吾尔自治区':'新疆','香港':'港澳','澳门':'港澳','台湾省':'台湾'};
+const key = p => SHORT[p] || p.replace(/(省|市|自治区|特别行政区)$/, '');
+
+let excludeSelf = true, selected = null, mode = 'external';
+const TILE = 32, GAP = 4, COLS = 13;
+
+function val(p){ return excludeSelf ? p.extPv : p.pv; }
+
+function renderMap(){
+  const by = {};
+  for (const p of DATA.provinces){
+    const k = key(p.p);
+    if (by[k]) { by[k].pv += p.pv; by[k].extPv += p.extPv; }
+    else by[k] = {...p, label: p.p};
+  }
+  const max = Math.max(1, ...Object.values(by).map(val));
+  const W = COLS*(TILE+GAP)+GAP, H = 9*(TILE+GAP)+GAP;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="来源地方块地图">`;
+  for (const [name, col, row] of LAYOUT){
+    const b = by[name];
+    const v = b ? val(b) : 0;
+    const a = v > 0 ? 0.15 + 0.85*(v/max) : 0;
+    const sel = selected != null && selected === (b ? key(b.label) : name);
+    const dim = selected != null && !sel;
+    const x = GAP + col*(TILE+GAP), y = GAP + row*(TILE+GAP);
+    s += `<g class="tile${dim?' dim':''}" data-t="${b ? key(b.label) : name}" ${b?'':'style="cursor:default"'}>
+      <title>${b?b.label:name}｜${v ? v + ' PV' : '暂无数据'}</title>
+      <rect x="${x}" y="${y}" width="${TILE}" height="${TILE}" rx="6"
+        fill="${v>0?`rgba(224,120,86,${a.toFixed(3)})`:'var(--color-surface-alt)'}"
+        stroke="${sel?'var(--color-accent-hover)':'var(--color-border)'}" stroke-width="${sel?2:1}"/>
+      <text x="${x+TILE/2}" y="${y+TILE/2+3.5}" font-size="10" text-anchor="middle"
+        fill="${v>max*0.55?'#fff':'var(--color-text-muted)'}">${name}</text></g>`;
+  }
+  s += `</svg><div class="legend"><span>低</span>`
+    + [0.15,0.35,0.55,0.75,1].map(a=>`<i style="background:rgba(224,120,86,${a})"></i>`).join('')
+    + `<span>高（${excludeSelf?'外部访客 PV':'总 PV'}）</span></div>`;
+  document.getElementById('map').innerHTML = s;
+  document.querySelectorAll('#map .tile').forEach(g=>{
+    g.onclick = () => { if (g.dataset.t) { selected = (selected === g.dataset.t) ? null : g.dataset.t; render(); } };
+  });
+}
+
+function renderRank(){
+  const title = document.getElementById('rankTitle'), body = document.getElementById('rankBody');
+  const back = document.getElementById('back');
+  if (selected){
+    title.textContent = selected + ' · 城市';
+    back.style.display = '';
+    const rows = (DATA.cities[selected] || []).map(([name,pv,uv])=>({name,pv,uv})).filter(r=>r.pv>0);
+    if (!rows.length){ body.innerHTML = '<p class="empty">该省暂无城市级数据</p>'; return; }
+    const max = Math.max(...rows.map(r=>r.pv));
+    body.innerHTML = '<ul>' + rows.map(r=>`<li><span>${r.name}</span>
+      <span class="bar"><i style="width:${Math.max(2,r.pv/max*100)}%"></i></span>
+      <span class="num">${r.pv}</span><span class="uv">UV ${r.uv}</span></li>`).join('') + '</ul>';
+  } else {
+    title.textContent = '省份排行';
+    back.style.display = 'none';
+    const rows = [...DATA.provinces].sort((a,b)=>val(b)-val(a)).slice(0,12);
+    if (!rows.length){ body.innerHTML = '<p class="empty">暂无可归属的来源地数据</p>'; return; }
+    const max = Math.max(...rows.map(val));
+    body.innerHTML = '<ul>' + rows.map(p=>`<li class="click" data-p="${p.p}"><span>${p.p}</span>
+      <span class="bar"><i style="width:${Math.max(2,val(p)/max*100)}%"></i></span>
+      <span class="num">${val(p)}</span><span class="uv">UV ${p.extUv}</span></li>`).join('') + '</ul>';
+    body.querySelectorAll('li.click').forEach(li=>{
+      li.onclick = () => { selected = key(li.dataset.p); render(); };
+    });
+  }
+}
+
+function renderTrend(){
+  const d = DATA.perDay, H = 150, PADB = 24, PADT = 10, innerH = H-PADB-PADT;
+  const v = i => mode==='external' ? d[i][1] : mode==='self' ? d[i][2] : d[i][0];
+  const max = Math.max(1, ...d.map((_,i)=>v(i)));
+  const gap = 100/d.length, stride = d.length>20?5:3;
+  let s = `<svg viewBox="0 0 100 ${H}" preserveAspectRatio="none">`;
+  d.forEach((row,i)=>{
+    const [pv,self,ext] = row;
+    const x = i*gap+gap*0.2, w = gap*0.6;
+    const eh = (ext/max)*innerH, sh = (self/max)*innerH;
+    if (mode!=='self') s += `<rect x="${x}" y="${H-PADB-eh}" width="${w}" height="${Math.max(0,eh)}" fill="#e07856" rx="1"/>`;
+    if (mode!=='external') s += `<rect x="${x}" y="${H-PADB-(mode==='self'?sh:eh+sh)}" width="${w}"
+      height="${Math.max(0,mode==='self'?sh:sh)}" fill="#d9c9b9" rx="1"/>`;
+    if (i%stride===0) s += `<text x="${x+w/2}" y="${H-PADB+12}" font-size="6" fill="#968b80" text-anchor="middle">${(i+1)}日</text>`;
+  });
+  s += `<line x1="0" y1="${H-PADB}" x2="100" y2="${H-PADB}" stroke="#d9c9b9" stroke-width="0.4"/></svg>`;
+  document.getElementById('trend').innerHTML = s;
+}
+
+function render(){
+  document.getElementById('excludeHint').textContent = excludeSelf ? '当前只看外部访客' : '当前含内部访问';
+  const t = DATA.totals;
+  document.getElementById('kExtUv').textContent = t.externalUv;
+  document.getElementById('kSelfUv').textContent = t.selfUv;
+  document.getElementById('kExtPv').textContent = t.externalPv;
+  document.getElementById('kSelfPv').textContent = t.selfPv;
+  const pct = Math.round(DATA.coverage.resolvedPv / DATA.coverage.totalPv * 100);
+  document.getElementById('cov').textContent = `已识别 ${pct}% 的 PV · ${t.unknownPv} 次未归属`;
+  renderMap(); renderRank(); renderTrend();
+}
+
+document.getElementById('exclude').onchange = e => { excludeSelf = e.target.checked; render(); };
+document.getElementById('mark').onchange = e => {
+  document.getElementById('markHint').textContent = e.target.checked ? '已按当前 IP 识别' : '退出登录后也会认得我';
+};
+document.getElementById('back').onclick = () => { selected = null; render(); };
+document.getElementById('days').onchange = e => {
+  if (e.target.value === '7') document.getElementById('cov').textContent = '已识别 100% 的 PV · 0 次未归属';
+  else document.getElementById('cov').textContent = `已识别 ${Math.round(DATA.coverage.resolvedPv/DATA.coverage.totalPv*100)}% 的 PV · ${DATA.totals.unknownPv} 次未归属`;
+};
+document.querySelectorAll('.modes button').forEach(b=>{
+  b.onclick = () => {
+    document.querySelectorAll('.modes button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); mode = b.dataset.mode; renderTrend();
+  };
+});
+document.getElementById('notesBtn').onclick = () => document.getElementById('notes').classList.toggle('on');
+render();
+</script>
+</body>
+</html>

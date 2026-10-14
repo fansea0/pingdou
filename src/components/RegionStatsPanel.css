@@ -1,0 +1,259 @@
+/* === 流量来源地板块 === */
+.region-panel {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.region-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.region-panel__title {
+  font-size: var(--text-lg);
+  margin: 0;
+}
+
+.region-panel__subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+.region-panel__select {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* 概览卡：外部在左且用主色，内部用中性灰，视觉权重天然区分 */
+.region-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.region-card {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.region-card--external {
+  background: var(--color-surface);
+  border-color: var(--color-accent-soft);
+}
+
+.region-card--self {
+  background: var(--color-surface-alt);
+  border-color: var(--color-border);
+}
+
+.region-card__value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.region-card--external .region-card__value { color: var(--color-accent-hover); }
+.region-card--self .region-card__value { color: var(--color-text-muted); }
+
+.region-card__label {
+  font-size: var(--text-sm);
+  margin-top: var(--space-1);
+}
+
+.region-card__hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.region-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.region-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.region-switch input { cursor: pointer; }
+.region-switch input:disabled { cursor: not-allowed; opacity: 0.6; }
+
+.region-switch__hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.region-coverage {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* 地图 + 排行左右分栏：地图给直觉，排行给精确值，互为索引 */
+.region-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .region-body { grid-template-columns: 1fr; }
+  .region-coverage { margin-left: 0; }
+}
+
+/* === 方块地图 === */
+.region-tilemap__svg {
+  width: 100%;
+  height: auto;
+  max-width: 460px;
+}
+
+.region-tile { cursor: pointer; }
+.region-tile rect { transition: fill 120ms ease, stroke 120ms ease; }
+.region-tile:hover rect { stroke: var(--color-accent); }
+.region-tile.is-dimmed { opacity: 0.35; }
+.region-tile:focus-visible rect { stroke: var(--color-accent-hover); stroke-width: 2; }
+
+.region-tilemap__legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.region-tilemap__swatch {
+  width: 18px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+/* === 排行榜 === */
+.region-rank {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: var(--space-3);
+}
+
+.region-rank__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-2);
+}
+
+.region-rank__title { font-size: var(--text-sm); font-weight: 600; }
+
+.region-rank__back {
+  border: none;
+  background: none;
+  color: var(--color-accent-hover);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  padding: 0;
+}
+
+.region-rank__list { list-style: none; }
+
+.region-rank__row {
+  display: grid;
+  grid-template-columns: 5.5em 1fr 3.5em 3.5em;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 0;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.region-rank__row:last-child { border-bottom: none; }
+.region-rank__row--clickable { cursor: pointer; }
+.region-rank__row--clickable:hover { background: var(--color-surface-alt); }
+
+.region-rank__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.region-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-surface-alt);
+  overflow: hidden;
+}
+
+.region-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--color-accent);
+}
+
+.region-rank__value { text-align: right; font-variant-numeric: tabular-nums; }
+
+.region-rank__uv {
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+/* === 趋势 === */
+.region-trend__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: var(--space-5) 0 var(--space-2);
+}
+
+.region-trend__title { font-size: var(--text-base); margin: 0; }
+
+.region-trend__modes { display: flex; gap: var(--space-1); }
+
+.region-trend__mode {
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: var(--text-xs);
+  font-family: inherit;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.region-trend__mode.active {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+}
+
+.region-trend {
+  width: 100%;
+  height: 150px;
+}

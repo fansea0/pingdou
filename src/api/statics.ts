@@ -84,6 +84,75 @@ export interface PublicTotals {
   exports: number;
 }
 
+export interface ProvinceBucket {
+  province: string;
+  pv: number;
+  uv: number;
+  selfPv: number;
+  externalPv: number;
+  externalUv: number;
+  /** 占「已归属省份外部 PV」的比例，0~1 */
+  share: number;
+}
+
+export interface CityBucket {
+  province: string;
+  city: string;
+  pv: number;
+  uv: number;
+  selfPv: number;
+  externalPv: number;
+  externalUv: number;
+}
+
+export interface RegionDayBucket {
+  day: string;
+  pv: number;
+  selfPv: number;
+  externalPv: number;
+  externalUv: number;
+}
+
+export interface RegionStats {
+  days: number;
+  totals: {
+    pv: number;
+    uv: number;
+    selfPv: number;
+    selfUv: number;
+    externalPv: number;
+    externalUv: number;
+    unknownPv: number;
+    unknownUv: number;
+  };
+  provinces: ProvinceBucket[];
+  cities: CityBucket[];
+  perDay: RegionDayBucket[];
+  coverage: {
+    resolvedPv: number;
+    resolvedUv: number;
+    totalPv: number;
+    totalUv: number;
+  };
+  geo: { available: boolean; cached: number };
+  selfFingerprintEnabled: boolean;
+}
+
+export async function fetchRegions(days: number): Promise<RegionStats> {
+  const res = await fetch(`${BASE}/statics/regions?days=${days}`, { credentials: 'include' });
+  return jsonOrThrow<RegionStats>(res);
+}
+
+export async function setSelfFingerprint(enabled: boolean): Promise<{ ok: boolean; enabled: boolean }> {
+  const res = await fetch(`${BASE}/admin/self-fingerprint`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+    credentials: 'include',
+  });
+  return jsonOrThrow<{ ok: boolean; enabled: boolean }>(res);
+}
+
 export async function fetchPublicTotals(): Promise<PublicTotals> {
   const res = await fetch(`${BASE}/statics/public`, { credentials: 'omit' });
   return jsonOrThrow<PublicTotals>(res);

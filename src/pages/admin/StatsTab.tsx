@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchSummary, type AdminSummary } from '@/api/statics';
 import { adminListSettings, adminPutSetting } from '@/api/settings';
+import { RegionStatsPanel } from '@/components/RegionStatsPanel';
 
 export function StatsTab({ role }: { role: 'admin' }) {
   const [days, setDays] = useState<number>(7);
@@ -34,7 +35,7 @@ export function StatsTab({ role }: { role: 'admin' }) {
       {summary && (
         <>
           <div className="statics-grid">
-            <StatCard label="独立访客 (UV)" value={summary.totals.uv} />
+            <StatCard label="独立访客 (UV)" value={summary.totals.uv} hint="含内部访问，看下方拆分" />
             <StatCard label="浏览量 (PV)" value={summary.totals.pageView} />
             <StatCard label="商品点击" value={summary.totals.productClick} />
             <StatCard label="图片导出" value={summary.totals.imageExport} />
@@ -62,6 +63,7 @@ export function StatsTab({ role }: { role: 'admin' }) {
               </tbody>
             </table>
           )}
+          <RegionStatsPanel />
         </>
       )}
     </div>
@@ -136,11 +138,12 @@ function SiteDisplayCard() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+function StatCard({ label, value, hint }: { label: string; value: number; hint?: string }) {
   return (
     <div className="stat-card">
       <div className="stat-value">{value.toLocaleString()}</div>
       <div className="stat-label">{label}</div>
+      {hint && <div className="stat-hint">{hint}</div>}
     </div>
   );
 }

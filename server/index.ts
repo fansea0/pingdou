@@ -5,7 +5,8 @@ import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { initDb, querySummary, queryPublicTotals, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
+import { initDb, querySummary, queryPublicTotals, queryRegions, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
+import { resolveRegion, geoStatus } from './geo.js';
 import { loadProductsCache, getAllProducts, updateProduct, createProduct, deleteProduct, replaceProductImage, cleanupOrphanImages, reorderProducts } from './products.js';
 import { PATHS } from './paths.js';
 import {
@@ -92,6 +93,19 @@ app.use((req, _res, next) => {
   next();
 });
 
+/**
+ * 这次请求算不算「我自己」。
+ * 主信号 = 后台登录 Cookie：站主登录后在前台调试，一定带着 statics_token。
+ * 辅信号 = 站主手动开的指纹（settings.selfFingerprint = 他的 IP）：
+ * 退出登录 / 换浏览器 / 手机浏览时仍然认得出来。指纹会因移动网络漂移而漏判，
+ * 所以它是补充而不是替代。
+ */
+function resolveIsSelf(req: express.Request, ip: string): boolean {
+  if (verifySessionFromRequest(req)) return true;
+  const fingerprint = getSetting('selfFingerprint')?.value ?? '';
+  return fingerprint.length > 0 && fingerprint === ip;
+}
+
 interface AuthedRequest extends express.Request { user?: AuthedUser; }
 
 interface SiteConfig {
@@ -129,11 +143,16 @@ app.post('/api/track', (req, res) => {
     return res.status(400).json({ error: 'invalid kind' });
   }
   try {
+    const ip = (req as any).clientIp ?? 'unknown';
+    const region = resolveRegion(ip, req.headers as Record<string, unknown>);
     trackEvent({
       kind,
       ref: typeof ref === 'string' ? ref.slice(0, 200) : undefined,
-      ipHash: (req as any).clientIp ?? 'unknown',
+      ipHash: ip,
       sid: typeof sid === 'string' ? sid.slice(0, 64) : undefined,
+      province: region.province,
+      city: region.city,
+      isSelf: resolveIsSelf(req, ip),
     });
     return res.json({ ok: true });
   } catch (e) {
@@ -146,7 +165,15 @@ app.post('/api/session/touch', (req, res) => {
   const { sid } = req.body ?? {};
   if (typeof sid !== 'string' || sid.length === 0) return res.status(400).json({ error: 'sid required' });
   try {
-    const { day } = touchSession({ sid: sid.slice(0, 64), ipHash: (req as any).clientIp ?? 'unknown' });
+    const ip = (req as any).clientIp ?? 'unknown';
+    const region = resolveRegion(ip, req.headers as Record<string, unknown>);
+    const { day } = touchSession({
+      sid: sid.slice(0, 64),
+      ipHash: ip,
+      province: region.province,
+      city: region.city,
+      isSelf: resolveIsSelf(req, ip),
+    });
     return res.json({ ok: true, day });
   } catch (e) {
     return res.status(500).json({ error: 'session touch failed' });
@@ -280,6 +307,42 @@ app.get('/api/statics/summary', requireAuth, (req: AuthedRequest, res) => {
   } catch (e) {
     console.error('[statics/summary]', e);
     return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+app.get('/api/statics/regions', requireAuth, requireAdmin, (req: AuthedRequest, res) => {
+  const days = Math.max(1, Math.min(90, Number(req.query.days ?? 30)));
+  try {
+    const regions = queryRegions(days);
+    return res.json({
+      days,
+      ...regions,
+      geo: geoStatus(),
+      selfFingerprintEnabled: (getSetting('selfFingerprint')?.value ?? '').length > 0,
+    });
+  } catch (e) {
+    console.error('[statics/regions]', e);
+    return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+/**
+ * 「标记我的访问」开关。IP 由后端从当前请求取，前端永远碰不到也看不到，
+ * 避免把 IP 明文在浏览器里来回传。关闭时写空串（而不是删 key），
+ * 这样 settings 表里能看出「曾经用过、现在关了」。
+ */
+app.put('/api/admin/self-fingerprint', requireAuth, requireAdmin, (req: AuthedRequest, res) => {
+  const { enabled } = req.body ?? {};
+  if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean' });
+  const ip = (req as any).clientIp ?? 'unknown';
+  const value = enabled ? ip : '';
+  const u = getUserById(req.user!.id);
+  try {
+    const setting = setSetting('selfFingerprint', value, u?.username ?? '');
+    return res.json({ ok: true, enabled: value.length > 0, setting });
+  } catch (e) {
+    console.error('[admin/self-fingerprint]', e);
+    return res.status(500).json({ error: 'update failed' });
   }
 });
 
@@ -467,7 +530,7 @@ app.get('/api/statics/status', requireAuth, (_req, res) => {
   res.json({ ok: true });
 });
 
-const ALLOWED_SETTING_KEYS = new Set(['showProducts']);
+const ALLOWED_SETTING_KEYS = new Set(['showProducts', 'selfFingerprint']);
 const DEFAULT_SITE_CONFIG: SiteConfig = { showProducts: true };
 
 function parseBoolSetting(raw: string | null | undefined, fallback: boolean): boolean {
