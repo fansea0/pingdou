@@ -8,6 +8,12 @@ export interface PaletteEntry {
 
 export type Palette = ReadonlyArray<PaletteEntry>;
 
+/**
+ * 颜色预算档位。off = 不压缩；其余档位按每色平均格子数推导颜色数上限 K。
+ * 见 docs/superpowers/specs/2026-10-14-color-count-budget-design.md
+ */
+export type ColorBudgetLevel = 'off' | 'relaxed' | 'standard' | 'tight';
+
 export interface ProcessParams {
   readonly gridSize: number;
   readonly removeBackground: boolean;
@@ -17,6 +23,17 @@ export interface ProcessParams {
    * 仅在 removeBackground 开启（mask 有内容）时才会真的产生裁剪。
    */
   readonly tightCrop: boolean;
+  readonly colorBudget: ColorBudgetLevel;
+}
+
+export interface ColorBudgetResult {
+  readonly indices: Uint8Array;
+  /** 推导出的颜色数上限 K；level 为 off 时为 0 */
+  readonly targetColorCount: number;
+  /** 压缩后实际颜色数 */
+  readonly colorCount: number;
+  /** 为保住保真度（簇内色差超上限）而未能压到 K */
+  readonly fidelityLimited: boolean;
 }
 
 export interface ColorSimplificationStats {
@@ -26,6 +43,11 @@ export interface ColorSimplificationStats {
   readonly rareColorCountBefore: number;
   readonly rareColorCountAfter: number;
   readonly minimumColorCountSatisfied: boolean;
+  readonly budgetLevel: ColorBudgetLevel;
+  readonly budgetTargetColorCount: number;
+  /** 预算开启且实际色数 ≤ K 时为 true */
+  readonly budgetSatisfied: boolean;
+  readonly budgetFidelityLimited: boolean;
 }
 
 /**
@@ -49,6 +71,7 @@ export interface PipelineResult {
   readonly token: number;
   readonly mask: BackgroundMask;
   readonly simplifyColors: boolean;
+  readonly colorBudget: ColorBudgetLevel;
   readonly colorSimplification: ColorSimplificationStats;
 }
 

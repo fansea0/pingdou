@@ -120,7 +120,9 @@ async function process(simplifyColors: boolean): Promise<PipelineResult> {
 
   await pipeline.process(
     source(),
-    { gridSize: 11, removeBackground: false, simplifyColors, tightCrop: false },
+    { gridSize: 11, removeBackground: false, simplifyColors, tightCrop: false,
+    colorBudget: 'off',
+  },
     () => {},
     value => {
       result = value;
@@ -148,6 +150,10 @@ describe('Pipeline color simplification', () => {
       rareColorCountBefore: 1,
       rareColorCountAfter: 1,
       minimumColorCountSatisfied: false,
+      budgetLevel: 'off' as const,
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -163,6 +169,10 @@ describe('Pipeline color simplification', () => {
       rareColorCountBefore: 1,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
+      budgetLevel: 'off' as const,
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -209,7 +219,9 @@ describe('Pipeline color simplification', () => {
 
     await pipeline.process(
       backgroundMaskedSource(),
-      { gridSize: 11, removeBackground: true, simplifyColors: true, tightCrop: false },
+      { gridSize: 11, removeBackground: true, simplifyColors: true, tightCrop: false,
+    colorBudget: 'off',
+  },
       () => {},
       value => {
         result = value;

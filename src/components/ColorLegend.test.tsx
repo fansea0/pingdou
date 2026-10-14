@@ -24,6 +24,10 @@ const unchangedColors: ColorSimplificationStats = {
   rareColorCountBefore: 0,
   rareColorCountAfter: 0,
   minimumColorCountSatisfied: false,
+  budgetLevel: 'off' as const,
+  budgetTargetColorCount: 0,
+  budgetSatisfied: true,
+  budgetFidelityLimited: false,
 };
 
 beforeAll(() => {
@@ -114,6 +118,10 @@ describe('ColorLegend', () => {
       rareColorCountBefore: 5,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
+      budgetLevel: 'off' as const,
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     };
     const { container, rerender } = render(
       <ColorLegend legend={simplifiedLegend} colorSimplification={simplifiedColors} simplifyColors statisticsCurrent />,

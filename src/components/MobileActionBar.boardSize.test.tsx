@@ -12,6 +12,8 @@ function renderBar(overrides: Partial<BarProps> = {}) {
     simplifyColors: false,
     tightCrop: true,
     onTightCropChange: () => {},
+    colorBudget: 'off' as const,
+    onColorBudgetChange: () => {},
     onGridSizeChange: () => {},
     onRemoveBackgroundChange: () => {},
     onSimplifyColorsChange: () => {},
@@ -52,7 +54,9 @@ describe('MobileActionBar board-size presets', () => {
   });
 
   it('reflects a non-preset grid size in the chip label', () => {
-    renderBar({ gridSize: 60 });
+    renderBar({ gridSize: 60,
+    colorBudget: 'off',
+});
 
     const chip = screen.getByRole('button', { name: /板子尺寸 60 × 60/ });
     expect(chip.textContent).toContain('60');

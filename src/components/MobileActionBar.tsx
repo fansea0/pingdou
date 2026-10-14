@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './MobileActionBar.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
+import { ColorBudgetPicker } from './ColorBudgetPicker';
+import type { ColorBudgetLevel } from '@/types';
 
 const GRID_PRESETS = [20, 30, 50, 75, 100, 150, 200, 300] as const;
 const LOG_MIN = Math.log(GRID_PRESETS[0]);
@@ -33,10 +35,12 @@ interface Props {
   removeBackground: boolean;
   simplifyColors: boolean;
   tightCrop: boolean;
+  colorBudget: ColorBudgetLevel;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
   onSimplifyColorsChange: (enabled: boolean) => void;
   onTightCropChange: (enabled: boolean) => void;
+  onColorBudgetChange: (level: ColorBudgetLevel) => void;
   onLoad: (imageData: ImageData) => void;
   onExport: () => void;
   canExport: boolean;
@@ -49,10 +53,12 @@ export function MobileActionBar({
   removeBackground,
   simplifyColors,
   tightCrop,
+  colorBudget,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
   onTightCropChange,
+  onColorBudgetChange,
   onLoad,
   onExport,
   canExport,
@@ -339,6 +345,11 @@ export function MobileActionBar({
               />
               自动简化颜色 · 启用后每种颜色至少 10 颗
             </label>
+
+            <ColorBudgetPicker
+              value={colorBudget}
+              onChange={onColorBudgetChange}
+            />
           </div>
         </div>
       )}

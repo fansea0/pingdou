@@ -1,5 +1,7 @@
 import './ParamPanel.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
+import { ColorBudgetPicker } from './ColorBudgetPicker';
+import type { ColorBudgetLevel } from '@/types';
 
 interface Props {
   gridSize: number;
@@ -10,10 +12,12 @@ interface Props {
   removeBackground: boolean;
   simplifyColors: boolean;
   tightCrop: boolean;
+  colorBudget: ColorBudgetLevel;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
   onSimplifyColorsChange: (enabled: boolean) => void;
   onTightCropChange: (enabled: boolean) => void;
+  onColorBudgetChange: (level: ColorBudgetLevel) => void;
   disabled?: boolean;
 }
 
@@ -119,10 +123,12 @@ export function ParamPanel({
   removeBackground,
   simplifyColors,
   tightCrop,
+  colorBudget,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
   onTightCropChange,
+  onColorBudgetChange,
   disabled,
 }: Props) {
   const removed = totalCells > 0 ? totalCells - beanCount : 0;
@@ -219,6 +225,12 @@ export function ParamPanel({
           <span className="param-toggle-hint"> · 启用后每种颜色至少 10 颗</span>
         </span>
       </label>
+
+      <ColorBudgetPicker
+        value={colorBudget}
+        onChange={onColorBudgetChange}
+        disabled={disabled}
+      />
     </div>
   );
 }

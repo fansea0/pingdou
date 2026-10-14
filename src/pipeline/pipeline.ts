@@ -11,6 +11,7 @@ import { cropGridToContent, DEFAULT_CROP_PADDING } from './crop';
 import { canvasToBlob, triggerDownload } from './exporter';
 import { applyWatermark } from './watermark';
 import { simplifyRareColors, summarizeColors } from './colorSimplifier';
+import { applyColorBudget } from './colorBudget';
 import {
   buildBackgroundMask,
   detectBackground,
@@ -23,9 +24,30 @@ import type {
   PipelineResult,
   UIStatus,
   BackgroundMask,
+  ColorBudgetLevel,
+  ColorBudgetResult,
+  ColorSimplificationStats,
   RGB,
 } from '@/types';
 import type { ColorSimplificationResult } from './colorSimplifier';
+
+type BudgetStats = Pick<
+  ColorSimplificationStats,
+  'afterColorCount' | 'budgetLevel' | 'budgetTargetColorCount' | 'budgetSatisfied' | 'budgetFidelityLimited'
+>;
+
+function budgetStats(
+  level: ColorBudgetLevel,
+  budget: ColorBudgetResult
+): BudgetStats {
+  return {
+    afterColorCount: budget.colorCount,
+    budgetLevel: level,
+    budgetTargetColorCount: budget.targetColorCount,
+    budgetSatisfied: level === 'off' || budget.colorCount <= budget.targetColorCount,
+    budgetFidelityLimited: budget.fidelityLimited,
+  };
+}
 
 /** 水印落在页眉右侧，绝不遮挡底部色卡 */
 function watermarkPlacement(): { anchor: 'header-right'; insetY: number } {
@@ -46,13 +68,30 @@ export class Pipeline {
   private applyColorSimplification(
     indices: Uint8Array,
     mask: BackgroundMask,
-    enabled: boolean
+    enabled: boolean,
+    budgetLevel: ColorBudgetLevel
   ): ColorSimplificationResult {
     if (!this.palette) throw new Error('Pipeline not initialized');
-    if (enabled) return simplifyRareColors(indices, this.palette, mask);
+    const base = enabled ? simplifyRareColors(indices, this.palette, mask) : null;
+    const source = base?.indices ?? indices;
+    const budget = applyColorBudget(source, this.palette, mask, budgetLevel);
+
+    if (!base) {
+      return {
+        indices: budget.indices,
+        stats: {
+          ...summarizeColors(indices, this.palette, mask),
+          ...budgetStats(budgetLevel, budget),
+        },
+      };
+    }
     return {
-      indices,
-      stats: summarizeColors(indices, this.palette, mask),
+      indices: budget.indices,
+      stats: {
+        ...base.stats,
+        // afterColorCount 要反映预算压缩后的最终色数
+        ...budgetStats(budgetLevel, budget),
+      },
     };
   }
 
@@ -121,7 +160,8 @@ export class Pipeline {
       const colorSimplification = this.applyColorSimplification(
         indices,
         mask,
-        params.simplifyColors
+        params.simplifyColors,
+        params.colorBudget
       );
 
       // 裁边必须在简化之后：先让主体外的空白格不再干扰 rare color 统计，
@@ -156,6 +196,7 @@ export class Pipeline {
         token: myToken,
         mask: finalMask,
         simplifyColors: params.simplifyColors,
+        colorBudget: params.colorBudget,
         colorSimplification: colorSimplification.stats,
       });
     } catch (err) {
@@ -207,7 +248,8 @@ export class Pipeline {
     extraGridSizes: number[],
     removeBackground: boolean,
     simplifyColors: boolean,
-    tightCrop = true
+    tightCrop = true,
+    colorBudget: ColorBudgetLevel = 'off'
   ): Promise<{ success: number; failed: number }> {
     if (!this.palette) throw new Error('Pipeline not initialized');
 
@@ -259,7 +301,8 @@ export class Pipeline {
         const colorSimplification = this.applyColorSimplification(
           indices,
           mask,
-          simplifyColors
+          simplifyColors,
+          colorBudget
         );
 
         const cropped = tightCrop

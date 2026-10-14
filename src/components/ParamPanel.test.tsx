@@ -13,6 +13,8 @@ const baseProps = () => ({
   onRemoveBackgroundChange: () => {},
   onSimplifyColorsChange: () => {},
   onTightCropChange: () => {},
+  colorBudget: 'off' as const,
+  onColorBudgetChange: () => {},
 });
 
 describe('ParamPanel', () => {

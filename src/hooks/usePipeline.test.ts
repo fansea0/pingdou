@@ -76,6 +76,7 @@ const pipelineResult: PipelineResult = {
   token: 1,
   mask: new Uint8Array([0]),
   simplifyColors: false,
+  colorBudget: 'off',
   colorSimplification: {
     beforeColorCount: 1,
     afterColorCount: 1,
@@ -83,6 +84,10 @@ const pipelineResult: PipelineResult = {
     rareColorCountBefore: 0,
     rareColorCountAfter: 0,
     minimumColorCountSatisfied: false,
+    budgetLevel: 'off' as const,
+    budgetTargetColorCount: 0,
+    budgetSatisfied: true,
+    budgetFidelityLimited: false,
   },
 };
 
@@ -115,24 +120,28 @@ describe('usePipeline throttled settings', () => {
         gridSize: 19,
         removeBackground: true,
         simplifyColors: true,
+        colorBudget: 'off',
         tightCrop: true,
       });
       result.current.reprocess({
         gridSize: 24,
         removeBackground: false,
         simplifyColors: true,
+        colorBudget: 'off',
         tightCrop: true,
       });
       result.current.reprocess({
         gridSize: 40,
         removeBackground: true,
         simplifyColors: false,
+        colorBudget: 'off',
         tightCrop: true,
       });
       result.current.reprocess({
         gridSize: 32,
         removeBackground: false,
         simplifyColors: false,
+        colorBudget: 'off',
         tightCrop: true,
       });
       await vi.advanceTimersByTimeAsync(200);
@@ -143,8 +152,9 @@ describe('usePipeline throttled settings', () => {
       gridSize: 32,
       removeBackground: false,
       simplifyColors: false,
+      colorBudget: 'off',
       tightCrop: true,
-    });
+      });
 
     await act(async () => {
       await result.current.exportMulti(24, 32, []);
