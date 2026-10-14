@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useThrottle } from './useThrottle';
 import { Pipeline } from '@/pipeline/pipeline';
-import type { Palette, ProcessParams, PipelineResult, UIStatus } from '@/types';
+import type {
+  ColorBudgetLevel,
+  Palette,
+  ProcessParams,
+  PipelineResult,
+  UIStatus,
+} from '@/types';
 
 export function usePipeline(palette: Palette | null) {
   const pipelineRef = useRef<Pipeline | null>(null);
@@ -9,7 +15,12 @@ export function usePipeline(palette: Palette | null) {
   const [status, setStatus] = useState<UIStatus>('idle');
   const [error, setError] = useState<Error | null>(null);
   const srcRef = useRef<ImageData | null>(null);
-  const settingsRef = useRef({ removeBackground: false, simplifyColors: false, tightCrop: true });
+  const settingsRef = useRef({
+    removeBackground: false,
+    simplifyColors: false,
+    tightCrop: true,
+    colorBudget: 'off' as ColorBudgetLevel,
+  });
 
   useEffect(() => {
     if (!palette) return;
@@ -24,6 +35,7 @@ export function usePipeline(palette: Palette | null) {
         removeBackground: params.removeBackground,
         simplifyColors: params.simplifyColors,
         tightCrop: params.tightCrop,
+        colorBudget: params.colorBudget,
       };
       await pipelineRef.current.process(src, params, setStatus, setResult);
       setError(null);
@@ -38,6 +50,7 @@ export function usePipeline(palette: Palette | null) {
       removeBackground: params.removeBackground,
       simplifyColors: params.simplifyColors,
       tightCrop: params.tightCrop,
+      colorBudget: params.colorBudget,
     };
     return throttledProcess(src, params);
   }, [throttledProcess]);
@@ -48,6 +61,7 @@ export function usePipeline(palette: Palette | null) {
         removeBackground: params.removeBackground,
         simplifyColors: params.simplifyColors,
         tightCrop: params.tightCrop,
+        colorBudget: params.colorBudget,
       };
       throttledProcess(srcRef.current, params);
     }
@@ -68,7 +82,8 @@ export function usePipeline(palette: Palette | null) {
         extraGridSizes,
         settingsRef.current.removeBackground,
         settingsRef.current.simplifyColors,
-        settingsRef.current.tightCrop
+        settingsRef.current.tightCrop,
+        settingsRef.current.colorBudget
       );
       return out;
     } finally {

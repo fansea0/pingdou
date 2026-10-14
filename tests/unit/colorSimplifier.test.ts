@@ -64,6 +64,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 1,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -80,6 +84,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 0,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -96,6 +104,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 1,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -157,6 +169,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 2,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -173,6 +189,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 3,
       rareColorCountAfter: 1,
       minimumColorCountSatisfied: false,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -192,6 +212,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 1,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: true,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -218,6 +242,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 0,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: false,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -234,6 +262,10 @@ describe('simplifyRareColors', () => {
       rareColorCountBefore: 1,
       rareColorCountAfter: 1,
       minimumColorCountSatisfied: false,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -270,6 +302,10 @@ describe('summarizeColors', () => {
       rareColorCountBefore: 2,
       rareColorCountAfter: 2,
       minimumColorCountSatisfied: false,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 
@@ -283,6 +319,10 @@ describe('summarizeColors', () => {
       rareColorCountBefore: 1,
       rareColorCountAfter: 1,
       minimumColorCountSatisfied: false,
+      budgetLevel: 'off',
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     });
   });
 });

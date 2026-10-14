@@ -57,6 +57,7 @@ function baseResult(overrides: Partial<PipelineResult> = {}): PipelineResult {
     token: 1,
     mask: new Uint8Array(1),
     simplifyColors: false,
+    colorBudget: 'off',
     colorSimplification: {
       beforeColorCount: 1,
       afterColorCount: 1,
@@ -64,6 +65,10 @@ function baseResult(overrides: Partial<PipelineResult> = {}): PipelineResult {
       rareColorCountBefore: 0,
       rareColorCountAfter: 0,
       minimumColorCountSatisfied: false,
+      budgetLevel: 'off' as const,
+      budgetTargetColorCount: 0,
+      budgetSatisfied: true,
+      budgetFidelityLimited: false,
     },
     ...overrides,
   };
@@ -133,7 +138,9 @@ describe('Pipeline tight crop', () => {
 
     await pipeline.process(
       paddedSubjectSource(),
-      { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: true },
+      { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: true,
+    colorBudget: 'off',
+  },
       () => {},
       value => {
         result = value;
@@ -155,7 +162,9 @@ describe('Pipeline tight crop', () => {
 
     await pipeline.process(
       paddedSubjectSource(),
-      { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: false },
+      { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: false,
+    colorBudget: 'off',
+  },
       () => {},
       value => {
         result = value;
@@ -173,7 +182,9 @@ describe('Pipeline tight crop', () => {
 
     await pipeline.process(
       paddedSubjectSource(),
-      { gridSize: 20, removeBackground: false, simplifyColors: false, tightCrop: true },
+      { gridSize: 20, removeBackground: false, simplifyColors: false, tightCrop: true,
+    colorBudget: 'off',
+  },
       () => {},
       value => {
         result = value;

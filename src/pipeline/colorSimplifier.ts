@@ -99,6 +99,11 @@ function createStats(
     rareColorCountBefore: rareColorCount(beforeCounts),
     rareColorCountAfter,
     minimumColorCountSatisfied: totalVisibleCells >= RARE_COLOR_COUNT_LIMIT && rareColorCountAfter === 0,
+    // 颜色预算在 pipeline 层叠加，这里只给出「未启用」的默认值
+    budgetLevel: 'off',
+    budgetTargetColorCount: 0,
+    budgetSatisfied: true,
+    budgetFidelityLimited: false,
   };
 }
 

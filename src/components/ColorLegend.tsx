@@ -40,6 +40,15 @@ export function ColorLegend({
           <p className="legend-subtitle">
             {!statisticsCurrent ? (
               <>正在更新颜色统计</>
+            ) : colorSimplification.budgetLevel !== 'off' ? (
+              <>
+                已从 <strong>{colorSimplification.beforeColorCount}</strong> 种压到{' '}
+                <strong>{legend.length}</strong> 种 · 目标 ≤
+                {colorSimplification.budgetTargetColorCount}
+                {colorSimplification.budgetFidelityLimited && (
+                  <> · 色差超限已优先保真</>
+                )}
+              </>
             ) : simplifyColors && !colorSimplification.minimumColorCountSatisfied ? (
               <>图案总数不足 10 颗，无法满足每色至少 10 颗</>
             ) : colorSimplification.mergedColorCount > 0 ? (

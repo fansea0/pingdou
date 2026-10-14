@@ -15,7 +15,7 @@ import { Disclaimer } from '@/components/Disclaimer';
 import { computeLegend } from '@/pipeline/legend';
 import { estimateAssemblyHours, formatAssemblyHours } from '@/pipeline/timeEstimate';
 import { usePageView, trackImageExport } from '@/hooks/useTracking';
-import type { ColorSimplificationStats } from '@/types';
+import type { ColorBudgetLevel, ColorSimplificationStats, ProcessParams } from '@/types';
 
 const PREVIEW_CELL_PX = 24;
 const EMPTY_COLOR_SIMPLIFICATION: ColorSimplificationStats = Object.freeze({
@@ -25,6 +25,10 @@ const EMPTY_COLOR_SIMPLIFICATION: ColorSimplificationStats = Object.freeze({
   rareColorCountBefore: 0,
   rareColorCountAfter: 0,
   minimumColorCountSatisfied: false,
+  budgetLevel: 'off',
+  budgetTargetColorCount: 0,
+  budgetSatisfied: true,
+  budgetFidelityLimited: false,
 });
 
 export function App() {
@@ -36,6 +40,7 @@ export function App() {
   const [removeBackground, setRemoveBackground] = useState(true);
   const [simplifyColors, setSimplifyColors] = useState(true);
   const [tightCrop, setTightCrop] = useState(true);
+  const [colorBudget, setColorBudget] = useState<ColorBudgetLevel>('off');
   const [exporting, setExporting] = useState(false);
   const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
 
@@ -45,7 +50,18 @@ export function App() {
     () => (result && palette ? computeLegend(result.indices, palette, result.mask) : []),
     [result, palette]
   );
-  const statisticsCurrent = result !== null && result.simplifyColors === simplifyColors;
+  const statisticsCurrent =
+    result !== null && result.simplifyColors === simplifyColors && result.colorBudget === colorBudget;
+
+  // 所有处理入口共用同一份参数，避免各处漏改某个开关
+  const currentParams = (patch: Partial<ProcessParams> = {}): ProcessParams => ({
+    gridSize,
+    removeBackground,
+    simplifyColors,
+    tightCrop,
+    colorBudget,
+    ...patch,
+  });
 
   const beanCount = useMemo(() => {
     if (!result) return 0;
@@ -65,7 +81,7 @@ export function App() {
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
     if (sample && palette && status === 'idle') {
-      process(sample, { gridSize, removeBackground, simplifyColors, tightCrop });
+      process(sample, currentParams());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample, palette, status]);
@@ -121,7 +137,7 @@ export function App() {
 
       <main className="layout-3col">
         <aside className="left">
-          <UploadZone onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors, tightCrop })} />
+          <UploadZone onLoad={(data) => process(data, currentParams())} />
           <ParamPanel
             gridSize={gridSize}
             beanCount={beanCount}
@@ -133,21 +149,26 @@ export function App() {
             removeBackground={removeBackground}
             simplifyColors={simplifyColors}
             tightCrop={tightCrop}
+            colorBudget={colorBudget}
             onGridSizeChange={n => {
               setGridSize(n);
-              reprocess({ gridSize: n, removeBackground, simplifyColors, tightCrop });
+              reprocess(currentParams({ gridSize: n }));
             }}
             onRemoveBackgroundChange={b => {
               setRemoveBackground(b);
-              reprocess({ gridSize, removeBackground: b, simplifyColors, tightCrop });
+              reprocess(currentParams({ removeBackground: b }));
             }}
             onSimplifyColorsChange={enabled => {
               setSimplifyColors(enabled);
-              reprocess({ gridSize, removeBackground, simplifyColors: enabled, tightCrop });
+              reprocess(currentParams({ simplifyColors: enabled }));
             }}
             onTightCropChange={enabled => {
               setTightCrop(enabled);
-              reprocess({ gridSize, removeBackground, simplifyColors, tightCrop: enabled });
+              reprocess(currentParams({ tightCrop: enabled }));
+            }}
+            onColorBudgetChange={level => {
+              setColorBudget(level);
+              reprocess(currentParams({ colorBudget: level }));
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
@@ -204,23 +225,28 @@ export function App() {
         removeBackground={removeBackground}
         simplifyColors={simplifyColors}
         tightCrop={tightCrop}
+        colorBudget={colorBudget}
         onGridSizeChange={n => {
           setGridSize(n);
-          reprocess({ gridSize: n, removeBackground, simplifyColors, tightCrop });
+          reprocess(currentParams({ gridSize: n }));
         }}
         onRemoveBackgroundChange={b => {
           setRemoveBackground(b);
-          reprocess({ gridSize, removeBackground: b, simplifyColors, tightCrop });
+          reprocess(currentParams({ removeBackground: b }));
         }}
         onSimplifyColorsChange={enabled => {
           setSimplifyColors(enabled);
-          reprocess({ gridSize, removeBackground, simplifyColors: enabled, tightCrop });
+          reprocess(currentParams({ simplifyColors: enabled }));
         }}
         onTightCropChange={enabled => {
           setTightCrop(enabled);
-          reprocess({ gridSize, removeBackground, simplifyColors, tightCrop: enabled });
+          reprocess(currentParams({ tightCrop: enabled }));
         }}
-        onLoad={(data) => process(data, { gridSize, removeBackground, simplifyColors, tightCrop })}
+        onColorBudgetChange={level => {
+          setColorBudget(level);
+          reprocess(currentParams({ colorBudget: level }));
+        }}
+        onLoad={(data) => process(data, currentParams())}
         onExport={handleExport}
         canExport={!!result}
         exporting={exporting}

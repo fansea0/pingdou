@@ -39,6 +39,7 @@ async function runProcess(
       removeBackground,
       simplifyColors: false,
       tightCrop: false,
+      colorBudget: 'off',
     },
     () => {},
     r => {

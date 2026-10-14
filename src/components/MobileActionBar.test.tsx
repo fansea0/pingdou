@@ -12,6 +12,8 @@ function renderBar(overrides: Partial<BarProps> = {}) {
     simplifyColors: false,
     tightCrop: true,
     onTightCropChange: () => {},
+    colorBudget: 'off' as const,
+    onColorBudgetChange: () => {},
     onGridSizeChange: () => {},
     onRemoveBackgroundChange: () => {},
     onSimplifyColorsChange: () => {},
