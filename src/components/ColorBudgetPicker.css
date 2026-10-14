@@ -28,11 +28,14 @@
   border-radius: 10px;
 }
 
-.budget-picker-option {
+/* 全局 `.param-panel label { display:block; margin-bottom:... }` 权重更高，
+   会把这里压成块级并撑高轨道。因此组件内选择器必须带父级类名提权。 */
+.budget-picker .budget-picker-option {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0;
   min-height: 32px;
   padding: 0 var(--space-1);
   border-radius: 7px;
@@ -45,18 +48,18 @@
   transition: color 0.15s, background-color 0.15s;
 }
 
-.budget-picker-option:hover:not(.is-active):not(:has(input:disabled)) {
+.budget-picker .budget-picker-option:hover:not(.is-active):not(:has(input:disabled)) {
   color: var(--color-accent);
 }
 
-.budget-picker-option.is-active {
+.budget-picker .budget-picker-option.is-active {
   background: var(--color-surface);
   color: var(--color-accent);
   box-shadow: var(--shadow-sm);
 }
 
 /* 视觉上隐藏但保留可访问性与键盘焦点 */
-.budget-picker-option input {
+.budget-picker .budget-picker-option input {
   position: absolute;
   inset: 0;
   margin: 0;
@@ -65,12 +68,12 @@
   appearance: none;
 }
 
-.budget-picker-option:has(input:focus-visible) {
+.budget-picker .budget-picker-option:has(input:focus-visible) {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
 
-.budget-picker-option:has(input:disabled) {
+.budget-picker .budget-picker-option:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -83,7 +86,7 @@
 
 /* 窄屏：4 段仍要放得下，数字是核心信息，不能换行 */
 @media (max-width: 360px) {
-  .budget-picker-option {
+  .budget-picker .budget-picker-option {
     font-size: var(--text-xs);
   }
 }

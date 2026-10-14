@@ -231,7 +231,9 @@ button.primary:disabled {
   margin-bottom: var(--space-4);
   box-shadow: var(--shadow-sm);
 }
-.param-panel label {
+/* 只作用于直接子元素：面板内以后再嵌子组件时，
+   其内部的 label 不应被这条排版规则污染 */
+.param-panel > label {
   display: block;
   margin-bottom: var(--space-3);
   font-size: var(--text-sm);
