@@ -255,6 +255,9 @@
 
 .region-trend {
   width: 100%;
+  /* 首尾标签是以各自格子为中心渲染的，会往两侧溢出半个标签宽；
+     给容器留一点内边距，两端就不会被卡片边缘切掉。柱子和轴同为 100% 宽，对齐不受影响。 */
+  padding: 0 14px;
 }
 
 .region-trend__bars {
@@ -278,5 +281,6 @@
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  overflow: hidden;
+  /* 不能加 overflow:hidden —— 格子比标签窄时会把日期裁成「09-1」。
+     标签最多 8 个、彼此间隔足够宽，放开溢出不会互相压到。 */
 }

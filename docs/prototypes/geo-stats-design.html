@@ -137,10 +137,11 @@
   .modes button { border: 1px solid var(--color-border-strong); background: var(--color-surface); border-radius: var(--radius-sm);
     padding: 3px 10px; font-size: var(--text-xs); font-family: inherit; color: var(--color-text-muted); cursor: pointer; }
   .modes button.active { background: var(--color-accent-soft); border-color: var(--color-accent); color: var(--color-accent-hover); }
+  .trend { padding: 0 14px; }
   .trend__bars { display: block; width: 100%; height: 150px; border-bottom: 1px solid var(--color-border-strong); }
   .trend__axis { display: flex; width: 100%; margin-top: var(--space-1); }
   .trend__axis span { flex: 1 1 0; min-width: 0; text-align: center; font-size: var(--text-xs);
-    color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
+    color: var(--color-text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .empty { color: var(--color-text-muted); font-size: var(--text-sm); padding: var(--space-4) 0; }
 </style>
 </head>
@@ -161,7 +162,7 @@
     <div class="note"><span class="note__n">6</span><span><b>方块地图 + 排行榜左右分栏，互为索引。</b>地图给空间直觉但精确度低，排行给数字但没有形状。点省份只换右栏内容、不跳页，保持上下文，避免「点进去忘了自己在看什么」。</span></div>
     <div class="note"><span class="note__n">7</span><span><b>等面积方块，不画真实省界。</b>个人站的量级看不出省界形状差异，用户要的是排序不是空间；真实多边形要 1MB GeoJSON + 图表库，不值。也不会被「四川比海南大 8 倍」误导。</span></div>
     <div class="note"><span class="note__n">9</span><span><b>本原型的核心演示场景：广东总 PV 268 看着最高，但外部只有 58。</b>因为剩下 210 PV 全是站主自己在广东 IP 上调试产生的。没有自我访问拆分，「广东是最大的流量来源」是一个会把你带偏的结论；有了拆分，一眼就看出广东是自己人。</span></div>
-    <div class="note"><span class="note__n">8</span><span><b>趋势堆叠柱：外部在左（主色）、内部在右（灰）。</b>一眼看出每天的构成，而不是两条线要对照着看。三种口径切换，默认「外部」，与概览卡默认一致。</span></div>
+    <div class="note"><span class="note__n">8</span><span><b>趋势堆叠柱：外部在下（主色）、内部在上（灰）。</b>一眼看出每天的构成，而不是两条线要对照着看。三种口径切换，默认「外部」，与概览卡默认一致。</span></div>
   </div>
 
   <div class="card-shell">
@@ -361,9 +362,11 @@ function renderRank(){
 
 function renderTrend(){
   const d = DATA.perDay, H = 150, PADB = 0, PADT = 8, innerH = H-PADB-PADT;
-  const v = i => mode==='external' ? d[i][1] : mode==='self' ? d[i][2] : d[i][0];
+  // perDay 每行是 [总PV, 内部PV, 外部PV]：外部=index 2、内部=index 1。
+  // 这里只用来算 max，取错下标会拿「内部最大值」去缩放「外部柱子」，柱子只剩一小截。
+  const v = i => mode==='external' ? d[i][2] : mode==='self' ? d[i][1] : d[i][0];
   const max = Math.max(1, ...d.map((_,i)=>v(i)));
-  const gap = 100/d.length, stride = d.length>20?5:3;
+  const gap = 100/d.length, stride = Math.max(1, Math.ceil(d.length/8));
   let s = `<svg class="trend__bars" viewBox="0 0 100 ${H}" preserveAspectRatio="none" aria-hidden="true">`;
   d.forEach((row,i)=>{
     const [pv,self,ext] = row;

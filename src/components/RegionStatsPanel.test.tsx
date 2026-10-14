@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const mocks = vi.hoisted(() => ({
   fetchRegions: vi.fn(),
@@ -136,9 +138,41 @@ describe('RegionStatsPanel', () => {
     const axis = container.querySelector('.region-trend__axis')!;
     // 每个数据点一个等宽格子，跳过的留空占位，标签才能和柱子对齐
     expect(axis.children).toHaveLength(REGIONS.perDay.length);
-    const labels = Array.from(axis.children).map(el => el.textContent);
-    expect(labels.some(t => t && t.length > 0)).toBe(true);
-    expect(labels.filter(Boolean).every(t => /^\d{2}-\d{2}$/.test(t!))).toBe(true);
+    const labels = Array.from(axis.children).map(el => el.textContent ?? '');
+    const shown = labels.filter(Boolean);
+    expect(shown.every(t => /^\d{2}-\d{2}$/.test(t))).toBe(true);
+    // 标签密度自适应：最多 8 个，且每个都完整（不能出现被裁的半截日期）
+    expect(shown.length).toBeLessThanOrEqual(8);
+    expect(shown.every(t => t.length === 5)).toBe(true);
+  });
+
+  it('90 天窗口下标签依然完整不被裁剪', async () => {
+    const long = {
+      ...REGIONS,
+      perDay: Array.from({ length: 90 }, (_, i) => ({
+        day: `2026-07-${String((i % 28) + 1).padStart(2, '0')}`,
+        pv: i % 7, selfPv: 1, externalPv: i % 5, externalUv: 1,
+      })),
+    };
+    mocks.fetchRegions.mockResolvedValueOnce(long);
+    const { container } = render(<RegionStatsPanel />);
+    await screen.findByText('外部访客 UV');
+
+    const axis = container.querySelector('.region-trend__axis')!;
+    expect(axis.children).toHaveLength(90);
+    const shown = Array.from(axis.children).map(el => el.textContent ?? '').filter(Boolean);
+    expect(shown.length).toBeLessThanOrEqual(8);
+    expect(shown.every(t => /^\d{2}-\d{2}$/.test(t))).toBe(true);
+    // 格子宽度（≈1/90 容器）远小于 5 个字符，靠 CSS 保证不被裁。
+    // vitest 默认不注入样式表，getComputedStyle 在这里读不到值、断言会空跑，
+    // 所以直接查 CSS 源码里这条规则。
+    const raw = readFileSync(resolve(process.cwd(), 'src/components/RegionStatsPanel.css'), 'utf8');
+    // 先剥注释：规则里那段注释本身就写了「不能加 overflow:hidden」，不剥会误判
+    const css = raw.replace(/\/\*[\s\S]*?\*\//g, '');
+    const tickRule = css.slice(css.indexOf('.region-trend__tick'));
+    const ruleBody = tickRule.slice(0, tickRule.indexOf('}'));
+    expect(ruleBody).not.toMatch(/overflow\s*:\s*hidden/);
+    expect(ruleBody).toContain('white-space: nowrap');
   });
 
   it('接口报错时给出可读错误', async () => {

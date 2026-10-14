@@ -278,7 +278,9 @@ function RegionTrend({ data, mode }: { data: RegionStats['perDay']; mode: TrendM
   const PAD_T = 8;
   const innerH = H - PAD_B - PAD_T;
   const gap = 100 / Math.max(1, data.length);
-  const stride = data.length > 20 ? 5 : data.length > 10 ? 3 : 1;
+  // 标签密度按天数自适应，而不是固定间隔：90 天时每 5 天一个会挤成 18 个
+  // 标签，每个格子宽度不够放「09-14」就被裁掉。统一收敛到最多 8 个。
+  const stride = Math.max(1, Math.ceil(data.length / 8));
 
   return (
     <div className="region-trend">
