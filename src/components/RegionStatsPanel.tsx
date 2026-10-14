@@ -273,44 +273,51 @@ function RegionTrend({ data, mode }: { data: RegionStats['perDay']; mode: TrendM
     mode === 'external' ? d.externalPv : mode === 'self' ? d.selfPv : d.pv,
   ));
   const H = 150;
-  const PAD_B = 24;
-  const PAD_T = 10;
+  // 标签移到 HTML 之后，SVG 里不用再给它留底部空间了
+  const PAD_B = 0;
+  const PAD_T = 8;
   const innerH = H - PAD_B - PAD_T;
   const gap = 100 / Math.max(1, data.length);
   const stride = data.length > 20 ? 5 : data.length > 10 ? 3 : 1;
 
   return (
-    <svg viewBox={`0 0 100 ${H}`} className="region-trend" preserveAspectRatio="none" role="img" aria-label="每日访问趋势">
-      {data.map((d, i) => {
-        const x = i * gap + gap * 0.2;
-        const w = gap * 0.6;
-        const extH = (d.externalPv / max) * innerH;
-        const selfH = (d.selfPv / max) * innerH;
-        const showSelf = mode !== 'external';
-        return (
-          <g key={d.day}>
-            {mode !== 'self' && (
-              <rect x={x} y={H - PAD_B - extH} width={w} height={Math.max(0, extH)} fill="#e07856" rx="1" />
-            )}
-            {showSelf && (
-              <rect
-                x={x}
-                y={H - PAD_B - (mode === 'self' ? selfH : extH + selfH)}
-                width={w}
-                height={Math.max(0, mode === 'self' ? selfH : selfH)}
-                fill="#d9c9b9"
-                rx="1"
-              />
-            )}
-            {i % stride === 0 && (
-              <text x={x + w / 2} y={H - PAD_B + 12} fontSize="6" fill="#968b80" textAnchor="middle">
-                {d.day.slice(5)}
-              </text>
-            )}
-          </g>
-        );
-      })}
-      <line x1={0} y1={H - PAD_B} x2={100} y2={H - PAD_B} stroke="#d9c9b9" strokeWidth="0.4" />
-    </svg>
+    <div className="region-trend">
+      {/* 柱子留在 SVG 里并横向拉伸（这样柱子宽度才能跟着容器走），
+          日期标签改用 HTML 排：preserveAspectRatio="none" 会把 SVG 里的文字
+          横向放大约 9 倍、纵向不变，文字会被压成扁条。 */}
+      <svg viewBox={`0 0 100 ${H}`} className="region-trend__bars" preserveAspectRatio="none" aria-hidden="true">
+        {data.map((d, i) => {
+          const x = i * gap + gap * 0.2;
+          const w = gap * 0.6;
+          const extH = (d.externalPv / max) * innerH;
+          const selfH = (d.selfPv / max) * innerH;
+          return (
+            <g key={d.day}>
+              {mode !== 'self' && (
+                <rect x={x} y={H - PAD_B - extH} width={w} height={Math.max(0, extH)} fill="#e07856" rx="1" />
+              )}
+              {mode !== 'external' && (
+                <rect
+                  x={x}
+                  y={H - PAD_B - (mode === 'self' ? selfH : extH + selfH)}
+                  width={w}
+                  height={Math.max(0, selfH)}
+                  fill="#d9c9b9"
+                  rx="1"
+                />
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {/* 每个数据点一个等宽格子，跳过的日期留空格子占位，保证标签和柱子对齐 */}
+      <div className="region-trend__axis">
+        {data.map((d, i) => (
+          <span key={d.day} className="region-trend__tick">
+            {i % stride === 0 ? d.day.slice(5) : ''}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

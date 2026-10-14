@@ -123,6 +123,24 @@ describe('RegionStatsPanel', () => {
     await waitFor(() => expect(screen.getByText('省份排行')).toBeTruthy());
   });
 
+  it('趋势图的日期标签不在 SVG 里（preserveAspectRatio=none 会把 SVG 文字压扁）', async () => {
+    const { container } = render(<RegionStatsPanel />);
+    await screen.findByText('外部访客 UV');
+
+    const bars = container.querySelector('.region-trend__bars')!;
+    expect(bars.tagName.toLowerCase()).toBe('svg');
+    // 柱子可以横向拉伸，文字不行——文字必须搬到 HTML 轴上
+    expect(bars.getAttribute('preserveAspectRatio')).toBe('none');
+    expect(bars.querySelector('text')).toBeNull();
+
+    const axis = container.querySelector('.region-trend__axis')!;
+    // 每个数据点一个等宽格子，跳过的留空占位，标签才能和柱子对齐
+    expect(axis.children).toHaveLength(REGIONS.perDay.length);
+    const labels = Array.from(axis.children).map(el => el.textContent);
+    expect(labels.some(t => t && t.length > 0)).toBe(true);
+    expect(labels.filter(Boolean).every(t => /^\d{2}-\d{2}$/.test(t!))).toBe(true);
+  });
+
   it('接口报错时给出可读错误', async () => {
     mocks.fetchRegions.mockRejectedValueOnce(new Error('网络炸了'));
     render(<RegionStatsPanel />);
