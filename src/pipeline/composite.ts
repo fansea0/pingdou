@@ -1,5 +1,7 @@
 import type { Palette, BackgroundMask } from '@/types';
-import { renderBeadBoard, DEFAULT_BLOCK_SIZE } from './board';
+import { renderBeadBoard } from './board';
+import { DEFAULT_BLOCK_SIZE } from './board';
+import { font, FONT_FAMILY_ROUNDED } from './font';
 
 export interface CompositeOptions {
   readonly cellPx: number;
@@ -8,10 +10,11 @@ export interface CompositeOptions {
   readonly padding: number;
   readonly headerHeight: number;
   readonly sectionGap: number;
-  readonly legendRowHeight: number;
-  readonly legendRowGap: number;
+  /** 色卡卡片高度（含内边距） */
+  readonly chipHeight: number;
+  readonly chipGap: number;
+  readonly chipPaddingX: number;
   readonly swatchSize: number;
-  readonly itemGap: number;
 }
 
 export const DEFAULT_COMPOSITE_OPTIONS: CompositeOptions = {
@@ -19,23 +22,28 @@ export const DEFAULT_COMPOSITE_OPTIONS: CompositeOptions = {
   fontPx: 12,
   blockSize: DEFAULT_BLOCK_SIZE,
   padding: 20,
-  headerHeight: 34,
-  sectionGap: 14,
-  legendRowHeight: 30,
-  legendRowGap: 6,
-  swatchSize: 22,
-  itemGap: 22,
+  headerHeight: 36,
+  sectionGap: 16,
+  chipHeight: 34,
+  chipGap: 10,
+  chipPaddingX: 10,
+  swatchSize: 18,
 };
 
 /** 图纸很小时（比如 3×3 试跑），版式宽度至少给到这么多 */
 const MIN_CONTENT_WIDTH = 300;
 
-const FONT_FAMILY = '-apple-system, "PingFang SC", sans-serif';
-const HEADER_FONT_PX = 16;
-const LEGEND_FONT_PX = 13;
+const HEADER_FONT_PX = 17;
+const CHIP_CODE_PX = 13;
+const CHIP_COUNT_PX = 13;
+const CODE_FONT = `bold ${CHIP_CODE_PX}px ${FONT_FAMILY_ROUNDED}`;
+const COUNT_FONT = `${CHIP_COUNT_PX}px ${FONT_FAMILY_ROUNDED}`;
 
-const SWATCH_BORDER = '#b8bcc2';
-const SEPARATOR = '#e5e7eb';
+const CHIP_BORDER = '#d9dce1';
+const CHIP_FILL = '#fbfbfc';
+const SEPARATOR = '#e8eaed';
+const CODE_COLOR = '#111827';
+const COUNT_COLOR = '#6b7280';
 
 interface InternalRow {
   readonly id: string;
@@ -66,64 +74,81 @@ function buildRows(
   return { rows, bodyTotal };
 }
 
-function codeFont(): string {
-  return `bold ${LEGEND_FONT_PX}px ${FONT_FAMILY}`;
-}
-
-function countFont(): string {
-  return `${LEGEND_FONT_PX}px ${FONT_FAMILY}`;
-}
-
-/** 一个「色块 + 色号 × 数量」条目的宽度 */
-function measureItem(
-  ctx: CanvasRenderingContext2D,
-  row: InternalRow,
-  swatchSize: number
-): number {
-  ctx.font = codeFont();
-  const codeW = ctx.measureText(row.id).width;
-  ctx.font = countFont();
-  const countW = ctx.measureText(`×${row.count}`).width;
-  return swatchSize + 6 + codeW + 8 + countW;
-}
-
-interface LegendItem {
+interface Chip {
   readonly row: InternalRow;
+  readonly w: number;
+}
+
+/** 色卡宽度 = 左右内边距 + 色块 + 间距 + 色号 + 弹性间隙 + 数量 */
+function measureChips(
+  ctx: CanvasRenderingContext2D,
+  rows: InternalRow[],
+  opts: CompositeOptions
+): Chip[] {
+  return rows.map(row => {
+    ctx.font = CODE_FONT;
+    const codeW = ctx.measureText(row.id).width;
+    ctx.font = COUNT_FONT;
+    const countW = ctx.measureText(String(row.count)).width;
+    const w =
+      opts.chipPaddingX * 2 + opts.swatchSize + 8 + codeW + 14 + countW;
+    return { row, w };
+  });
+}
+
+interface PlacedChip extends Chip {
   readonly x: number;
 }
 
-/** 按可用宽度把色号条目折行 */
-function layoutLegend(
-  rows: InternalRow[],
-  widths: Map<string, number>,
-  contentWidth: number,
-  itemGap: number
-): LegendItem[][] {
-  const lines: LegendItem[][] = [];
-  let current: LegendItem[] = [];
+/** 按可用宽度把色卡折行 */
+function layoutChips(chips: Chip[], contentWidth: number, gap: number): PlacedChip[][] {
+  const lines: PlacedChip[][] = [];
+  let current: PlacedChip[] = [];
   let cursor = 0;
 
-  for (const row of rows) {
-    const w = widths.get(row.id) ?? 0;
-    const needed = current.length === 0 ? w : cursor + itemGap + w;
+  for (const chip of chips) {
+    const needed = current.length === 0 ? chip.w : cursor + gap + chip.w;
     if (current.length > 0 && needed > contentWidth) {
       lines.push(current);
       current = [];
       cursor = 0;
     }
-    current.push({ row, x: current.length === 0 ? 0 : cursor + itemGap });
-    cursor = current[current.length - 1].x + w;
+    current.push({ ...chip, x: current.length === 0 ? 0 : cursor + gap });
+    cursor = current[current.length - 1].x + chip.w;
   }
   if (current.length > 0) lines.push(current);
 
   return lines;
 }
 
+/** roundRect 在老 Safari 上不一定有，退回直角矩形 */
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + w, y);
+  ctx.lineTo(x + w, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+}
+
 /**
  * 导出图纸版式（对齐商家的成品图）：
- *   顶部页眉 —— 成品尺寸 / 色数 / 总颗数
+ *   顶部页眉 —— 成品尺寸 / 色数 / 总颗数（右端留出品牌位）
  *   中间图纸 —— 色块 + 色号 + 网格线 + 行列标尺
- *   底部色号表 —— 每种颜色的色块、色号与数量
+ *   底部色卡 —— 每种颜色一个带边框的圆角卡片，色块、色号、数量同框，
+ *               数量右对齐，不会再和隔壁卡片的色块混在一起
  *
  * 传入 board 可复用已渲染好的图纸（例如标准方板路径）。
  */
@@ -154,7 +179,7 @@ export function renderComposite(
 }
 
 /**
- * 把现成的图纸与底部色号表、顶部页眉合成一张完整成品图。
+ * 把现成的图纸与底部色卡、顶部页眉合成一张完整成品图。
  */
 export function renderCompositeFromBoard(
   beadCanvas: HTMLCanvasElement,
@@ -169,16 +194,11 @@ export function renderCompositeFromBoard(
   const { rows, bodyTotal } = buildRows(indices, palette, mask);
 
   const probe = document.createElement('canvas').getContext('2d')!;
-  const widths = new Map<string, number>();
-  for (const row of rows) {
-    widths.set(row.id, measureItem(probe, row, opts.swatchSize));
-  }
+  const chips = measureChips(probe, rows, opts);
 
   const contentW = Math.max(beadCanvas.width, MIN_CONTENT_WIDTH);
-  const lines = layoutLegend(rows, widths, contentW, opts.itemGap);
-  const legendH =
-    lines.length * opts.legendRowHeight +
-    Math.max(0, lines.length - 1) * opts.legendRowGap;
+  const lines = layoutChips(chips, contentW, opts.chipGap);
+  const legendH = lines.length * opts.chipHeight + Math.max(0, lines.length - 1) * opts.chipGap;
 
   const canvasW = contentW + opts.padding * 2;
   const canvasH =
@@ -197,9 +217,9 @@ export function renderCompositeFromBoard(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // 页眉：成品尺寸 / 色数 / 总颗数
-  ctx.font = `bold ${HEADER_FONT_PX}px ${FONT_FAMILY}`;
-  ctx.fillStyle = '#111827';
+  // 页眉：成品尺寸 / 色数 / 总颗数。留出右侧品牌位，二者不会挤在一起。
+  ctx.font = font(HEADER_FONT_PX, 'bold');
+  ctx.fillStyle = CODE_COLOR;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   const headerY = opts.padding + opts.headerHeight / 2;
@@ -214,40 +234,53 @@ export function renderCompositeFromBoard(
   const beadY = opts.padding + opts.headerHeight + opts.sectionGap;
   ctx.drawImage(beadCanvas, beadX, beadY);
 
-  // 底部色号表
+  // 色卡区上方的分隔线
   ctx.strokeStyle = SEPARATOR;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  const separatorY = beadY + beadCanvas.height + opts.sectionGap;
+  const separatorY = beadY + beadCanvas.height + opts.sectionGap / 2;
   ctx.moveTo(opts.padding, separatorY + 0.5);
   ctx.lineTo(canvasW - opts.padding, separatorY + 0.5);
   ctx.stroke();
 
   const legendLeft = opts.padding;
+  const legendTop = separatorY + opts.sectionGap / 2;
   lines.forEach((items, lineIndex) => {
-    const rowY =
-      separatorY + opts.sectionGap / 2 + opts.legendRowHeight / 2 + lineIndex * (opts.legendRowHeight + opts.legendRowGap);
+    const cardY = legendTop + lineIndex * (opts.chipHeight + opts.chipGap);
+    const midY = cardY + opts.chipHeight / 2;
+
     for (const item of items) {
       const { row } = item;
-      const swatchX = legendLeft + item.x;
-      const swatchY = rowY - opts.swatchSize / 2;
+      const cardX = legendLeft + item.x;
 
+      // 卡片底 + 边框：色号与数量被框在一起，归属一目了然
+      roundRect(ctx, cardX + 0.5, cardY + 0.5, item.w - 1, opts.chipHeight - 1, 7);
+      ctx.fillStyle = CHIP_FILL;
+      ctx.fill();
+      ctx.strokeStyle = CHIP_BORDER;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const swatchX = cardX + opts.chipPaddingX;
+      const swatchY = midY - opts.swatchSize / 2;
       ctx.fillStyle = `rgb(${row.rgb[0]},${row.rgb[1]},${row.rgb[2]})`;
       ctx.fillRect(swatchX, swatchY, opts.swatchSize, opts.swatchSize);
-      ctx.strokeStyle = SWATCH_BORDER;
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = CHIP_BORDER;
       ctx.strokeRect(swatchX + 0.5, swatchY + 0.5, opts.swatchSize - 1, opts.swatchSize - 1);
 
-      const codeX = swatchX + opts.swatchSize + 6;
-      ctx.font = codeFont();
-      ctx.fillStyle = '#111827';
+      const codeX = swatchX + opts.swatchSize + 8;
+      ctx.font = CODE_FONT;
+      ctx.fillStyle = CODE_COLOR;
       ctx.textAlign = 'left';
-      ctx.fillText(row.id, codeX, rowY);
-      const codeW = widths.get(row.id)! - opts.swatchSize - 6 - 8;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(row.id, codeX, midY);
 
-      ctx.font = countFont();
-      ctx.fillStyle = '#4b5563';
-      ctx.fillText(`×${row.count}`, codeX + codeW + 8, rowY);
+      // 数量右对齐到卡片内边距，永远不会跑到隔壁卡片上
+      ctx.font = COUNT_FONT;
+      ctx.fillStyle = COUNT_COLOR;
+      ctx.textAlign = 'right';
+      ctx.fillText(String(row.count), cardX + item.w - opts.chipPaddingX, midY);
+      ctx.textAlign = 'left';
     }
   });
 

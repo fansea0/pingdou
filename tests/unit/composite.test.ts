@@ -148,7 +148,7 @@ describe('renderCompositeFromBoard', () => {
 
     const colors = new Set<string>();
     for (let x = opts.padding; x < canvas.width - opts.padding; x++) {
-      const px = ctx.getImageData(x, legendTop + opts.legendRowHeight / 2, 1, 1).data;
+      const px = ctx.getImageData(x, legendTop + opts.chipHeight / 2, 1, 1).data;
       colors.add(`${px[0]},${px[1]},${px[2]}`);
     }
     expect(colors.has('255,0,0')).toBe(true);
@@ -180,7 +180,7 @@ describe('renderCompositeFromBoard', () => {
       opts.sectionGap +
       board.height +
       opts.sectionGap +
-      opts.legendRowHeight +
+      opts.chipHeight +
       opts.padding;
     expect(canvas.height).toBeGreaterThan(singleRow);
     // 条目再多也不能超出左右留白

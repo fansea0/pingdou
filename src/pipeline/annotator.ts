@@ -7,7 +7,8 @@ export function pickTextColor(rgb: readonly [number, number, number]): string {
 
 const CHECK_LIGHT = '#f4f4f5';
 const CHECK_DARK = '#e4e4e7';
-const FONT_FAMILY = '-apple-system, "PingFang SC", sans-serif';
+import { FONT_FAMILY as FONT_FAMILY_LEGIBLE } from './font';
+const FONT_FAMILY = FONT_FAMILY_LEGIBLE;
 
 /** 色号最小可用格子尺寸：低于此值写了也认不出来 */
 const MIN_ANNOTATED_CELL_PX = 16;

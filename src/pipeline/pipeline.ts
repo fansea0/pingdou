@@ -7,7 +7,7 @@ import {
   DEFAULT_COMPOSITE_OPTIONS,
 } from './composite';
 import { renderBeadBoard, padToSquareGrid } from './board';
-import { cropGridToContent } from './crop';
+import { cropGridToContent, DEFAULT_CROP_PADDING } from './crop';
 import { canvasToBlob, triggerDownload } from './exporter';
 import { applyWatermark } from './watermark';
 import { simplifyRareColors, summarizeColors } from './colorSimplifier';
@@ -23,8 +23,17 @@ import type {
   PipelineResult,
   UIStatus,
   BackgroundMask,
+  RGB,
 } from '@/types';
 import type { ColorSimplificationResult } from './colorSimplifier';
+
+/** 水印落在页眉右侧，绝不遮挡底部色卡 */
+function watermarkPlacement(): { anchor: 'header-right'; insetY: number } {
+  return {
+    anchor: 'header-right',
+    insetY: DEFAULT_COMPOSITE_OPTIONS.padding + DEFAULT_COMPOSITE_OPTIONS.headerHeight / 2,
+  };
+}
 
 export class Pipeline {
   private token = 0;
@@ -68,10 +77,12 @@ export class Pipeline {
       const outH = sampled.height;
       const n = outW * outH;
       const mask: BackgroundMask = new Uint8Array(n);
+      let detectedBg: RGB | null = null;
 
       if (params.removeBackground) {
         const detected = detectBackground(src, sampled);
         if (detected) {
+          detectedBg = detected.bg;
           // Build mask at source resolution so thin outlines (1-2 px) keep
           // their true dark color. Then AND-downsample to grid: a cell is
           // bg only if EVERY source pixel in its area is bg, so any cell
@@ -116,7 +127,16 @@ export class Pipeline {
       // 裁边必须在简化之后：先让主体外的空白格不再干扰 rare color 统计，
       // 再把 bbox 外扩几格空白裁掉，图纸边界才真正贴住内容。
       const cropped = params.tightCrop
-        ? cropGridToContent(colorSimplification.indices, mask, outW, outH)
+        ? cropGridToContent(
+            colorSimplification.indices,
+            mask,
+            outW,
+            outH,
+            DEFAULT_CROP_PADDING,
+            detectedBg && this.palette
+              ? { palette: this.palette, color: detectedBg }
+              : undefined
+          )
         : null;
       const didCrop = cropped?.cropped ?? false;
       const finalIndices = cropped ? cropped.indices : colorSimplification.indices;
@@ -154,7 +174,7 @@ export class Pipeline {
     const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
     }, mask);
-    applyWatermark(canvas);
+    applyWatermark(canvas, watermarkPlacement());
     const blob = await canvasToBlob(canvas);
     triggerDownload(blob, `pingdou-${outW}x${outH}-composite.png`);
   }
@@ -203,9 +223,11 @@ export class Pipeline {
         const outW = sampled.width;
         const outH = sampled.height;
         const mask: BackgroundMask = new Uint8Array(outW * outH);
+        let detectedBg: RGB | null = null;
         if (removeBackground) {
           const detected = detectBackground(src, sampled);
           if (detected) {
+            detectedBg = detected.bg;
             const { mask: srcMask, bgCount: srcBgCount } = buildBackgroundMask(
               src,
               detected.bg
@@ -241,7 +263,16 @@ export class Pipeline {
         );
 
         const cropped = tightCrop
-          ? cropGridToContent(colorSimplification.indices, mask, outW, outH)
+          ? cropGridToContent(
+              colorSimplification.indices,
+              mask,
+              outW,
+              outH,
+              DEFAULT_CROP_PADDING,
+              detectedBg && this.palette
+                ? { palette: this.palette, color: detectedBg }
+                : undefined
+            )
           : null;
         // 紧裁路径直接按内容出图；关闭紧裁时居中贴到 gridSize 标准方板，
         // 补出来的格子标记为背景（不画豆、不计入总数）。
@@ -267,7 +298,7 @@ export class Pipeline {
           this.palette,
           boardMask
         );
-        applyWatermark(compositeCanvas);
+        applyWatermark(compositeCanvas, watermarkPlacement());
         const blob = await canvasToBlob(compositeCanvas);
         // 文件名用实际输出尺寸：非方图 / 紧裁后都可能不等于 gridSize
         triggerDownload(blob, `pingdou-${boardW}x${boardH}.png`);

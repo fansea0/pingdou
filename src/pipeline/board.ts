@@ -1,18 +1,26 @@
 import type { Palette, BackgroundMask } from '@/types';
 import { renderAnnotatedImage } from './annotator';
 
-/** 每多少格画一条加粗分隔线（拼豆板每 10 格一档，方便数格子） */
-export const DEFAULT_BLOCK_SIZE = 10;
+/**
+ * 每多少格画一条加粗分隔线。
+ * 用 5 而不是 10：标尺已经每一格都标了数字，粗线退到「五个一档」，
+ * 既能和数字对齐数格子，又不会把图切得太碎。
+ */
+export const DEFAULT_BLOCK_SIZE = 5;
 
 /** 网格线：细线压在色块上，粗线划出大区块 */
 const THIN_LINE = 'rgba(110,110,110,0.45)';
 const BLOCK_LINE = 'rgba(31,41,55,0.85)';
-/** 标尺数字 */
-const RULER_COLOR = '#6b7280';
-/** 左上角尺寸角标 */
-const CORNER_COLOR = '#9ca3af';
 
-const FONT_FAMILY = '-apple-system, "PingFang SC", sans-serif';
+/** 标尺底色：刻意压得很浅，只做「边框」的角色，不和色块抢注意力 */
+const RULER_FILL = '#f1f3f6';
+const RULER_EDGE = '#d3d8e0';
+/** 标尺数字 */
+const RULER_COLOR = '#5a6472';
+/** 左上角尺寸角标 */
+const CORNER_COLOR = '#8b95a5';
+
+import { FONT_FAMILY_ROUNDED as FONT_FAMILY } from './font';
 
 const MIN_BAND_PX = 20;
 const BAND_RATIO = 0.62;
@@ -94,8 +102,11 @@ export function drawGridOverlay(
 }
 
 /**
- * 画顶部列号带 + 左侧行号带 + 左上角尺寸角标。
- * 每 blockSize 格标一次数字，其余画短刻度线。
+ * 画外围标尺：顶部列号带 + 左侧行号带 + 左上角尺寸角标。
+ *
+ * 每一格都标数字（不再只标每 5 格一次），整条标尺带铺一层很浅的底色，
+ * 和网格区之间用一条细线分开——这样「边框」在视觉上是一个整体，
+ * 读数时不用在色块堆里找刻度。底色刻意压得很浅，不与图纸抢注意力。
  *
  * leftW / topH 是两条标尺带各自的厚度，画布尺寸 = (leftW+gridW) × (topH+gridH)。
  */
@@ -108,46 +119,73 @@ export function drawRulers(
   cellPx: number,
   blockSize: number
 ): void {
-  const fontPx = Math.max(9, Math.round(topH * 0.55));
+  const gridW = outW * cellPx;
+  const gridH = outH * cellPx;
+  const fontPx = Math.max(9, Math.min(Math.round(topH * 0.62), Math.round(cellPx * 0.42)));
+
+  // 标尺底色（顶部一条 + 左侧一条，含左上角）
+  ctx.fillStyle = RULER_FILL;
+  ctx.fillRect(0, 0, leftW + gridW, topH);
+  ctx.fillRect(0, 0, leftW, topH + gridH);
+
+  // 标尺与网格的分界
+  ctx.strokeStyle = RULER_EDGE;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, topH + 0.5);
+  ctx.lineTo(leftW + gridW, topH + 0.5);
+  ctx.moveTo(leftW + 0.5, 0);
+  ctx.lineTo(leftW + 0.5, topH + gridH);
+  ctx.stroke();
 
   ctx.font = `bold ${fontPx}px ${FONT_FAMILY}`;
   ctx.fillStyle = RULER_COLOR;
-  ctx.strokeStyle = RULER_COLOR;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  // 顶部列号
+  // 顶部列号：每一格都标
   for (let c = 0; c < outW; c++) {
+    const label = String(c + 1);
     const cx = leftW + c * cellPx + cellPx / 2;
-    if ((c + 1) % blockSize === 0) {
-      ctx.fillText(String(c + 1), cx, topH / 2);
-    } else {
-      ctx.beginPath();
-      ctx.lineWidth = 1;
-      ctx.moveTo(cx, topH - 5);
-      ctx.lineTo(cx, topH - 1);
-      ctx.stroke();
-    }
+    ctx.font = `${labelWidth(label, fontPx, cellPx)}px ${FONT_FAMILY}`;
+    ctx.fillText(label, cx, topH / 2);
   }
 
-  // 左侧行号
+  // 左侧行号：每一格都标
   for (let r = 0; r < outH; r++) {
+    const label = String(r + 1);
     const cy = topH + r * cellPx + cellPx / 2;
-    if ((r + 1) % blockSize === 0) {
-      ctx.fillText(String(r + 1), leftW / 2, cy);
-    } else {
-      ctx.beginPath();
-      ctx.lineWidth = 1;
-      ctx.moveTo(leftW - 5, cy);
-      ctx.lineTo(leftW - 1, cy);
-      ctx.stroke();
-    }
+    ctx.font = `${labelWidth(label, fontPx, cellPx)}px ${FONT_FAMILY}`;
+    ctx.fillText(label, leftW / 2, cy);
   }
+
+  // 五格一档：在数字下方补一条短刻度，和网格粗线对得上
+  ctx.strokeStyle = RULER_EDGE;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let c = blockSize; c < outW; c += blockSize) {
+    const x = leftW + c * cellPx;
+    ctx.moveTo(x, topH - 3);
+    ctx.lineTo(x, topH - 1);
+  }
+  for (let r = blockSize; r < outH; r += blockSize) {
+    const y = topH + r * cellPx;
+    ctx.moveTo(leftW - 3, y);
+    ctx.lineTo(leftW - 1, y);
+  }
+  ctx.stroke();
 
   // 左上角：成品尺寸
-  ctx.font = `${Math.max(9, Math.round(leftW * 0.32))}px ${FONT_FAMILY}`;
+  ctx.font = `${Math.max(9, Math.round(leftW * 0.3))}px ${FONT_FAMILY}`;
   ctx.fillStyle = CORNER_COLOR;
   ctx.fillText(`${outW}×${outH}`, leftW / 2, topH / 2);
+}
+
+/** 数字要能塞进一格：按估算字宽收一档字号 */
+function labelWidth(label: string, fontPx: number, cellPx: number): number {
+  let size = fontPx;
+  while (size > 7 && label.length * size * 0.6 > cellPx - 2) size -= 1;
+  return size;
 }
 
 function whiteCanvas(w: number, h: number): HTMLCanvasElement {

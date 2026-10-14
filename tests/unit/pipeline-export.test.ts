@@ -84,7 +84,10 @@ describe('Pipeline.exportMulti', () => {
     const compositeCanvas = canvasToBlob.mock.calls[0][0];
     expect(compositeCanvas).toEqual(expect.objectContaining({ width: expect.any(Number) }));
     expect(compositeCanvas.width).toBeGreaterThan(96);
-    expect(applyWatermark).toHaveBeenCalledWith(compositeCanvas);
+    expect(applyWatermark).toHaveBeenCalledWith(compositeCanvas, {
+      anchor: 'header-right',
+      insetY: expect.any(Number),
+    });
     expect(applyWatermark.mock.invocationCallOrder[0]).toBeLessThan(
       canvasToBlob.mock.invocationCallOrder[0]
     );
@@ -194,7 +197,10 @@ describe('Pipeline.exportComposite', () => {
     await pipeline.exportComposite(baseResult());
 
     const compositeCanvas = canvasToBlob.mock.calls[0][0];
-    expect(applyWatermark).toHaveBeenCalledWith(compositeCanvas);
+    expect(applyWatermark).toHaveBeenCalledWith(compositeCanvas, {
+      anchor: 'header-right',
+      insetY: expect.any(Number),
+    });
     expect(applyWatermark.mock.invocationCallOrder[0]).toBeLessThan(
       canvasToBlob.mock.invocationCallOrder[0]
     );

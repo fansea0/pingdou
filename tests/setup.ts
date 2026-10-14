@@ -173,9 +173,22 @@ if (typeof globalThis.HTMLCanvasElement !== 'undefined') {
         },
         fillText(_text: string, _x: number, _y: number): void {},
         beginPath(): void {},
+        closePath(): void {},
         moveTo(_x: number, _y: number): void {},
         lineTo(_x: number, _y: number): void {},
+        quadraticCurveTo(_cx: number, _cy: number, _x: number, _y: number): void {},
+        arc(_x: number, _y: number, _r: number, _s: number, _e: number): void {},
+        /** 桩只关心路径是否被提交，不还原真实圆角 */
+        roundRect(x: number, y: number, ww: number, hh: number, _r?: number | DOMPointInit): void {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + ww, y);
+          ctx.lineTo(x + ww, y + hh);
+          ctx.lineTo(x, y + hh);
+          ctx.closePath();
+        },
         stroke(): void {},
+        /** 桩不还原路径填充；色卡/色块断言走的是 fillRect，不受影响 */
+        fill(): void {},
         strokeRect(x: number, y: number, ww: number, hh: number): void {
           const [r, g, b] = parseColor(state.strokeStyle);
           const x0 = Math.max(0, Math.floor(x));
