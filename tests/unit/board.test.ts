@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { renderBeadBoard, padToSquareGrid, rulerBandPx, drawGridOverlay } from '@/pipeline/board';
+import {
+  renderBeadBoard,
+  padToSquareGrid,
+  rulerBandPx,
+  drawGridOverlay,
+  ROW_BAND_FACTOR,
+  drawRulers,
+} from '@/pipeline/board';
 import type { Palette } from '@/types';
 
 const palette: Palette = [
@@ -29,7 +36,7 @@ describe('renderBeadBoard', () => {
     const canvas = renderBeadBoard(new Uint8Array(outW * outH), outW, outH, palette, { cellPx });
 
     const band = rulerBandPx(cellPx);
-    expect(canvas.width).toBe(band * 2 + outW * cellPx);
+    expect(canvas.width).toBe(Math.round(band * ROW_BAND_FACTOR) + outW * cellPx);
     expect(canvas.height).toBe(band + outH * cellPx);
   });
 
@@ -49,7 +56,7 @@ describe('renderBeadBoard', () => {
 
     const band = rulerBandPx(32);
     // 第二格是背景格，应该是纯白而不是棋盘格
-    const maskedPixel = pixel(canvas, band * 2 + 32 + 8, band + 8);
+    const maskedPixel = pixel(canvas, Math.round(band * ROW_BAND_FACTOR) + 32 + 8, band + 8);
     expect(maskedPixel).toEqual([255, 255, 255, 255]);
   });
 
@@ -57,9 +64,9 @@ describe('renderBeadBoard', () => {
     const indices = new Uint8Array([0, 1]);
     const canvas = renderBeadBoard(indices, 2, 1, palette, { cellPx: 32 });
     const band = rulerBandPx(32);
-    // 网格区左移了行号带（2×band）
-    expect(pixel(canvas, band * 2 + 8, band + 8).slice(0, 3)).toEqual([255, 0, 0]);
-    expect(pixel(canvas, band * 2 + 32 + 8, band + 8).slice(0, 3)).toEqual([0, 0, 255]);
+    // 网格区左移了行号带（ROW_BAND_FACTOR × band）
+    expect(pixel(canvas, Math.round(band * ROW_BAND_FACTOR) + 8, band + 8).slice(0, 3)).toEqual([255, 0, 0]);
+    expect(pixel(canvas, Math.round(band * ROW_BAND_FACTOR) + 32 + 8, band + 8).slice(0, 3)).toEqual([0, 0, 255]);
   });
 
   it('rules every cell and every blockSize cells', () => {
@@ -107,9 +114,38 @@ describe('renderBeadBoard', () => {
   it('paints a dark frame around the grid', () => {
     const canvas = renderBeadBoard(new Uint8Array(8), 2, 2, palette, { cellPx: 32 });
     const band = rulerBandPx(32);
-    const frame = pixel(canvas, band * 2 + 1, band + 1);
+    const frame = pixel(canvas, Math.round(band * ROW_BAND_FACTOR) + 1, band + 1);
     expect(frame[3]).toBe(255);
     expect(frame[0]).toBeLessThan(120);
+  });
+
+  it('draws the size corner label bold inside the ruler corner', () => {
+    const outW = 60;
+    const outH = 40;
+    const band = rulerBandPx(32);
+    const leftW = Math.round(band * ROW_BAND_FACTOR);
+    const canvas = renderBeadBoard(new Uint8Array(outW * outH), outW, outH, palette, { cellPx: 32 });
+    const ctx = canvas.getContext('2d')!;
+
+    const seen: Array<{ text: string; font: string }> = [];
+    const spy = vi.spyOn(ctx, 'fillText').mockImplementation((text: unknown) => {
+      seen.push({ text: String(text), font: ctx.font });
+    });
+
+    try {
+      drawRulers(ctx, leftW, band, outW, outH, 32, 5);
+
+      const corner = seen.find(c => c.text === `${outW}×${outH}`);
+      expect(corner, '角标应绘制「宽×高」').toBeDefined();
+      expect(corner!.font).toMatch(/^bold /);
+      // 加粗字宽必须放得进行号带，否则会压到第一列刻度上
+      const size = Number(/bold (\d+(?:\.\d+)?)px/.exec(corner!.font)?.[1]);
+      expect(size).toBeGreaterThanOrEqual(10);
+      ctx.font = corner!.font;
+      expect(ctx.measureText(corner!.text).width).toBeLessThanOrEqual(leftW - 6);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

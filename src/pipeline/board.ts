@@ -17,10 +17,10 @@ const RULER_FILL = '#f1f3f6';
 const RULER_EDGE = '#d3d8e0';
 /** 标尺数字 */
 const RULER_COLOR = '#5a6472';
-/** 左上角尺寸角标 */
-const CORNER_COLOR = '#8b95a5';
+/** 左上角尺寸角标：加粗后要压得住，跟刻度数字用同一个色阶但更重 */
+const CORNER_COLOR = '#5a6472';
 
-import { FONT_FAMILY_ROUNDED as FONT_FAMILY } from './font';
+import { font, FONT_FAMILY_ROUNDED as FONT_FAMILY } from './font';
 
 const MIN_BAND_PX = 20;
 const BAND_RATIO = 0.62;
@@ -49,6 +49,13 @@ export const DEFAULT_BEAD_BOARD_OPTIONS: BeadBoardOptions = {
 export function rulerBandPx(cellPx: number): number {
   return Math.max(MIN_BAND_PX, Math.round(cellPx * BAND_RATIO));
 }
+
+/**
+ * 行号带相对列号带的宽度倍数。
+ * 比 1 宽一截：左上角那一格要放得下加粗后的「宽×高」角标，
+ * 一位的行号在更宽的带里也更好认。
+ */
+export const ROW_BAND_FACTOR = 2.4;
 
 /**
  * 在已有画布上叠加网格线。ox/oy 是网格左上角在画布中的位置。
@@ -175,10 +182,18 @@ export function drawRulers(
   }
   ctx.stroke();
 
-  // 左上角：成品尺寸
-  ctx.font = `${Math.max(9, Math.round(leftW * 0.3))}px ${FONT_FAMILY}`;
+  // 左上角：成品尺寸。角标格只有 leftW 宽，用实测字宽收到刚好放得下，
+  // 不能用 fillText 的 maxWidth —— 那会把字横向压扁。
+  const cornerLabel = `${outW}×${outH}`;
+  const cornerMaxPx = Math.max(10, Math.round(leftW * 0.46));
+  let cornerFontPx = cornerMaxPx;
+  for (;;) {
+    ctx.font = font(cornerFontPx, 'bold', FONT_FAMILY);
+    if (cornerFontPx <= 10 || ctx.measureText(cornerLabel).width <= leftW - 6) break;
+    cornerFontPx -= 1;
+  }
   ctx.fillStyle = CORNER_COLOR;
-  ctx.fillText(`${outW}×${outH}`, leftW / 2, topH / 2);
+  ctx.fillText(cornerLabel, leftW / 2, topH / 2);
 }
 
 /** 数字要能塞进一格：按估算字宽收一档字号 */
@@ -221,7 +236,7 @@ export function renderBeadBoard(
 
   const band = opts.showRulers ? rulerBandPx(opts.cellPx) : 0;
   const topH = band;
-  const leftW = band * 2;
+  const leftW = Math.round(band * ROW_BAND_FACTOR);
 
   const canvas = whiteCanvas(leftW + outW * opts.cellPx, topH + outH * opts.cellPx);
   const ctx = canvas.getContext('2d')!;
