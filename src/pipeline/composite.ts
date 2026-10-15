@@ -22,7 +22,7 @@ export const DEFAULT_COMPOSITE_OPTIONS: CompositeOptions = {
   fontPx: 12,
   blockSize: DEFAULT_BLOCK_SIZE,
   padding: 20,
-  headerHeight: 36,
+  headerHeight: 42,
   sectionGap: 16,
   chipHeight: 34,
   chipGap: 10,
@@ -33,7 +33,8 @@ export const DEFAULT_COMPOSITE_OPTIONS: CompositeOptions = {
 /** 图纸很小时（比如 3×3 试跑），版式宽度至少给到这么多 */
 const MIN_CONTENT_WIDTH = 300;
 
-const HEADER_FONT_PX = 17;
+/** 顶部页眉字号：成品尺寸 / 色数 / 总颗数，是全图第一眼要读到的信息 */
+const HEADER_FONT_PX = 22;
 const CHIP_CODE_PX = 13;
 const CHIP_COUNT_PX = 13;
 const CODE_FONT = `bold ${CHIP_CODE_PX}px ${FONT_FAMILY_ROUNDED}`;

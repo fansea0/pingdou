@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   applyWatermark,
   DEFAULT_WATERMARK_OPTIONS,
+  ensureWatermarkIcon,
 } from '@/pipeline/watermark';
 
 function makeCanvas(width: number, height: number) {
@@ -10,17 +11,19 @@ function makeCanvas(width: number, height: number) {
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
   const fillText = vi.fn();
+  const drawImage = vi.fn();
   // jsdom polyfill (tests/setup.ts) leaves these as undefined AND creates a
   // fresh ctx object on every getContext() call. Stub them once, then pin
   // the canvas's getContext to return the stubbed ctx so applyWatermark's
   // own getContext('2d') sees the stubs.
   (ctx as unknown as { fillText: typeof fillText }).fillText = fillText;
+  (ctx as unknown as { drawImage: typeof drawImage }).drawImage = drawImage;
   (ctx as unknown as { save: () => void }).save = vi.fn();
   (ctx as unknown as { restore: () => void }).restore = vi.fn();
   (ctx as unknown as { shadowColor: string }).shadowColor = '';
   (ctx as unknown as { shadowBlur: number }).shadowBlur = 0;
   canvas.getContext = vi.fn(() => ctx) as unknown as typeof canvas.getContext;
-  return { canvas, ctx, fillText };
+  return { canvas, ctx, fillText, drawImage };
 }
 
 describe('applyWatermark', () => {
@@ -70,11 +73,23 @@ describe('applyWatermark', () => {
     expect(y).toBeCloseTo(500 - 100, 5);
   });
 
-  it('uses a semi-transparent white fill style by default', () => {
+  it('uses a dark on-brand fill style by default (export canvas is white)', () => {
     const { canvas, ctx } = makeCanvas(400, 400);
     applyWatermark(canvas);
     expect(ctx.fillStyle).toBe(DEFAULT_WATERMARK_OPTIONS.fillStyle);
-    expect(ctx.fillStyle as string).toMatch(/rgba\(255,\s*255,\s*255,\s*0\.\d+\)/);
+    // 陶土色 + 高不透明度：导出底色是纯白，深色才看得见
+    expect(ctx.fillStyle as string).toMatch(/^rgba\(201,\s*95,\s*63,\s*0\.9\d\)$/);
+  });
+
+  it('degrades to text-only when the icon has not loaded', () => {
+    const { canvas, fillText, drawImage } = makeCanvas(400, 400);
+    applyWatermark(canvas);
+    expect(fillText).toHaveBeenCalledTimes(1);
+    expect(drawImage).not.toHaveBeenCalled();
+  });
+
+  it('ensureWatermarkIcon resolves without throwing when the image cannot load', async () => {
+    await expect(ensureWatermarkIcon('/brand/__missing__.png')).resolves.toBeNull();
   });
 
   it('does not throw on a 1×1 canvas (clamp keeps text inside)', () => {

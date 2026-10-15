@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { applyWatermark, canvasToBlob, triggerDownload } = vi.hoisted(() => ({
+const { applyWatermark, ensureWatermarkIcon, canvasToBlob, triggerDownload } = vi.hoisted(() => ({
   applyWatermark: vi.fn(),
+  ensureWatermarkIcon: vi.fn(async () => null),
   canvasToBlob: vi.fn<(canvas: HTMLCanvasElement) => Promise<Blob>>(
     async () => new Blob(['board'], { type: 'image/png' })
   ),
@@ -13,7 +14,7 @@ vi.mock('@/pipeline/exporter', () => ({
   triggerDownload,
 }));
 
-vi.mock('@/pipeline/watermark', () => ({ applyWatermark }));
+vi.mock('@/pipeline/watermark', () => ({ applyWatermark, ensureWatermarkIcon }));
 
 import { Pipeline } from '@/pipeline/pipeline';
 import type { Palette, PipelineResult } from '@/types';

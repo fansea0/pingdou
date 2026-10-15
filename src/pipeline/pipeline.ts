@@ -9,7 +9,7 @@ import {
 import { renderBeadBoard, padToSquareGrid } from './board';
 import { cropGridToContent, DEFAULT_CROP_PADDING } from './crop';
 import { canvasToBlob, triggerDownload } from './exporter';
-import { applyWatermark } from './watermark';
+import { applyWatermark, ensureWatermarkIcon } from './watermark';
 import { simplifyRareColors, summarizeColors } from './colorSimplifier';
 import { applyColorBudget } from './colorBudget';
 import {
@@ -55,6 +55,12 @@ function watermarkPlacement(): { anchor: 'header-right'; insetY: number } {
     anchor: 'header-right',
     insetY: DEFAULT_COMPOSITE_OPTIONS.padding + DEFAULT_COMPOSITE_OPTIONS.headerHeight / 2,
   };
+}
+
+/** 图标是异步资源：导出前先等它就位，否则第一张导出只会画文字 */
+async function drawWatermark(canvas: HTMLCanvasElement): Promise<void> {
+  await ensureWatermarkIcon();
+  applyWatermark(canvas, watermarkPlacement());
 }
 
 export class Pipeline {
@@ -215,7 +221,7 @@ export class Pipeline {
     const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
     }, mask);
-    applyWatermark(canvas, watermarkPlacement());
+    await drawWatermark(canvas);
     const blob = await canvasToBlob(canvas);
     triggerDownload(blob, `pingdou-${outW}x${outH}-composite.png`);
   }
@@ -341,7 +347,7 @@ export class Pipeline {
           this.palette,
           boardMask
         );
-        applyWatermark(compositeCanvas, watermarkPlacement());
+        await drawWatermark(compositeCanvas);
         const blob = await canvasToBlob(compositeCanvas);
         // 文件名用实际输出尺寸：非方图 / 紧裁后都可能不等于 gridSize
         triggerDownload(blob, `pingdou-${boardW}x${boardH}.png`);
