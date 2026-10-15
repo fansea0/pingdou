@@ -50,16 +50,16 @@ describe('resolveColorBudget', () => {
 
   it('caps K at the level target on large images', () => {
     // 大图完全由档位决定：格子再多也不会放宽，否则等于不压缩
+    expect(resolveColorBudget(2100, 'minimal')).toBe(6);
     expect(resolveColorBudget(2100, 'relaxed')).toBe(12);
     expect(resolveColorBudget(2100, 'standard')).toBe(20);
-    expect(resolveColorBudget(2100, 'tight')).toBe(32);
-    expect(resolveColorBudget(100000, 'tight')).toBe(32);
+    expect(resolveColorBudget(100000, 'standard')).toBe(20);
   });
 
   it('falls back to a size-derived bound on tiny images', () => {
     expect(resolveColorBudget(200, 'standard')).toBe(5);
     expect(resolveColorBudget(400, 'standard')).toBe(10);
-    expect(resolveColorBudget(10, 'tight')).toBe(4);
+    expect(resolveColorBudget(10, 'minimal')).toBe(4);
   });
 
   it('returns 0 when there are no visible cells', () => {
@@ -108,12 +108,14 @@ describe('applyColorBudget', () => {
     const spec = Array.from({ length: 30 }, (_, i) => ({ index: i, count: 400 }));
     const { indices, mask } = expand(spec);
 
+    const minimal = applyColorBudget(indices, palette, mask, 'minimal');
     const relaxed = applyColorBudget(indices, palette, mask, 'relaxed');
-    const tight = applyColorBudget(indices, palette, mask, 'tight');
+    const standard = applyColorBudget(indices, palette, mask, 'standard');
 
+    expect(minimal.colorCount).toBe(6);
     expect(relaxed.colorCount).toBe(12);
-    expect(tight.colorCount).toBe(30);
-    expect(tight.colorCount).toBeGreaterThan(relaxed.colorCount);
+    expect(standard.colorCount).toBe(20);
+    expect(minimal.colorCount).toBeLessThan(relaxed.colorCount);
   });
 
   it('keeps heavily used dominant colors as representatives', () => {

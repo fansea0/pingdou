@@ -12,7 +12,7 @@ export type Palette = ReadonlyArray<PaletteEntry>;
  * 颜色预算档位。off = 不压缩；其余档位按每色平均格子数推导颜色数上限 K。
  * 见 docs/superpowers/specs/2026-10-14-color-count-budget-design.md
  */
-export type ColorBudgetLevel = 'off' | 'relaxed' | 'standard' | 'tight';
+export type ColorBudgetLevel = 'off' | 'minimal' | 'relaxed' | 'standard';
 
 export interface ProcessParams {
   readonly gridSize: number;

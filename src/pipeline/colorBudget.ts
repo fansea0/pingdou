@@ -6,9 +6,9 @@ import { rgbToLab, type Lab } from './colorSimplifier';
  * 而不是按格子数放大 —— 后者在大图上会让 K 远超实际色数，等于完全不压缩。
  */
 const LEVEL_TARGET_COLOR_COUNT: Readonly<Record<Exclude<ColorBudgetLevel, 'off'>, number>> = {
+  minimal: 6,
   relaxed: 12,
   standard: 20,
-  tight: 32,
 };
 
 /**

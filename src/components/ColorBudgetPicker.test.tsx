@@ -6,9 +6,9 @@ afterEach(cleanup);
 
 const OPTIONS = [
   { value: 'off', label: '不限' },
+  { value: 'minimal', label: '6 色' },
   { value: 'relaxed', label: '12 色' },
   { value: 'standard', label: '20 色' },
-  { value: 'tight', label: '32 色' },
 ] as const;
 
 describe('ColorBudgetPicker', () => {
@@ -39,7 +39,7 @@ describe('ColorBudgetPicker', () => {
     expect(screen.getByText('保持原图用色数量不变')).toBeDefined();
 
     rerender(<ColorBudgetPicker value="relaxed" onChange={() => {}} />);
-    expect(screen.getByText('色数最少，备料最省，层次损失明显')).toBeDefined();
+    expect(screen.getByText('色数较少，备料省，层次损失明显')).toBeDefined();
   });
 
   it('disables every option when disabled', () => {

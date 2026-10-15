@@ -17,19 +17,19 @@ export const COLOR_BUDGET_OPTIONS: readonly ColorBudgetOption[] = [
     hint: '保持原图用色数量不变',
   },
   {
+    value: 'minimal',
+    label: '6 色',
+    hint: '色数最少，只保留主色，层次损失最大',
+  },
+  {
     value: 'relaxed',
     label: '12 色',
-    hint: '色数最少，备料最省，层次损失明显',
+    hint: '色数较少，备料省，层次损失明显',
   },
   {
     value: 'standard',
     label: '20 色',
     hint: '色数与画质比较均衡',
-  },
-  {
-    value: 'tight',
-    label: '32 色',
-    hint: '接近原图观感，只清理零散色',
   },
 ];
 
