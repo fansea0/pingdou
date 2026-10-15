@@ -2,6 +2,8 @@ import type { Palette, BackgroundMask } from '@/types';
 import { renderBeadBoard } from './board';
 import { DEFAULT_BLOCK_SIZE } from './board';
 import { font, FONT_FAMILY_ROUNDED } from './font';
+import { estimateAssemblyHours, formatAssemblyHours } from './timeEstimate';
+import { DEFAULT_WATERMARK_OPTIONS } from './watermark';
 
 export interface CompositeOptions {
   readonly cellPx: number;
@@ -35,6 +37,17 @@ const MIN_CONTENT_WIDTH = 300;
 
 /** 顶部页眉字号：成品尺寸 / 色数 / 总颗数，是全图第一眼要读到的信息 */
 const HEADER_FONT_PX = 22;
+/** 预估工时是次要信息：小一号灰字，挂在主信息右边，不抢页眉的层级 */
+const HEADER_TIME_PX = 16;
+const HEADER_TIME_COLOR = '#6b7280';
+/** 主信息与预估工时之间的间隔 */
+const HEADER_TIME_GAP = 14;
+/**
+ * 页眉右侧品牌位预留宽度，单位 = 水印字号。
+ * 水印是「图标 + 拼豆.xyz + 右边距」，约 6.2em；宁可预留多一点，
+ * 也不能让预估工时和品牌标识挤在一起。
+ */
+const BRAND_KEEP_OUT_EM = 6.2;
 const CHIP_CODE_PX = 13;
 const CHIP_COUNT_PX = 13;
 const CODE_FONT = `bold ${CHIP_CODE_PX}px ${FONT_FAMILY_ROUNDED}`;
@@ -78,6 +91,39 @@ function buildRows(
 interface Chip {
   readonly row: InternalRow;
   readonly w: number;
+}
+
+/** 页眉文案：主信息 + 预估工时。抽成纯函数方便单测直接断言文字。 */
+export interface HeaderSummary {
+  readonly main: string;
+  /** 已带前置分隔点；beanCount 非法时为 null */
+  readonly time: string | null;
+}
+
+export function headerSummary(
+  outW: number,
+  outH: number,
+  colorCount: number,
+  beanCount: number
+): HeaderSummary {
+  const main = `${outW} × ${outH}　·　${colorCount} 色　·　共 ${beanCount.toLocaleString()} 颗`;
+  const hours = formatAssemblyHours(estimateAssemblyHours(beanCount));
+  return { main, time: hours === null ? null : `· ${hours}` };
+}
+
+function measure(ctx: CanvasRenderingContext2D, text: string): number {
+  if (typeof ctx.measureText !== 'function') return 0;
+  return ctx.measureText(text).width;
+}
+
+/** 页眉右侧品牌位的预留像素宽度，按水印实际字号折算 */
+function brandKeepOutPx(canvasW: number, canvasH: number): number {
+  const shortSide = Math.min(canvasW, canvasH);
+  const brandFontPx = Math.max(
+    14,
+    Math.min(64, shortSide * DEFAULT_WATERMARK_OPTIONS.fontRatio)
+  );
+  return brandFontPx * BRAND_KEEP_OUT_EM;
 }
 
 /** 色卡宽度 = 左右内边距 + 色块 + 间距 + 色号 + 弹性间隙 + 数量 */
@@ -146,7 +192,7 @@ function roundRect(
 
 /**
  * 导出图纸版式（对齐商家的成品图）：
- *   顶部页眉 —— 成品尺寸 / 色数 / 总颗数（右端留出品牌位）
+ *   顶部页眉 —— 成品尺寸 / 色数 / 总颗数 / 预估工时（右端留出品牌位）
  *   中间图纸 —— 色块 + 色号 + 网格线 + 行列标尺
  *   底部色卡 —— 每种颜色一个带边框的圆角卡片，色块、色号、数量同框，
  *               数量右对齐，不会再和隔壁卡片的色块混在一起
@@ -218,17 +264,28 @@ export function renderCompositeFromBoard(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // 页眉：成品尺寸 / 色数 / 总颗数。留出右侧品牌位，二者不会挤在一起。
+  // 页眉：成品尺寸 / 色数 / 总颗数 + 预估工时。右侧留出品牌位，二者不会挤在一起。
   ctx.font = font(HEADER_FONT_PX, 'bold');
   ctx.fillStyle = CODE_COLOR;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   const headerY = opts.padding + opts.headerHeight / 2;
-  ctx.fillText(
-    `${outW} × ${outH}　·　${rows.length} 色　·　共 ${bodyTotal.toLocaleString()} 颗`,
-    opts.padding,
-    headerY
-  );
+  const summary = headerSummary(outW, outH, rows.length, bodyTotal);
+  ctx.fillText(summary.main, opts.padding, headerY);
+
+  // 预估工时：紧贴主信息右侧，小一号灰字；顶到品牌位就整段省略，宁缺勿叠
+  if (summary.time) {
+    const timeX = opts.padding + measure(ctx, summary.main) + HEADER_TIME_GAP;
+    ctx.font = font(HEADER_TIME_PX, 'bold');
+    const fits =
+      timeX + measure(ctx, summary.time) <=
+      canvasW - opts.padding - brandKeepOutPx(canvasW, canvasH);
+    if (fits) {
+      ctx.fillStyle = HEADER_TIME_COLOR;
+      ctx.fillText(summary.time, timeX, headerY);
+      ctx.fillStyle = CODE_COLOR;
+    }
+  }
 
   // 图纸
   const beadX = opts.padding + Math.floor((contentW - beadCanvas.width) / 2);

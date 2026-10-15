@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   renderComposite,
   renderCompositeFromBoard,
+  headerSummary,
   DEFAULT_COMPOSITE_OPTIONS,
 } from '@/pipeline/composite';
 import { rulerBandPx } from '@/pipeline/board';
@@ -118,6 +119,79 @@ describe('renderComposite', () => {
 
     // 只有色号表的色块允许是红色（22*22 一小块）
     expect(redInLegend).toBeLessThan(opts.swatchSize * opts.swatchSize);
+  });
+});
+
+describe('headerSummary', () => {
+  it('puts the size, color count and bean count in the main line', () => {
+    const summary = headerSummary(58, 40, 12, 12345);
+
+    expect(summary.main).toBe('58 × 40　·　12 色　·　共 12,345 颗');
+  });
+
+  it('estimates assembly time from the bean count', () => {
+    // 600 颗/小时：1800 颗 → 3.0 小时
+    expect(headerSummary(58, 40, 12, 1800).time).toBe('· 约 3.0 小时');
+  });
+
+  it('omits the estimate when there is nothing to make', () => {
+    expect(headerSummary(1, 1, 1, 0).time).toBeNull();
+  });
+});
+
+describe('header estimate placement', () => {
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+
+  afterEach(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
+  });
+
+  /** 记录所有 fillText，jsdom 的 canvas 桩不落像素，只能从调用侧断言 */
+  function captureFillText(): { text: string; x: number }[] {
+    const calls: { text: string; x: number }[] = [];
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, id: string) {
+      const ctx = originalGetContext.call(this, id) as unknown as
+        | { fillText: (t: string, x: number, y: number) => void }
+        | null;
+      if (!ctx) return null;
+      return new Proxy(ctx, {
+        get(target, prop) {
+          if (prop === 'fillText') {
+            return (t: string, x: number, y: number) => {
+              calls.push({ text: String(t), x });
+              target.fillText(t, x, y);
+            };
+          }
+          const value = (target as unknown as Record<string | symbol, unknown>)[prop];
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    } as typeof HTMLCanvasElement.prototype.getContext;
+    return calls;
+  }
+
+  it('draws the estimate to the right of the main header line', () => {
+    const calls = captureFillText();
+    const indices = new Uint8Array(400);
+    indices.fill(0);
+    renderComposite(indices, 20, 20, palette, { cellPx: CELL_PX });
+
+    const timeCall = calls.find(call => /小时/.test(call.text));
+    const mainCall = calls.find(call => call.text.includes('共 400 颗'));
+
+    expect(mainCall).toBeDefined();
+    expect(timeCall?.text).toBe('· 约 0.7 小时');
+    expect(timeCall!.x).toBeGreaterThan(mainCall!.x);
+  });
+
+  it('skips the estimate rather than colliding with the header brand mark', () => {
+    const calls = captureFillText();
+    const indices = new Uint8Array(9);
+    indices.fill(0);
+    // 3×3：页眉左边被主信息占满，右边又被品牌位留着，放不下就不画
+    renderComposite(indices, 3, 3, palette, { cellPx: CELL_PX });
+
+    expect(calls.some(call => /小时/.test(call.text))).toBe(false);
   });
 });
 

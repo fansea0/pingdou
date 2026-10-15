@@ -14,7 +14,13 @@ vi.mock('@/pipeline/exporter', () => ({
   triggerDownload,
 }));
 
-vi.mock('@/pipeline/watermark', () => ({ applyWatermark, ensureWatermarkIcon }));
+// composite.ts 读 DEFAULT_WATERMARK_OPTIONS 算页眉右侧的品牌预留位，
+// 所以这里必须保留真实导出，只把两个绘制/加载入口换成 spy。
+vi.mock('@/pipeline/watermark', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/pipeline/watermark')>()),
+  applyWatermark,
+  ensureWatermarkIcon,
+}));
 
 import { Pipeline } from '@/pipeline/pipeline';
 import type { Palette, PipelineResult } from '@/types';
