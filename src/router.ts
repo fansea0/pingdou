@@ -1,3 +1,5 @@
+import type { WorkSort } from '@/api/works';
+
 /**
  * 站点路由。站里没装 react-router —— 三个路由不值得为它加依赖，
  * 现有 /statics 已经证明 pathname 判断够用。抽成纯函数是为了能单测，
@@ -39,4 +41,34 @@ export function matchRoute(pathname: string): Route {
   if (path === '/statics' || path.startsWith('/statics/')) return { name: 'statics' };
 
   return { name: 'home' };
+}
+
+export interface ListQuery {
+  q: string;
+  sort: WorkSort;
+}
+
+/**
+ * 从 location.search 解析作品库的搜索词与排序。
+ *
+ * 搜索词进 URL 是产品决策：刷新和分享都能保留。
+ *
+ * 必须用 URLSearchParams 而不是手工 split('&') + decodeURIComponent：
+ * 搜索框那边也是用 URLSearchParams 写 URL 的，而它按
+ * application/x-www-form-urlencoded 把空格编码成 '+'（不是 %20）。
+ * 只有 URLSearchParams 会把 '+' 还原成空格 —— decodeURIComponent 不会，
+ * 那样「粉 色」写出去、读回来就变成「粉+色」，搜不到。
+ *
+ * 截断到 100 字符是为了和后端 escapeLike 前的 slice 对齐 ——
+ * 两边都截才不会让 URL 显示 300 字而后端只搜前 100。
+ */
+export function parseListQuery(search: string): ListQuery {
+  const params = new URLSearchParams(search);
+  const rawSort = params.get('sort');
+  return {
+    q: (params.get('q') ?? '').trim().slice(0, 100),
+    // 白名单：任何非 hot 的值都回落 latest，避免后端收到意外值。
+    // 不因为非法值报错 —— 分享出去的链接被手改一位就整页报错不划算。
+    sort: rawSort === 'hot' ? 'hot' : 'latest',
+  };
 }
