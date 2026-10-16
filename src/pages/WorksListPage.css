@@ -1,0 +1,107 @@
+.works-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-4);
+}
+
+.works-state {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.works-state--error {
+  color: var(--color-error-fg);
+  background: var(--color-error-bg);
+  border-radius: var(--radius-md);
+}
+
+.works-count {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+
+.works-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.works-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.works-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.works-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.works-card-img {
+  display: block;
+  width: 100%;
+  /* 固定 4:5 的框：网格齐整、图片没加载完就已经占好位（不跳版）。
+     contain 而不是 cover —— 图纸被裁掉一截就没法照着拼了，
+     非 4:5 的作品会在框里留出 --color-surface-alt 的空边。 */
+  height: auto;
+  aspect-ratio: 4 / 5;
+  object-fit: contain;
+  background: var(--color-surface-alt);
+}
+
+.works-card-title {
+  display: block;
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.works-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.works-more-error {
+  color: var(--color-error-fg);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.works-btn {
+  display: inline-block;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.works-btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
+}
+
+.works-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

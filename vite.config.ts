@@ -45,6 +45,14 @@ export default defineConfig({
         target: BACKEND_DEV_URL,
         changeOrigin: false,
       },
+      // 作品原图 / 缩略图：生产由 nginx `location /media/ { alias ...; }` 直读，
+      // 这里转发到后端的 GET /media/works/:filename 兜底路由（dev-only）。
+      // 少了这条，dev 下直接访问 /media/works/xxx.png 会被 Vite 的 SPA fallback
+      // 兜回 index.html，前端 matchRoute 判成 home —— 用户看到的是整个首页。
+      '/media': {
+        target: BACKEND_DEV_URL,
+        changeOrigin: false,
+      },
     },
   },
   preview: {
@@ -57,6 +65,10 @@ export default defineConfig({
         changeOrigin: false,
       },
       '/products': {
+        target: BACKEND_DEV_URL,
+        changeOrigin: false,
+      },
+      '/media': {
         target: BACKEND_DEV_URL,
         changeOrigin: false,
       },
