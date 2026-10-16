@@ -706,7 +706,7 @@ location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
 
 用正则 `location` 而不是 `/media/` 前缀匹配，让 nginx 层也把非法文件名挡在门外，与 dev 路由的严格度对齐。
 
-注意这条是**正则 location**（`~` 前缀）。nginx 在正则 location 下用 `alias` 时的替换语义是「用 alias 的值替换掉 URI 中被该正则匹配掉的那一段，剩余部分再追加」—— 所以正则里必须用捕获组把文件名单独摘出来（`(?<file>...)` 配 alias 里的 `$file`）。若正则带 `$` 锚点匹配整条 URI，剩余部分为空，拼出来只有目录没有文件名，恒 404。这个失败模式极易被误判成「alias 末尾漏了斜杠」。`/products/` 那条是普通前缀 location，写法不能照抄。
+注意这条是**正则 location**（`~` 前缀）。nginx 官方文档明确：`alias` 用在正则 location 里时，其值指定的是一条**完整文件路径**，不会自动拼接 URI 余量，通常应引用正则中的捕获组（官方示例 `location ~ ^/users/(.+\.(?:gif|jpe?g|png))$ { alias /data/w3/images/$1; }`）。所以文件名必须靠 `(?<file>...)` + alias 里的 `$file` 带出来。若照抄成 `alias /var/lib/pingdou/media/works/`，那条路径本身不含文件名，每张图都 404。该失败模式极易被误判成「alias 末尾漏了斜杠」。`/products/` 那条是普通前缀 location，写法不能照抄。
 
 `assertRuntimePaths()` 补 `mkdirSync(PATHS.mediaDir, { recursive: true })`，与现有 `imagesDir` 兜底并列。
 

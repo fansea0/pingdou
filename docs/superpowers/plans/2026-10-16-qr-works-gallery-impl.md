@@ -1453,13 +1453,22 @@ location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
 
 ⚠️ 这里是**正则 location**（`~` 前缀），不是前缀 `location`，两者写法不能照抄。
 
-关键在于 nginx 在正则 location 下用 `alias` 时的替换语义：**用 alias 的值替换掉
-URI 中被这个正则匹配掉的那一段，剩余部分再追加在后面。** 所以正则里必须用捕获组
-把文件名单独摘出来（`(?<file>...)` + alias 里的 `$file`）。
+关键在于 nginx 官方文档对 `alias` 的说明（ngx_http_core_module）：
 
-如果写成 `location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ { alias .../media/works/; }`
-—— 正则带 `$` 锚点匹配的是**整条 URI**，剩余部分为空，拼出来只有目录没有文件名，
-**恒 404**。这个失败模式很容易被误判成「alias 末尾漏了斜杠」，排查会走偏。
+> If `alias` is used inside a location defined with a regular expression then its
+> value specifies a **complete file path** (0.7.40). Such path should typically
+> refer to the captures contained within the regular expression:
+> `location ~ ^/users/(.+\.(?:gif|jpe?g|png))$ { alias /data/w3/images/$1; }`
+
+即：**正则 location 下 alias 的值就是完整的文件路径本身**，不会自动拼接 URI 余量。
+所以文件名必须靠正则里的捕获组带出来（`(?<file>...)` + alias 里的 `$file`）。
+
+照抄成 `location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ { alias /var/lib/pingdou/media/works/; }`
+的话，alias 的值就是那条**完整路径** `/var/lib/pingdou/media/works/` —— 它没有文件名，
+所以每张图都 404。这个失败模式很容易被误判成「alias 末尾漏了斜杠」，排查会走偏。
+
+注意别用「去掉 works/ 就对了」来反推——那是在按「alias 前缀 + URI 余量」的误解修，
+会得到 `/var/lib/pingdou/media/`，同样拼不出文件名。以官方文档口径为准。
 ```
 
 在 `docs/DEPLOY.md` 的 troubleshooting 表里追加一行：
