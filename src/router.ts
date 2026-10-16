@@ -10,10 +10,13 @@ export type Route =
   | { name: 'work-detail'; id: number }
   | { name: 'statics' };
 
-/** 去掉末尾斜杠：'' → '/', '/works/' → '/works' */
+/**
+ * 去掉末尾斜杠：'/works/' → '/works'。
+ * 不把空串补成 '/'：空串（'' / '/' / '//'）走到 matchRoute 末尾也是 home，
+ * 这个分支在当前实现里不可观测，留着只是让人以为空串有专门的处理。
+ */
 function normalize(pathname: string): string {
-  const trimmed = pathname.replace(/\/+$/, '');
-  return trimmed === '' ? '/' : trimmed;
+  return pathname.replace(/\/+$/, '');
 }
 
 export function matchRoute(pathname: string): Route {
@@ -25,10 +28,11 @@ export function matchRoute(pathname: string): Route {
   const detail = /^\/works\/(\d+)$/.exec(path);
   if (detail) {
     const id = Number(detail[1]);
-    // id 必须是正整数：/works/0 不是有效作品，回首页。
+    // 正则已保证捕获串全是数字，Number(...) 必然是整数，不必再判 isInteger。
+    // id 必须为正：/works/0 不是有效作品，回首页。
     // 前导零不拒绝：/works/007 即作品 7（Number('007') === 7），
     // 回首页只会让手抄到前导零的用户白跑一趟。
-    if (Number.isInteger(id) && id > 0) return { name: 'work-detail', id };
+    if (id > 0) return { name: 'work-detail', id };
     return { name: 'home' };
   }
 

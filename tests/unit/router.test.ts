@@ -2,10 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { matchRoute } from '@/router';
 
 describe('matchRoute', () => {
-  it('首页：空串与 /', () => {
-    expect(matchRoute('')).toEqual({ name: 'home' });
+  it("首页：'/' 与纯斜杠路径都不落到其他路由", () => {
+    // 这里钉的是「这些路径 → home」，不是 normalize 的归一细节：
+    // matchRoute 末尾的兜底分支对任何未识别路径都返回 home，
+    // 所以 '' 也一定通过。空串因此不写进断言，免得看着像归一逻辑被覆盖了。
     expect(matchRoute('/')).toEqual({ name: 'home' });
     expect(matchRoute('//')).toEqual({ name: 'home' });
+    expect(matchRoute('///')).toEqual({ name: 'home' });
   });
 
   it('作品列表：/works 与 /works/', () => {

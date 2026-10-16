@@ -28,4 +28,11 @@ describe('SiteNav', () => {
     render(<SiteNav current="/works/42" />);
     expect(screen.getByRole('link', { name: '作品库' }).getAttribute('aria-current')).toBe('page');
   });
+
+  it('导航地标带可访问名', () => {
+    // Task 7/8 之后站内会有多个 <nav>（作品库页、详情页各自的导航），
+    // aria-label 是屏幕阅读器区分它们的唯一依据，删掉这条断言就该红。
+    render(<SiteNav current="/" />);
+    expect(screen.getByRole('navigation', { name: '主导航' })).toBeTruthy();
+  });
 });
