@@ -96,6 +96,27 @@ export async function initDb(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_products_order ON products("order");
 
+    -- 作品库（2026-10-16）。导出图纸右下角二维码指向 /works，扫码用户在这里找图。
+    -- 只存存储层 key，不存 URL：对外地址一律由 StorageDriver.publicUrl() 现算，
+    -- 这样换存储实现时老数据一行都不用洗。
+    -- 刻意不加 order / downloads / slug，理由见 spec 3.6。
+    CREATE TABLE IF NOT EXISTS works (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title       TEXT    NOT NULL DEFAULT '',
+      description TEXT    NOT NULL DEFAULT '',
+      image_key   TEXT    NOT NULL,
+      thumb_key   TEXT    NOT NULL DEFAULT '',
+      width       INTEGER NOT NULL DEFAULT 0,
+      height      INTEGER NOT NULL DEFAULT 0,
+      bytes       INTEGER NOT NULL DEFAULT 0,
+      published   INTEGER NOT NULL DEFAULT 1,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL,
+      CHECK (published IN (0, 1))
+    );
+    CREATE INDEX IF NOT EXISTS idx_works_published_created
+      ON works(published, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS auth_tokens (
       token_hash TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
