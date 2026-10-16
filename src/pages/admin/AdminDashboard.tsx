@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { StatsTab } from './StatsTab';
 import { UsersTab } from './UsersTab';
 import { ProductsTab } from './ProductsTab';
+import { WorksTab } from './WorksTab';
 
-type Tab = 'stats' | 'users' | 'products';
+type Tab = 'stats' | 'users' | 'products' | 'works';
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<Tab>('stats');
@@ -14,10 +15,12 @@ export function AdminDashboard() {
         <button role="tab" aria-selected={tab === 'stats'} className={tab === 'stats' ? 'active' : ''} onClick={() => setTab('stats')}>统计</button>
         <button role="tab" aria-selected={tab === 'users'} className={tab === 'users' ? 'active' : ''} onClick={() => setTab('users')}>账号</button>
         <button role="tab" aria-selected={tab === 'products'} className={tab === 'products' ? 'active' : ''} onClick={() => setTab('products')}>商品</button>
+        <button role="tab" aria-selected={tab === 'works'} className={tab === 'works' ? 'active' : ''} onClick={() => setTab('works')}>作品</button>
       </div>
       {tab === 'stats' && <StatsTab role="admin" />}
       {tab === 'users' && <UsersTab />}
       {tab === 'products' && <ProductsTab />}
+      {tab === 'works' && <WorksTab />}
     </>
   );
 }

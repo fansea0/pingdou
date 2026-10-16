@@ -23,6 +23,17 @@ export interface WorkDetail extends WorkSummary {
   updatedAt: number;
 }
 
+/**
+ * 后台专用的 detail，额外带 published。
+ *
+ * 公开契约刻意不含 published：公开接口只返回已上架作品，这个字段恒为 true，
+ * 写进公开响应只会让客户端误以为「拿不到该字段 = 上架」这种反向推断成立。
+ * 后台要区分草稿，所以单独一个形状，不污染 /api/public/*。
+ */
+export interface AdminWorkDetail extends WorkDetail {
+  published: boolean;
+}
+
 export interface WorkImage {
   body: Buffer;
   mime: string;
@@ -120,6 +131,11 @@ function toDetail(row: WorkRow): WorkDetail {
   };
 }
 
+/** DB 里 published 是 0/1，JSON 侧统一成 boolean，避免前端去猜 0 和 '0' 的区别 */
+function toAdminDetail(row: WorkRow): AdminWorkDetail {
+  return { ...toDetail(row), published: row.published === 1 };
+}
+
 function rowById(id: number): WorkRow | null {
   const rows = queryAll<WorkRow>(`SELECT * FROM works WHERE id = ?`, [id]);
   return rows[0] ?? null;
@@ -168,13 +184,13 @@ export function getPublishedWork(id: number): WorkDetail | null {
 }
 
 /** 后台管理用：含草稿。 */
-export function listAllWorks(): WorkDetail[] {
+export function listAllWorks(): AdminWorkDetail[] {
   return queryAll<WorkRow>(
     `SELECT * FROM works ORDER BY created_at DESC, id DESC`
-  ).map(toDetail);
+  ).map(toAdminDetail);
 }
 
-export async function createWork(input: CreateWorkInput): Promise<WorkDetail> {
+export async function createWork(input: CreateWorkInput): Promise<AdminWorkDetail> {
   const ext = extFor(input.image.mime, 'image');
   if (input.thumb) {
     const thumbExt = extFor(input.thumb.mime, 'thumb');
@@ -231,10 +247,10 @@ export async function createWork(input: CreateWorkInput): Promise<WorkDetail> {
     throw err;
   }
 
-  return toDetail(created[0]);
+  return toAdminDetail(created[0]);
 }
 
-export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise<WorkDetail> {
+export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise<AdminWorkDetail> {
   const row = requireRow(id);
   const next: WorkRow = { ...row };
   if (typeof patch.title === 'string') next.title = normalizeTitle(patch.title);
@@ -247,14 +263,14 @@ export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise
     [next.title, next.description, next.published, next.updated_at, id]
   );
   flushNow();
-  return toDetail(next);
+  return toAdminDetail(next);
 }
 
 export async function replaceWorkImage(
   id: number,
   image: WorkImage,
   thumb?: WorkImage
-): Promise<WorkDetail> {
+): Promise<AdminWorkDetail> {
   const row = requireRow(id);
   const ext = extFor(image.mime, 'image');
   if (thumb) {
@@ -290,7 +306,7 @@ export async function replaceWorkImage(
   await removeQuietly(row.thumb_key);
 
   flushNow();
-  return toDetail(next);
+  return toAdminDetail(next);
 }
 
 export async function deleteWork(id: number): Promise<void> {

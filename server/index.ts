@@ -508,6 +508,8 @@ function workImageFrom(req: express.Request, field: 'file' | 'thumb') {
   return f ? { body: f.buffer, mime: f.mimetype } : undefined;
 }
 
+// 后台列表走 toAdminDetail：比公开 detail 多一个 published 布尔字段，
+// 后台靠它显示上下架开关。公开接口 /api/public/* 刻意不带该字段。
 app.get('/api/admin/works', requireAuth, requireAdmin, (_req, res) => {
   try {
     return res.json(listAllWorks());

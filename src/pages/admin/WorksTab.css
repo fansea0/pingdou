@@ -1,0 +1,140 @@
+.works-admin {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.works-admin-title {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.works-admin-upload {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.works-admin-upload h3 {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.works-admin-label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.works-admin-label input[type='text'],
+.works-admin-label textarea {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.works-admin-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.works-admin-btn {
+  justify-self: start;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.works-admin-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.works-admin-btn--danger {
+  background: transparent;
+  border-color: var(--color-border-strong);
+  color: var(--color-error-fg);
+}
+
+.works-admin-btn--danger:hover {
+  border-color: var(--color-error-fg);
+}
+
+.works-admin-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.works-admin-error {
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--color-error-bg);
+  color: var(--color-error-fg);
+  border-radius: var(--radius-sm);
+}
+
+.works-admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.works-admin-item {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.works-admin-thumb {
+  width: 72px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.works-admin-fields {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.works-admin-fields input,
+.works-admin-fields textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.works-admin-flag {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.works-admin-actions {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: end;
+}

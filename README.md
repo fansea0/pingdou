@@ -152,6 +152,38 @@ nohup npx vite preview --host 0.0.0.0 --port 5173 > frontend.log 2>&1 &
 - `PORT`（默认 `3000`） — 后端端口
 - `BACKEND_URL`（默认 `http://localhost:3000`） — Vite dev/preview 代理目标
 
+## 作品库
+
+导出图纸的**右下角有一个二维码**（111×111，构建期由 `scripts/gen-qr.mjs` 预生成），
+扫码直接进入公开作品库 `/works`。
+
+- **导出图二维码**：`/brand/works-qr.png`，由 `scripts/gen-qr.mjs` 在 `prebuild` 阶段生成
+  （version 3 / ECC L / 模块 3px / 静区 4 模块），产出物**提交进仓库**，
+  这样首次 `npm run dev`（不跑 prebuild）也不会 404。
+- **二维码落位**：`composite.ts` 的 `qrBandPx` 只把底部边距加宽，页眉 / 图纸 / 色卡
+  的纵向布局一行不动 —— 色卡既不会被压也不会重排。画不出二维码时（资源 404 /
+  被拦截 / jsdom）自动降级为「不画码」，导出照常成功。
+- **作品库页面**：`/works` 列表（缩略图网格 + 加载更多）、`/works/:id` 详情
+  （大图 + 「长按图片保存」提示 + 「下载原图」按钮）。
+  同一个图片 URL 承担两种用途：被 `<img>` 引用是内联渲染（可长按），
+  被带 `download` 的 `<a>` 引用是直接下载 —— 不需要 `Content-Disposition`。
+- **后台上传**：后台第 4 个 tab「作品」。上传原图时浏览器用 canvas 生成 480px WebP
+  缩略图一起提交，服务端不引入 `sharp`。列表页只加载缩略图，下载仍是原始 PNG。
+- **上下架**：只有 `published=1` 的作品出现在公开列表和详情里。
+  `GET /api/admin/works` 的响应比公开 detail 多一个 `published` 布尔字段
+  （服务端 `toAdminDetail` 单独序列化），公开接口**不带**这个字段。
+- **存储**：`works` 表只存 key（`works/<16hex>.png`），不存 URL，对外地址一律由
+  `server/storage/` 里的 `StorageDriver.publicUrl()` 现算。换 S3/OSS 只需新增一个
+  driver 实现文件 + 改 `server/storage/index.ts` 一行，老数据一行不用洗。
+- **文件位置**：`<PINGDOU_DATA_DIR>/media/works/`；生产由 nginx 直读（见
+  `docs/nginx-https-setup.md` 的 `location ~ ^/media/works/`）。
+
+API：
+- `GET /api/public/works?limit&offset` — 公开列表（无需登录）
+- `GET /api/public/works/:id` — 公开详情（草稿返回 404）
+- `GET /api/admin/works` / `POST /api/admin/works` / `PUT /api/admin/works/:id` /
+  `POST /api/admin/works/:id/image` / `DELETE /api/admin/works/:id` — 后台（需 admin）
+
 ## 统计功能
 
 后台 `/statics` 提供：
