@@ -13,6 +13,8 @@ export interface WorkSummary {
   width: number;
   height: number;
   createdAt: number;
+  /** 总点赞数。列表经 LEFT JOIN 带出；单条读取（getPublishedWork 等）无 join 时为 0。 */
+  likes: number;
 }
 
 export interface WorkDetail extends WorkSummary {
@@ -110,7 +112,7 @@ export function normalizePublished(raw: unknown, fallback: boolean): boolean {
   return raw !== '' && raw !== '0' && raw !== 'false';
 }
 
-function toSummary(row: WorkRow): WorkSummary {
+function toSummary(row: WorkRow, likes = 0): WorkSummary {
   return {
     id: row.id,
     title: row.title,
@@ -118,6 +120,7 @@ function toSummary(row: WorkRow): WorkSummary {
     width: row.width,
     height: row.height,
     createdAt: row.created_at,
+    likes,
   };
 }
 
@@ -153,26 +156,71 @@ function extFor(mime: string, what: string): string {
   return ext;
 }
 
-export function listPublishedWorks(
-  limit: number,
-  offset: number
-): { items: WorkSummary[]; total: number } {
+export type WorkSort = 'latest' | 'hot';
+
+/**
+ * LIKE 的元字符转义。用户搜 "50%" 必须按字面匹配，不能变成通配符扫全表。
+ * 反斜杠自己也要转义，否则用户搜 "c\d" 会先被 \d 破坏掉。
+ */
+export function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, ch => `\\${ch}`);
+}
+
+/** 一次 LEFT JOIN 把点赞数带出来，避免每条作品查一次（N+1） */
+const LIKES_JOIN = `
+  LEFT JOIN (
+    SELECT work_id, COUNT(*) AS c FROM work_likes GROUP BY work_id
+  ) l ON l.work_id = w.id`;
+
+export function listPublishedWorks(opts: {
+  limit: number;
+  offset: number;
+  q?: string;
+  sort: WorkSort;
+}): { items: WorkSummary[]; total: number } {
+  const { limit, offset, sort } = opts;
   // 钳到 [1,60]。注意不能写 `Math.floor(limit) || 20`：limit=0 是「非法值要钳到
   // 最小值 1」，不是「没传值走默认 20」，`||` 会把 0 当成假值改成 20。
   const raw = Number.isFinite(limit) ? Math.floor(limit) : 20;
   const lim = Math.max(1, Math.min(60, raw));
   const off = Math.max(0, Math.floor(offset) || 0);
-  const rows = queryAll<WorkRow>(
-    `SELECT * FROM works
-      WHERE published = 1
-      ORDER BY created_at DESC, id DESC
-      LIMIT ? OFFSET ?`,
-    [lim, off]
+
+  // q 的 WHERE 与 total 的 COUNT 必须字面一致，否则 hasMore 会一直显示
+  // （搜出 5 条但 total 是全表 200 条）。两处共用同一个 where 变量，不允许各写一遍。
+  const q = (opts.q ?? '').trim().slice(0, 100);
+  const where = q
+    ? `WHERE w.published = 1 AND w.title LIKE ? ESCAPE '\\'`
+    : `WHERE w.published = 1`;
+  const likeParam = q ? `%${escapeLike(q)}%` : null;
+
+  // 排序必须完全确定，否则每次请求顺序抖动会导致 React 重复 key、滚动跳变。
+  // hot 的兜底链是 created_at 再 id —— 同赞数时先看谁更晚传，再按 id 定死。
+  //
+  // 已知取舍（用户已接受，非 bug）：hot 排序下每次点赞都会改变排名，
+  // offset 分页因此可能跳过被挤下去的条目。Task 7 的 id 去重只能挡重复、挡不住跳过。
+  // 根治要游标分页 WHERE (c, created_at, id) < (?, ?, ?)，当前作品量级不值得。
+  const orderBy = sort === 'hot'
+    ? `ORDER BY COALESCE(l.c, 0) DESC, w.created_at DESC, w.id DESC`
+    : `ORDER BY w.created_at DESC, w.id DESC`;
+
+  const rows = queryAll<WorkRow & { likes: number | null }>(
+    `SELECT w.*, l.c AS likes
+       FROM works w ${LIKES_JOIN}
+       ${where}
+       ${orderBy}
+       LIMIT ? OFFSET ?`,
+    likeParam === null ? [lim, off] : [likeParam, lim, off]
   );
+
   const totalRows = queryAll<{ total: number }>(
-    `SELECT COUNT(*) AS total FROM works WHERE published = 1`
+    `SELECT COUNT(*) AS total FROM works w ${where}`,
+    likeParam === null ? [] : [likeParam]
   );
-  return { items: rows.map(toSummary), total: totalRows[0]?.total ?? 0 };
+
+  return {
+    items: rows.map(r => ({ ...toSummary(r), likes: r.likes ?? 0 })),
+    total: totalRows[0]?.total ?? 0,
+  };
 }
 
 /** 草稿一律返回 null —— 不区分「不存在」和「未上架」，避免用状态码探测草稿。 */

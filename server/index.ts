@@ -453,7 +453,9 @@ app.get('/api/public/works', (req, res) => {
   try {
     const limit = Number(req.query.limit || 20); // `?limit=`（空串）也要走默认值，?? 挡不住空串
     const offset = Number(req.query.offset ?? 0);
-    return res.json(listPublishedWorks(limit, offset));
+    // Task 2 的最小迁移：只为跟上 listPublishedWorks 的新签名（options 对象），
+    // 固定 sort='latest'。q / sort 的透传由 Task 3 改写这一行。
+    return res.json(listPublishedWorks({ limit, offset, sort: 'latest' }));
   } catch (e) {
     console.error('[public/works]', e);
     return res.status(500).json({ error: 'query failed' });

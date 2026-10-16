@@ -160,9 +160,9 @@ describe('createWork', () => {
   it('published 缺省为 true，字符串 "0" 解析为 false', async () => {
     const { works } = await freshWorks();
     expect((await works.createWork({ image: { body: PNG, mime: 'image/png' } })).id).toBeGreaterThan(0);
-    expect(works.listPublishedWorks(20, 0).total).toBe(1);
+    expect(works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' }).total).toBe(1);
     const draft = await works.createWork({ published: '0', image: { body: PNG, mime: 'image/png' } });
-    expect(works.listPublishedWorks(20, 0).total).toBe(1);
+    expect(works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' }).total).toBe(1);
     expect(works.getPublishedWork(draft.id)).toBeNull();
   });
 });
@@ -172,7 +172,7 @@ describe('listPublishedWorks', () => {
     const { works } = await freshWorks();
     await works.createWork({ title: 'A', image: { body: PNG, mime: 'image/png' } });
     await works.createWork({ title: 'B', published: false, image: { body: PNG, mime: 'image/png' } });
-    const { items, total } = works.listPublishedWorks(20, 0);
+    const { items, total } = works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' });
     expect(total).toBe(1);
     expect(items.map(i => i.title)).toEqual(['A']);
   });
@@ -180,8 +180,8 @@ describe('listPublishedWorks', () => {
   it('列表只暴露 summary，不含 description / imageUrl', async () => {
     const { works } = await freshWorks();
     await works.createWork({ title: 'A', description: '不该出现在列表', image: { body: PNG, mime: 'image/png' } });
-    expect(works.listPublishedWorks(20, 0).items[0]).not.toHaveProperty('description');
-    expect(works.listPublishedWorks(20, 0).items[0]).not.toHaveProperty('imageUrl');
+    expect(works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' }).items[0]).not.toHaveProperty('description');
+    expect(works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' }).items[0]).not.toHaveProperty('imageUrl');
   });
 
   it('limit 钳制到 [1,60]，offset 负数归零', async () => {
@@ -189,8 +189,8 @@ describe('listPublishedWorks', () => {
     for (let i = 0; i < 3; i++) {
       await works.createWork({ title: `W${i}`, image: { body: PNG, mime: 'image/png' } });
     }
-    expect(works.listPublishedWorks(999, -5).items).toHaveLength(3);
-    expect(works.listPublishedWorks(0, 0).items).toHaveLength(1);
+    expect(works.listPublishedWorks({ limit: 999, offset: -5, sort: 'latest' }).items).toHaveLength(3);
+    expect(works.listPublishedWorks({ limit: 0, offset: 0, sort: 'latest' }).items).toHaveLength(1);
   });
 
   it('按 created_at DESC 排序，最新在前', async () => {
@@ -198,7 +198,7 @@ describe('listPublishedWorks', () => {
     const a = await works.createWork({ title: 'first', image: { body: PNG, mime: 'image/png' } });
     await new Promise(r => setTimeout(r, 5));
     const b = await works.createWork({ title: 'second', image: { body: PNG, mime: 'image/png' } });
-    const ids = works.listPublishedWorks(20, 0).items.map(i => i.id);
+    const ids = works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' }).items.map(i => i.id);
     expect(ids).toEqual([b.id, a.id]);
   });
 });
