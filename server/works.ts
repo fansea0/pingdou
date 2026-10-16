@@ -1,5 +1,5 @@
-import { randomBytes } from 'node:crypto';
-import { queryAll, runStmt, flushNow } from './db.js';
+import { createHash, randomBytes } from 'node:crypto';
+import { queryAll, runStmt, execReturning, isoDay, flushNow } from './db.js';
 import { storage } from './storage/index.js';
 
 /**
@@ -339,4 +339,64 @@ async function removeQuietly(key: string): Promise<void> {
   } catch (e) {
     console.warn('[works] 文件删除失败（可能已是孤儿文件）', key, e);
   }
+}
+
+/**
+ * 点赞用的 IP hash —— 与 events.ip_hash / sessions.ip_hash **同名不同义**。
+ *
+ * 那两列字段名带 hash，但实际存的是明文 IP（server/index.ts 的 trackEvent 直接把
+ * req.clientIp 传进去），那是统计模块的既有口径，本项目不去动它。
+ * 点赞表是新表，且没有任何回溯真实 IP 的需求，所以这里存真 hash。
+ *
+ * 盐取站点域名，防止彩虹表反查。
+ */
+const WORKS_IP_SALT = 'https://www.xn--muu023g.xyz/';
+
+export function ipHashOf(ip: string): string {
+  return createHash('sha256')
+    .update(`${ip}:${WORKS_IP_SALT}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+
+export interface LikeState {
+  likes: number;
+  liked: boolean;
+}
+
+/** 该作品的总赞数（累计所有天） */
+function countLikes(workId: number): number {
+  const rows = queryAll<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM work_likes WHERE work_id = ?`,
+    [workId]
+  );
+  return rows[0]?.c ?? 0;
+}
+
+/**
+ * 点赞。幂等由复合主键保证。
+ *
+ * 用 `INSERT OR IGNORE ... RETURNING` 而不是「先 SELECT 再判断」：前者是单语句、
+ * 并发安全（两个并发请求不会都判定为新赞），且返回行数直接就是「新赞还是重复赞」。
+ * 选 execReturning 而不是裸 queryAll，是为了让这一行真的落盘（queryAll 不标脏）。
+ *
+ * 注意语义：同一 IP 次日可以再给同一张图点赞，计数会累加 —— 这是「热度」而非「人数」，
+ * 前端文案必须是「N 次点赞」而不是「N 人喜欢」。
+ */
+export function addLike(workId: number, ipHash: string, now: number = Date.now()): LikeState {
+  const inserted = execReturning(
+    `INSERT OR IGNORE INTO work_likes (work_id, day, ip_hash, created_at)
+     VALUES (?, ?, ?, ?) RETURNING work_id`,
+    [workId, isoDay(now), ipHash, now]
+  ).length > 0;
+  return { likes: countLikes(workId), liked: inserted };
+}
+
+/** 只读不改。GET 与 POST 共用它，保证两条路由的口径一致。 */
+export function likeStateOf(workId: number, ipHash: string, now: number = Date.now()): LikeState {
+  const rows = queryAll(
+    `SELECT 1 AS ok FROM work_likes WHERE work_id = ? AND day = ? AND ip_hash = ?`,
+    [workId, isoDay(now), ipHash]
+  );
+  return { likes: countLikes(workId), liked: rows.length > 0 };
 }

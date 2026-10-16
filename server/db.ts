@@ -117,6 +117,20 @@ export async function initDb(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_works_published_created
       ON works(published, created_at DESC);
 
+    -- 点赞：每 IP 对每张图每天限一次（用户已确认不支持取消）
+    -- 复合主键即幂等保证，不需要「先查后插」；跨天是新 key，
+    -- 因此不需要定时任务清理，也不需要 active 列。
+    -- 注意 ip_hash 与 events.ip_hash / sessions.ip_hash **同名不同义**：
+    -- 那两列实际存的是明文 IP（统计模块既有口径），这里存真 sha256。
+    -- 计数是「次数」不是「人数」：同一 IP 次日可再点赞，计数会累加。
+    CREATE TABLE IF NOT EXISTS work_likes (
+      work_id    INTEGER NOT NULL,
+      day        TEXT    NOT NULL,
+      ip_hash    TEXT    NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY (work_id, day, ip_hash)
+    );
+
     CREATE TABLE IF NOT EXISTS auth_tokens (
       token_hash TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -235,8 +249,23 @@ export function queryAll<T = Record<string, unknown>>(
   return rows;
 }
 
-export function runInTransaction<T>(fn: () => T): T {
-  const database = requireDb();
+/**
+ * 写操作，同时要拿回 RETURNING 行的场景（如点赞的 INSERT OR IGNORE）。
+ *
+ * 为什么不能直接用 queryAll：queryAll 是纯读接口，不调 markDirty，写进去的行永远
+ * 不会被 flushNow 落盘 —— 只要站点没有别的写操作，重启后这行就没了。
+ * 为什么不能直接用 runStmt：它返回 void，拿不到「这次到底插没插进去」。
+ */
+export function execReturning<T = Record<string, unknown>>(
+  sql: string,
+  params: (number | string | null)[] = [],
+): T[] {
+  const rows = queryAll<T>(sql, params);
+  markDirty();
+  return rows;
+}
+
+export function runInTransaction<T>(fn: () => T): T {  const database = requireDb();
   database.exec('BEGIN');
   try {
     const result = fn();
