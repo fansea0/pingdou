@@ -1,0 +1,96 @@
+.works-detail {
+  padding-bottom: var(--space-6);
+}
+
+.works-detail-state {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.works-detail-state--error {
+  color: var(--color-error-fg);
+  background: var(--color-error-bg);
+  border-radius: var(--radius-md);
+}
+
+/* 详情页不设 aspect-ratio：图纸比例五花八门，按原图比例显示，
+   width/height 属性推出的固有比例也因此生效，图片加载完成前不跳版。 */
+.works-detail-main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-5);
+}
+
+@media (min-width: 760px) {
+  .works-detail-main {
+    grid-template-columns: minmax(0, 3fr) minmax(240px, 2fr);
+    align-items: start;
+  }
+}
+
+.works-detail-figure {
+  margin: 0;
+}
+
+.works-detail-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.works-detail-tip {
+  margin-top: var(--space-2);
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.works-detail-desc {
+  margin: 0 0 var(--space-4);
+  color: var(--color-text);
+  line-height: 1.7;
+}
+
+.works-detail-facts {
+  margin: 0 0 var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.works-detail-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.works-detail-facts dt {
+  color: var(--color-text-muted);
+}
+
+.works-detail-facts dd {
+  margin: 0;
+}
+
+.works-detail-btn {
+  display: inline-block;
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: #fff;
+  font-size: var(--text-sm);
+  text-decoration: none;
+  text-align: center;
+}
+
+.works-detail-btn:hover {
+  background: var(--color-accent-hover);
+}
