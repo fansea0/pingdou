@@ -68,7 +68,12 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
   }, [pageSize, nonce]);
 
   const loadMore = useCallback(() => {
-    if (loading || pendingRef.current) return;
+    // loadingMore 必须一起看。以前这个守卫只读 loading（首屏标志）与 pendingRef，
+    // loadingMore 从头到尾没被读过，重复请求全靠 WorksListPage 上的
+    // disabled={loadingMore} 兜 —— DOM 属性当唯一防线太脆弱：将来谁为了做
+    // 「加载更多」的 spinner 样式摘掉 disabled（或换成 aria-disabled / opacity），
+    // 重复拉页会静默发生。state 守卫不依赖任何 DOM 属性。
+    if (loading || loadingMore || pendingRef.current) return;
     pendingRef.current = true;
     setLoadingMore(true);
     setLoadMoreError(null);
@@ -77,7 +82,14 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
       .then(page => {
         pendingRef.current = false;
         if (!aliveRef.current) return;
-        setItems(prev => [...prev, ...page.items]);
+        // offset 分页 + 后端 ORDER BY created_at DESC, id DESC：两次请求之间若有
+        // 新作品插到最前，整页会往后挪一位，offset 就会把上一页的尾项再拉回来 ——
+        // 页面上出现重复卡片，React 也会抛重复 key 警告。按 id 去重即可。
+        // 作品库是站主手动上传的低频变更，真撞上的概率很低，不值得为此上 cursor。
+        setItems(prev => {
+          const seen = new Set(prev.map(i => i.id));
+          return [...prev, ...page.items.filter(i => !seen.has(i.id))];
+        });
         setTotal(page.total);
         setLoadingMore(false);
       })
@@ -88,9 +100,19 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
         setLoadMoreError(e instanceof Error ? e : new Error(String(e)));
         setLoadingMore(false);
       });
-  }, [items.length, loading, pageSize]);
+  }, [items.length, loading, loadingMore, pageSize]);
 
-  const reload = useCallback(() => setNonce(n => n + 1), []);
+  const reload = useCallback(() => {
+    // 清干净再 setNonce 重跑首屏 effect（nonce 是触发它重跑的关键，别删）。
+    // 以前只 setNonce，旧分页与翻页错误会留在屏幕上和新数据混在一起。
+    // 当前 reload 只有首屏 error 分支的重试按钮能触到，那时 items 必为空 ——
+    // 这三行是防御性的，防止将来接线变了（例如给非空列表加重试入口）就露馅。
+    setItems([]);
+    setTotal(0);
+    setLoadMoreError(null);
+    setError(null);
+    setNonce(n => n + 1);
+  }, []);
 
   return {
     items,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WorksListPage } from './WorksListPage';
+import { useWorks } from '@/hooks/useWorks';
 
 const listWorks = vi.fn();
 
@@ -30,6 +31,28 @@ function work(id: number, title: string) {
     height: 1000,
     createdAt: 1_700_000_000_000,
   };
+}
+
+/**
+ * reload 的验证宿主。
+ *
+ * 为什么不直接点页面上的「重试」按钮：那条按钮只在首屏 error 分支渲染，而 error
+ * 只由首屏 effect 写，触发它意味着这一轮一次数据都没拿到 —— items 必定为空。
+ * 于是「reload 要把旧列表清空」这条永远观察不到，reload 里删掉 setItems([])
+ * 全量测试照样绿。这里用最小宿主组件直接驱动 hook，让 items 非空时也能调 reload。
+ */
+function ReloadHarness() {
+  const { items, loading, loadMoreError, loadMore, reload } = useWorks();
+  return (
+    <div>
+      {/* 无条件渲染：reload 那一帧 loading 还是 false，正好能观察到清空前后的差别 */}
+      <span data-testid="titles">{items.map(i => i.title).join(',')}</span>
+      <button type="button" onClick={loadMore}>more</button>
+      <button type="button" onClick={reload}>reload</button>
+      {loading && <span>busy</span>}
+      {loadMoreError && <p>翻页失败：{loadMoreError.message}</p>}
+    </div>
+  );
 }
 
 describe('WorksListPage', () => {
@@ -122,15 +145,17 @@ describe('WorksListPage', () => {
     expect(screen.getByRole('button', { name: '加载更多' })).toBeTruthy();
   });
 
-  it('快速连点「加载更多」只发一次请求', async () => {
+  it('同一批次内多次调用 loadMore 只发一次请求', async () => {
     listWorks
       .mockResolvedValueOnce({ items: [work(1, 'A')], total: 3 })
       .mockResolvedValue({ items: [work(2, 'B')], total: 3 });
     render(<WorksListPage />);
     await screen.findByText('A');
 
-    // 同一个 act 批次里连点两次：state 里的 loadingMore 还没提交，
-    // 只靠 state 守卫会漏，第二次会用同一个 offset 重复拉同一页。
+    // 判别力来源：两次调用落在同一个 act 批次里 —— state 里的 loadingMore 还没
+    // 提交，两次 handler 读到的是同一个闭包。这是 React 的契约性质（一次
+    // 事件里连着调多次 handler），真实浏览器双击走不到这里（见下一条），
+    // 守住它的是同步标志 pendingRef。
     const more = screen.getByRole('button', { name: '加载更多' });
     act(() => {
       fireEvent.click(more);
@@ -139,5 +164,72 @@ describe('WorksListPage', () => {
 
     await screen.findByText('B');
     expect(listWorks).toHaveBeenCalledTimes(2);
+  });
+
+  it('真实双击「加载更多」只发一次请求', async () => {
+    listWorks
+      .mockResolvedValueOnce({ items: [work(1, 'A')], total: 3 })
+      .mockResolvedValue({ items: [work(2, 'B')], total: 3 });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+
+    // 两个独立的 act，对应浏览器里两次独立的点击任务。React 对 discrete event
+    // （click）同步 flush，所以第一次点击提交的 loadingMore 此时已经生效 ——
+    // 这一条守的是真实用户场景：手快连点两下「加载更多」。
+    // 中间绝对不能 await：await 会把 mock 那条已 resolve 的 promise 跑掉，
+    // loadingMore 回落成 false，那就变成「两次独立加载」而不是双击了。
+    const more = screen.getByRole('button', { name: '加载更多' });
+    act(() => { fireEvent.click(more); });
+    act(() => { fireEvent.click(more); });
+
+    await screen.findByText('B');
+    expect(listWorks).toHaveBeenCalledTimes(2);
+  });
+
+  it('下一页与已加载项重叠时不产生重复卡片', async () => {
+    // 复现 offset 分页的经典错位：首屏 2 件/total 3，两次请求之间新增 1 件插到
+    // 最前，offset 后移，第二页把上一页的尾项又拉了一遍。
+    listWorks
+      .mockResolvedValueOnce({ items: [work(1, 'W1'), work(2, 'W2')], total: 3 })
+      .mockResolvedValueOnce({ items: [work(2, 'W2'), work(3, 'W3')], total: 3 });
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      render(<WorksListPage />);
+      await screen.findByText('W1');
+      fireEvent.click(screen.getByRole('button', { name: '加载更多' }));
+      await screen.findByText('W3');
+
+      // 每个标题只渲染一次
+      expect(screen.getAllByText('W1')).toHaveLength(1);
+      expect(screen.getAllByText('W2')).toHaveLength(1);
+      expect(screen.getAllByText('W3')).toHaveLength(1);
+      // React 的重复 key 警告会掩盖真实报错，这里显式钉住
+      const dupKey = warn.mock.calls.filter(c => /same key/.test(String(c[0])));
+      expect(dupKey).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('reload 清掉旧列表与翻页错误，重新拉第一页', async () => {
+    listWorks
+      .mockResolvedValueOnce({ items: [work(1, 'A')], total: 3 })
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({ items: [work(2, 'B')], total: 1 });
+    render(<ReloadHarness />);
+    await waitFor(() => expect(screen.getByTestId('titles').textContent).toBe('A'));
+
+    // 先制造一个翻页错误
+    fireEvent.click(screen.getByRole('button', { name: 'more' }));
+    expect(await screen.findByText(/network down/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'reload' }));
+    // 这一帧 effect 还没跑，loading 还是 false：两个断言正好卡在清空那一刻
+    expect(screen.queryByText(/network down/)).toBeNull();
+    expect(screen.getByTestId('titles').textContent).toBe('');
+
+    await waitFor(() => expect(screen.getByTestId('titles').textContent).toBe('B'));
+    expect(listWorks).toHaveBeenCalledTimes(3);
   });
 });

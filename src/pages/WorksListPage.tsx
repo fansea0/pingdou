@@ -10,7 +10,7 @@ export function WorksListPage() {
   } = useWorks();
 
   return (
-    <div className="app works-page">
+    <div className="app">
       <header>
         <h1>作品库</h1>
         <p className="subtitle">站主挑好的拼豆图纸，扫码或点进来就能拿走</p>
