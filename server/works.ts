@@ -112,6 +112,21 @@ export function normalizePublished(raw: unknown, fallback: boolean): boolean {
   return raw !== '' && raw !== '0' && raw !== 'false';
 }
 
+/**
+ * 一次 LEFT JOIN 把点赞数带出来，避免每条作品查一次（N+1）。
+ *
+ * 列表、详情、后台列表共用它：`WorkSummary.likes` 的注释承诺的是「总点赞数」，
+ * 只有真正 JOIN 过的路径才能兑现这个承诺，取默认 0 就是在对调用方说谎。
+ */
+const LIKES_JOIN = `
+  LEFT JOIN (
+    SELECT work_id, COUNT(*) AS c FROM work_likes GROUP BY work_id
+  ) l ON l.work_id = w.id`;
+
+/**
+ * likes 走参数而不是从 row 上读：row 有没有 JOIN 过是调用路径的偶然，
+ * 把「有没有」显式传进来，才不至于让某条路径静默退回默认 0。
+ */
 function toSummary(row: WorkRow, likes = 0): WorkSummary {
   return {
     id: row.id,
@@ -124,9 +139,15 @@ function toSummary(row: WorkRow, likes = 0): WorkSummary {
   };
 }
 
-function toDetail(row: WorkRow): WorkDetail {
+/**
+ * likes 从 row 上读：detail 的调用方（getPublishedWork / listAllWorks /
+ * updateWorkMeta / replaceWorkImage）全部经 rowById 或 JOIN 查询拿到行，
+ * 都会带上真值。唯一的例外是 createWork 插入后回读（此刻必然 0 赞），
+ * 那里落到 ?? 0 是正确的。
+ */
+function toDetail(row: WorkRow & { likes?: number | null }): WorkDetail {
   return {
-    ...toSummary(row),
+    ...toSummary(row, row.likes ?? 0),
     description: row.description,
     imageUrl: storage.publicUrl(row.image_key),
     bytes: row.bytes,
@@ -135,16 +156,25 @@ function toDetail(row: WorkRow): WorkDetail {
 }
 
 /** DB 里 published 是 0/1，JSON 侧统一成 boolean，避免前端去猜 0 和 '0' 的区别 */
-function toAdminDetail(row: WorkRow): AdminWorkDetail {
+function toAdminDetail(row: WorkRow & { likes?: number | null }): AdminWorkDetail {
   return { ...toDetail(row), published: row.published === 1 };
 }
 
-function rowById(id: number): WorkRow | null {
-  const rows = queryAll<WorkRow>(`SELECT * FROM works WHERE id = ?`, [id]);
+/**
+ * 带点赞数回读单行。必须走 LIKES_JOIN —— 详情接口对外承诺 likes 是总赞数，
+ * 漏了 JOIN 会让公开详情在作品有赞时返回 0。
+ */
+function rowById(id: number): (WorkRow & { likes?: number | null }) | null {
+  const rows = queryAll<WorkRow & { likes?: number | null }>(
+    `SELECT w.*, l.c AS likes
+       FROM works w ${LIKES_JOIN}
+      WHERE w.id = ?`,
+    [id]
+  );
   return rows[0] ?? null;
 }
 
-function requireRow(id: number): WorkRow {
+function requireRow(id: number): WorkRow & { likes?: number | null } {
   const row = rowById(id);
   if (!row) throw new Error('work not found');
   return row;
@@ -161,16 +191,16 @@ export type WorkSort = 'latest' | 'hot';
 /**
  * LIKE 的元字符转义。用户搜 "50%" 必须按字面匹配，不能变成通配符扫全表。
  * 反斜杠自己也要转义，否则用户搜 "c\d" 会先被 \d 破坏掉。
+ *
+ * 附带一条**有意为之**的行为：SQLite 的 LIKE 对 ASCII 大小写不敏感，
+ * 所以搜 "HELLO" 会命中 "Hello World" 也会命中 "hello world"（实测 total=2）。
+ * 中文标题无影响，这多半就是想要的效果（用户不区分大小写），因此不改 ——
+ * 后人看到"搜大写也命中小写"别当 bug 去修，真要改成大小写敏感得走
+ * `GLOB` 或 `lower()` 双写，那是产品口径变更，不属于本函数。
  */
 export function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, ch => `\\${ch}`);
 }
-
-/** 一次 LEFT JOIN 把点赞数带出来，避免每条作品查一次（N+1） */
-const LIKES_JOIN = `
-  LEFT JOIN (
-    SELECT work_id, COUNT(*) AS c FROM work_likes GROUP BY work_id
-  ) l ON l.work_id = w.id`;
 
 export function listPublishedWorks(opts: {
   limit: number;
@@ -231,10 +261,12 @@ export function getPublishedWork(id: number): WorkDetail | null {
   return toDetail(row);
 }
 
-/** 后台管理用：含草稿。 */
+/** 后台管理用：含草稿。同样走 LIKES_JOIN —— 后台要显示赞数，不能只有列表有。 */
 export function listAllWorks(): AdminWorkDetail[] {
-  return queryAll<WorkRow>(
-    `SELECT * FROM works ORDER BY created_at DESC, id DESC`
+  return queryAll<WorkRow & { likes: number | null }>(
+    `SELECT w.*, l.c AS likes
+       FROM works w ${LIKES_JOIN}
+      ORDER BY w.created_at DESC, w.id DESC`
   ).map(toAdminDetail);
 }
 
@@ -307,7 +339,9 @@ export async function createWork(input: CreateWorkInput): Promise<AdminWorkDetai
 
 export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise<AdminWorkDetail> {
   const row = requireRow(id);
-  const next: WorkRow = { ...row };
+  // next 连 likes 一起带过去：rowById 已经 JOIN 出真值，而本函数不碰 work_likes，
+  // 所以「函数开头读到的赞数」到 return 时仍然成立 —— 不需要为 likes 再查一次库。
+  const next: WorkRow & { likes?: number | null } = { ...row };
   if (typeof patch.title === 'string') next.title = normalizeTitle(patch.title);
   if (typeof patch.description === 'string') next.description = normalizeDescription(patch.description);
   if (typeof patch.published === 'boolean') next.published = patch.published ? 1 : 0;
@@ -349,7 +383,8 @@ export async function replaceWorkImage(
     }
   }
 
-  const next: WorkRow = {
+  // 同上：likes 由 requireRow 的 JOIN 带出，本函数不改赞数，直接透传。
+  const next: WorkRow & { likes?: number | null } = {
     ...row,
     image_key: imageKey,
     thumb_key: thumbKey,
