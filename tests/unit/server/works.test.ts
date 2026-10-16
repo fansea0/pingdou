@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,6 +21,28 @@ async function freshWorks(): Promise<{ works: WorksModule; paths: PathsModule }>
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const WEBP = Buffer.from([0x52, 0x49, 0x46, 0x46]);
+
+type StorageModule = typeof import('../../../server/storage/index.js');
+
+/**
+ * 把缩略图的 put 换成失败（模拟磁盘满 / 权限问题），原图的 put 仍走真实实现。
+ *
+ * 只 spy storage 实例上的方法，不 mock 模块：works.test.ts 其它用例要的是真实落盘，
+ * mock 整个 storage/index.js 会把它们一起废掉。works.ts 与这里是同一个 storage
+ * 对象引用（同一个模块注册表实例），所以 spy 对 works.ts 可见。
+ */
+async function failThumbPut(): Promise<() => void> {
+  const { storage } = (await import('../../../server/storage/index.js')) as StorageModule;
+  const real = storage.put.bind(storage);
+  const spy = vi
+    .spyOn(storage, 'put')
+    .mockImplementation((key: string, body: Buffer, contentType: string) =>
+      key.endsWith('-t.webp')
+        ? Promise.reject(new Error('disk full (simulated)'))
+        : real(key, body, contentType)
+    );
+  return () => spy.mockRestore();
+}
 
 beforeEach(() => {
   delete process.env.PINGDOU_DATA_DIR;
@@ -108,6 +130,31 @@ describe('createWork', () => {
     const { works } = await freshWorks();
     const w = await works.createWork({ image: { body: PNG, mime: 'image/png' } });
     expect(w.thumbUrl).toBe(w.imageUrl);
+  });
+
+  // 护栏：thumb_key 一旦落库就是「这个文件存在」的承诺。写盘失败还照记，
+  // 会留下一条指向不存在文件的记录（/media/...-t.webp 永久 404、前台破图），
+  // 而且后台的「无缩略图」标记判据是 thumbUrl === imageUrl，恰好标不出这种故障。
+  // 降级语义不变：缩略图写失败仍然不抛错，只是 DB 不再声称有那个文件。
+  it('缩略图写盘失败时降级为无缩略图，且 DB 不记不存在的 key', async () => {
+    const { works, paths } = await freshWorks();
+    const restore = await failThumbPut();
+    try {
+      const w = await works.createWork({
+        title: 'A',
+        image: { body: PNG, mime: 'image/png' },
+        thumb: { body: WEBP, mime: 'image/webp' },
+      });
+      // 记录只指向真实存在的文件
+      expect(w.thumbUrl).toBe(w.imageUrl);
+      const files = readdirSync(join(paths.PATHS.mediaDir, 'works'));
+      expect(files.filter(f => f.endsWith('-t.webp'))).toEqual([]);
+      expect(files).toEqual([w.imageUrl.split('/').pop()!]);
+      // 重启后从 DB 读出来同样是「无缩略图」，不是启动时侥幸
+      expect(works.listAllWorks()[0].thumbUrl).toBe(w.imageUrl);
+    } finally {
+      restore();
+    }
   });
 
   it('published 缺省为 true，字符串 "0" 解析为 false', async () => {
@@ -225,6 +272,30 @@ describe('replaceWorkImage', () => {
     const { works } = await freshWorks();
     await expect(works.replaceWorkImage(9999, { body: PNG, mime: 'image/png' }))
       .rejects.toThrow(/not found/);
+  });
+
+  // 同 createWork：写失败时不能把候选 key 写进 DB，否则换图后 thumbUrl 指向一个
+  // 从未落盘的文件 —— 而且旧缩略图已经在下面被删了，前台列表直接破图。
+  it('新缩略图写盘失败时 thumb_key 清空（降级为无缩略图）', async () => {
+    const { works, paths } = await freshWorks();
+    const w = await works.createWork({
+      image: { body: PNG, mime: 'image/png' },
+      thumb: { body: WEBP, mime: 'image/webp' },
+    });
+    const restore = await failThumbPut();
+    try {
+      const next = await works.replaceWorkImage(
+        w.id,
+        { body: PNG, mime: 'image/png' },
+        { body: WEBP, mime: 'image/webp' }
+      );
+      expect(next.thumbUrl).toBe(next.imageUrl);
+      expect(readdirSync(join(paths.PATHS.mediaDir, 'works')).filter(f => f.endsWith('-t.webp')))
+        .toEqual([]);
+      expect(works.listAllWorks()[0].thumbUrl).toBe(next.imageUrl);
+    } finally {
+      restore();
+    }
   });
 });
 

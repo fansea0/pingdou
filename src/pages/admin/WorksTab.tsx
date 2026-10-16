@@ -20,6 +20,7 @@ const THUMB_QUALITY = 0.82;
  * 引入 sharp 会带来原生模块编译，拖慢 npm ci 和 CI 部署。
  *
  * 失败返回 null（不阻断上传），服务端会把 thumb_key 留空、前端回落用原图当缩略图。
+ * 浏览器不支持 WebP 编码时同样返回 null —— 那不是「检查失败」，见 toBlob 处的注释。
  *
  * width/height 返回的是**原图**尺寸（不是缩略图尺寸）：服务端把它存进 works.width/height，
  * 详情页的「成品尺寸」直接读这两个字段。不传的话详情页会显示「未知」。
@@ -47,7 +48,11 @@ async function makeThumb(file: File): Promise<{ blob: Blob; width: number; heigh
     const blob = await new Promise<Blob | null>(resolve =>
       canvas.toBlob(resolve, 'image/webp', THUMB_QUALITY)
     );
-    if (!blob) return null;
+    // 必须验 blob.type：按 HTML 规范，浏览器不支持 WebP 编码时 toBlob 会**静默回落**
+    // 成 image/png，而不是回 null。blob 非空就把 PNG 当缩略图传上去的话，
+    // 服务端 extFor 拿到 .png ≠ .webp 直接抛 `thumb must be image/webp`（400），
+    // 整次上传连带原图一起失败 —— 比没有缩略图糟得多。
+    if (!blob || blob.type !== 'image/webp') return null;
     return { blob, width: srcWidth, height: srcHeight };
   } catch (e) {
     console.warn('[works] 缩略图生成失败，降级为无缩略图', e);
@@ -66,7 +71,34 @@ export function WorksTab() {
   const [description, setDescription] = useState('');
   const [published, setPublished] = useState(true);
 
+  /**
+   * 每个作品正在编辑、尚未保存的字段。存在草稿期间输入框显示草稿值，
+   * 保存成功、草稿清空后回落成服务端返回的 work.title/work.description ——
+   * 于是「服务端规范化后的值」（trim / 超长截断 / 空标题补默认名）照样能刷进界面，
+   * 不用像之前那样靠 key 强制重挂载（那会在用户打字途中吞掉未保存的输入）。
+   */
+  const [drafts, setDrafts] = useState<Record<number, { title?: string; description?: string }>>({});
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * 只把响应里真正变动的字段合并回列表，而不是整对象替换。
+   * 两次 PUT 并发返回乱序时，整对象替换会让后到的**旧**快照把先到的更新整体盖掉
+   * （改标题顺手把刚切换的上架状态退回去）。同字段仍是后写为准，
+   * 但跨字段的互相踩踏没了。
+   */
+  const patchWork = useCallback((id: number, patch: Partial<AdminWorkDetail>) => {
+    setWorks(prev => prev.map(w => (w.id === id ? { ...w, ...patch } : w)));
+  }, []);
+
+  const dropDraft = useCallback((id: number) => {
+    setDrafts(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -108,9 +140,10 @@ export function WorksTab() {
   };
 
   const togglePublished = async (work: AdminWorkDetail) => {
+    setError(null);
     try {
       const next = await adminUpdateWork(work.id, { published: !isPublished(work) });
-      setWorks(prev => prev.map(w => (w.id === next.id ? next : w)));
+      patchWork(next.id, { published: next.published, updatedAt: next.updatedAt });
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)));
     }
@@ -118,8 +151,10 @@ export function WorksTab() {
 
   const remove = async (work: AdminWorkDetail) => {
     if (!window.confirm(`删除「${work.title}」？图片文件会一并删掉，无法恢复。`)) return;
+    setError(null);
     try {
       await adminDeleteWork(work.id);
+      dropDraft(work.id);
       setWorks(prev => prev.filter(w => w.id !== work.id));
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)));
@@ -127,9 +162,15 @@ export function WorksTab() {
   };
 
   const saveMeta = async (work: AdminWorkDetail, patch: { title?: string; description?: string }) => {
+    setError(null);
     try {
       const next = await adminUpdateWork(work.id, patch);
-      setWorks(prev => prev.map(w => (w.id === next.id ? next : w)));
+      // 只合并本次请求动过的字段：服务端没参与本次改动的字段不该被旧值带回来
+      patchWork(next.id, {
+        ...(typeof patch.title === 'string' ? { title: next.title } : {}),
+        ...(typeof patch.description === 'string' ? { description: next.description } : {}),
+        updatedAt: next.updatedAt,
+      });
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)));
     }
@@ -188,60 +229,71 @@ export function WorksTab() {
       )}
 
       <ul className="works-admin-list">
-        {works.map(work => (
-          <li key={work.id} className="works-admin-item">
-            <img className="works-admin-thumb" src={work.thumbUrl} alt="" />
-            <div className="works-admin-fields">
-              {/* key 里带 title/description：defaultValue 只在挂载时生效，
-                  服务端把标题规范化后（trim / 超长截断 / 空标题补默认名）返回的新值
-                  必须能把输入框刷出来，否则界面上留着用户输的原样、
-                  存进去的却是另一个值。key 变了就重挂载，顺带解决受控化。 */}
-              <input
-                key={`${work.id}-title-${work.title}`}
-                type="text"
-                defaultValue={work.title}
-                aria-label={`${work.title} 标题`}
-                onBlur={e => {
-                  if (e.target.value !== work.title) saveMeta(work, { title: e.target.value });
-                }}
-              />
-              <textarea
-                key={`${work.id}-desc-${work.description}`}
-                rows={2}
-                defaultValue={work.description}
-                aria-label={`${work.title} 描述`}
-                onBlur={e => {
-                  if (e.target.value !== work.description) {
-                    saveMeta(work, { description: e.target.value });
-                  }
-                }}
-              />
-              {/* thumb_key 为空时服务端回落用原图当缩略图（toSummary: thumb_key || image_key），
-                  于是 thumbUrl === imageUrl，前台列表会真的去拉大图。标出来，
-                  免得站主以为是「列表只加载缩略图」这句文案在骗人。 */}
-              {work.thumbUrl === work.imageUrl && (
-                <span className="works-admin-flag">无缩略图，前台加载的是原图</span>
-              )}
-            </div>
-            <div className="works-admin-actions">
-              <label className="works-admin-check">
+        {works.map(work => {
+          const d = drafts[work.id];
+          return (
+            <li key={work.id} className="works-admin-item">
+              <img className="works-admin-thumb" src={work.thumbUrl} alt="" />
+              <div className="works-admin-fields">
+                {/* 受控 + 草稿态，**不要**改回 defaultValue + key 强制重挂载：
+                    上一轮为解决「defaultValue 不反映服务端规范化值」用了
+                    key={work.id-title-work.title}，结果任何一次保存成功都会重挂载输入框，
+                    用户 blur 后立刻点回来继续打字时，那段未保存的输入会被静默丢弃。
+                    现在保存成功走 patchWork → work.title 变化 → 草稿已清空 →
+                    value 自然回落成服务端值，既不吞输入也不需要 key。 */}
                 <input
-                  type="checkbox"
-                  checked={isPublished(work)}
-                  onChange={() => togglePublished(work)}
+                  type="text"
+                  value={d?.title ?? work.title}
+                  aria-label={`${work.title} 标题`}
+                  onChange={e =>
+                    setDrafts(p => ({ ...p, [work.id]: { ...p[work.id], title: e.target.value } }))
+                  }
+                  onBlur={e => {
+                    const v = e.target.value;
+                    dropDraft(work.id);
+                    if (v !== work.title) saveMeta(work, { title: v });
+                  }}
                 />
-                {work.title}
-              </label>
-              <button
-                type="button"
-                className="works-admin-btn works-admin-btn--danger"
-                onClick={() => remove(work)}
-              >
-                删除 {work.title}
-              </button>
-            </div>
-          </li>
-        ))}
+                <textarea
+                  rows={2}
+                  value={d?.description ?? work.description}
+                  aria-label={`${work.title} 描述`}
+                  onChange={e =>
+                    setDrafts(p => ({ ...p, [work.id]: { ...p[work.id], description: e.target.value } }))
+                  }
+                  onBlur={e => {
+                    const v = e.target.value;
+                    dropDraft(work.id);
+                    if (v !== work.description) saveMeta(work, { description: v });
+                  }}
+                />
+                {/* thumb_key 为空时服务端回落用原图当缩略图（toSummary: thumb_key || image_key），
+                    于是 thumbUrl === imageUrl，前台列表会真的去拉大图。标出来，
+                    免得站主以为是「列表只加载缩略图」这句文案在骗人。 */}
+                {work.thumbUrl === work.imageUrl && (
+                  <span className="works-admin-flag">无缩略图，前台加载的是原图</span>
+                )}
+              </div>
+              <div className="works-admin-actions">
+                <label className="works-admin-check">
+                  <input
+                    type="checkbox"
+                    checked={isPublished(work)}
+                    onChange={() => togglePublished(work)}
+                  />
+                  {work.title}
+                </label>
+                <button
+                  type="button"
+                  className="works-admin-btn works-admin-btn--danger"
+                  onClick={() => remove(work)}
+                >
+                  删除 {work.title}
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

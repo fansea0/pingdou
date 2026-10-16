@@ -244,6 +244,39 @@ describe('admin 作品接口', () => {
     expect(r.status).toBe(400);
   });
 
+  // 护栏：后台列表要带 published，后台全靠它区分草稿 —— toAdminDetail 掉这个字段时
+  // 界面上已上架/草稿会长得一模一样，而且 listAllWorks 侧的用例只断言长度，覆盖不到。
+  // 同时反向守住公开契约：/api/public/* 一律不带 published。
+  it('后台列表带 published 区分草稿，公开接口不带该字段', async () => {
+    const { app } = await bootApp();
+    const cookie = await loginAdmin(app);
+    const draft = await request(app)
+      .post('/api/admin/works')
+      .set('Cookie', cookie)
+      .field('title', '草稿')
+      .field('published', '0')
+      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' });
+    expect(draft.status).toBe(200);
+    const pub = await request(app)
+      .post('/api/admin/works')
+      .set('Cookie', cookie)
+      .field('title', '已上架')
+      .attach('file', PNG, { filename: 'b.png', contentType: 'image/png' });
+    expect(pub.status).toBe(200);
+
+    const list = await request(app).get('/api/admin/works').set('Cookie', cookie);
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(2);
+    const byTitle = Object.fromEntries(
+      list.body.map((w: { title: string; published: boolean }) => [w.title, w.published])
+    );
+    expect(byTitle).toEqual({ 已上架: true, 草稿: false });
+
+    const detail = await request(app).get(`/api/public/works/${pub.body.id}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body).not.toHaveProperty('published');
+  });
+
   it('创建作品：published=0 存为草稿', async () => {
     const { app } = await bootApp();
     const cookie = await loginAdmin(app);
@@ -256,6 +289,7 @@ describe('admin 作品接口', () => {
     expect((await request(app).get(`/api/public/works/${r.body.id}`)).status).toBe(404);
     const list = await request(app).get('/api/admin/works').set('Cookie', cookie);
     expect(list.body).toHaveLength(1);
+    expect(list.body[0].published).toBe(false);
   });
 
   it('改元数据 / 换图 / 删除', async () => {

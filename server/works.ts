@@ -199,17 +199,24 @@ export async function createWork(input: CreateWorkInput): Promise<AdminWorkDetai
 
   const hex = randomBytes(8).toString('hex');
   const imageKey = `works/${hex}${ext}`;
-  const thumbKey = input.thumb ? `works/${hex}-t.webp` : '';
+  // 写成功才赋值的理由：thumb_key 一旦落库就是「这个文件存在」的承诺。写失败还照记，
+  // 会留下一条指向不存在文件的记录 —— /media/works/<hex>-t.webp 永久 404，前台列表
+  // 破图；而后台的「无缩略图」标记恰好判据是 thumbUrl === imageUrl，永远标不出这种故障。
+  let thumbKey = '';
   let created: WorkRow[] = [];
 
   try {
     await storage.put(imageKey, input.image.body, input.image.mime);
     if (input.thumb) {
-      // 缩略图写失败不回滚原图和记录：没有缩略图是可降级状态
-      // （前端会用原图当缩略图），强行失败反而让用户白传一次大图
-      await storage.put(thumbKey, input.thumb.body, input.thumb.mime).catch(e => {
+      const candidate = `works/${hex}-t.webp`;
+      try {
+        await storage.put(candidate, input.thumb.body, input.thumb.mime);
+        thumbKey = candidate;
+      } catch (e) {
+        // 降级而不是整体失败：没有缩略图是可降级状态（前端会用原图当缩略图），
+        // 强行失败反而让用户白传一次大图。降级后 thumb_key 留空，DB 不再声称有那个文件。
         console.warn('[works] 缩略图写入失败，降级为无缩略图', e);
-      });
+      }
     }
 
     const now = Date.now();
@@ -280,13 +287,18 @@ export async function replaceWorkImage(
 
   const hex = randomBytes(8).toString('hex');
   const imageKey = `works/${hex}${ext}`;
-  const thumbKey = thumb ? `works/${hex}-t.webp` : '';
+  // 同 createWork：写成功才记 key，写失败就不让 DB 声称文件存在
+  let thumbKey = '';
 
   await storage.put(imageKey, image.body, image.mime);
   if (thumb) {
-    await storage.put(thumbKey, thumb.body, thumb.mime).catch(e => {
+    const candidate = `works/${hex}-t.webp`;
+    try {
+      await storage.put(candidate, thumb.body, thumb.mime);
+      thumbKey = candidate;
+    } catch (e) {
       console.warn('[works] 缩略图写入失败，降级为无缩略图', e);
-    });
+    }
   }
 
   const next: WorkRow = {
