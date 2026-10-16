@@ -373,14 +373,14 @@ export interface WorkDetail extends WorkSummary {
 路径是两级而非一级：`storage.publicUrl('works/3f2a….png')` 产出 `/media/works/3f2a….png`（`/media` 是 driver 的 URL 前缀，`works` 是 key 的一部分）。所以 dev 路由写 `/media/works/:filename`，只把最后一段交给正则校验，和 `/products/:filename` 是同一个结构。
 
 ```ts
-const MEDIA_FILENAME_RE = /^[0-9a-f]{16}\.png$/;        // 原图 works/<16hex>.png
-const MEDIA_THUMB_RE    = /^[0-9a-f]{16}-t\.webp$/;     // 缩略图 works/<16hex>-t.webp
+const MEDIA_FILENAME_RE = /^[0-9a-f]{16}\.(png|jpg|webp)$/;   // 原图 works/<16hex>.{png|jpg|webp}
+const MEDIA_THUMB_RE    = /^[0-9a-f]{16}-t\.webp$/;          // 缩略图 works/<16hex>-t.webp
 ```
 
 两个正则都必须测：`/media/works/not-hex.png` 一律 400，不落到 `sendFile` 上给路径穿越留机会。nginx 侧同样建议加一条：
 
 ```nginx
-location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
     alias /var/lib/pingdou/media/works/$file;
 }
 ```
@@ -699,7 +699,7 @@ return <App />;
 `docs/DEPLOY.md` 与 `docs/nginx-https-setup.md` 各补一段：
 
 ```nginx
-location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
     alias /var/lib/pingdou/media/works/$file;
 }
 ```

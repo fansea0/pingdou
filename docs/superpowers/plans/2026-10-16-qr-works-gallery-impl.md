@@ -1336,7 +1336,7 @@ app.get('/api/public/works/:id', (req, res) => {
 
 // dev-only 兜底：把 /media/works/<file> 直读盘。生产走 nginx location 直读，性能更高。
 // 文件名走严格白名单，非法名字一律 400 —— 不落到 sendFile 上给路径穿越留机会。
-const MEDIA_FILENAME_RE = /^[0-9a-f]{16}\.png$/;
+const MEDIA_FILENAME_RE = /^[0-9a-f]{16}\.(png|jpg|webp)$/;
 const MEDIA_THUMB_RE = /^[0-9a-f]{16}-t\.webp$/;
 app.get('/media/works/:filename', (req, res) => {
   const filename = String(req.params.filename ?? '');
@@ -1446,7 +1446,7 @@ Expected: PASS。
 作品原图与缩略图（admin 上传，前台作品库展示）走这条：
 
 ```nginx
-location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
     alias /var/lib/pingdou/media/works/$file;
 }
 ```
