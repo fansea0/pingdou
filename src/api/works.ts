@@ -11,6 +11,12 @@ export interface WorkSummary {
   width: number;
   height: number;
   createdAt: number;
+  /**
+   * 累计点赞数。注意单位是「次」不是「人」：同 IP 对同一张图每天限一次、
+   * 且不支持取消，同一个人第二天可以再赞，所以人数口径在这里是错的。
+   * UI 文案只能写「N 次点赞」。
+   */
+  likes: number;
 }
 
 export interface WorkDetail extends WorkSummary {
@@ -35,11 +41,26 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * 排序方式白名单。非法值由服务端回落 latest，前端不做第三种可能 ——
+ * 类型层先掐死，避免 UI 传出一个服务端不认识的值再靠兜底救。
+ *
+ * 注意：latest 与 hot 都是「本次响应定死」的顺序，点赞只改 likes 数字，
+ * 前端任何时候都不许按 likes 重排 items（见设计文档 §4.2）。
+ */
+export type WorkSort = 'latest' | 'hot';
+
 export async function listWorks(
   limit = 20,
-  offset = 0
+  offset = 0,
+  opts: { q?: string; sort?: WorkSort } = {}
 ): Promise<{ items: WorkSummary[]; total: number }> {
-  const res = await fetch(`${BASE}/public/works?limit=${limit}&offset=${offset}`, {
+  // q 为空串时不拼：URL 里留一个裸 q= 没意义，还让后端多解析一次
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (opts.q) params.set('q', opts.q);
+  // latest 是默认值，不进 query —— 不传 opts 时 URL 与改造前完全一致
+  if (opts.sort && opts.sort !== 'latest') params.set('sort', opts.sort);
+  const res = await fetch(`${BASE}/public/works?${params.toString()}`, {
     credentials: 'include',
   });
   return jsonOrThrow(res);
@@ -47,6 +68,28 @@ export async function listWorks(
 
 export async function fetchWork(id: number): Promise<WorkDetail> {
   const res = await fetch(`${BASE}/public/works/${id}`, { credentials: 'include' });
+  return jsonOrThrow(res);
+}
+
+/**
+ * 点赞。服务端按「每 IP 每图每天一次」幂等：重复点不会重复计数，
+ * alreadyLiked 告知这次是真赞上了还是今天已经赞过。
+ *
+ * likes 是「次」不是「人」，见 WorkSummary.likes 的注释。
+ */
+export async function likeWork(
+  id: number
+): Promise<{ ok: true; likes: number; alreadyLiked: boolean }> {
+  const res = await fetch(`${BASE}/public/works/${id}/like`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return jsonOrThrow(res);
+}
+
+/** 只读点赞状态。用于页面挂载时恢复「我今天赞过没」，不产生写入。 */
+export async function fetchLikeState(id: number): Promise<{ likes: number; liked: boolean }> {
+  const res = await fetch(`${BASE}/public/works/${id}/like`, { credentials: 'include' });
   return jsonOrThrow(res);
 }
 
