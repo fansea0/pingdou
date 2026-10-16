@@ -348,7 +348,10 @@ async function removeQuietly(key: string): Promise<void> {
  * req.clientIp 传进去），那是统计模块的既有口径，本项目不去动它。
  * 点赞表是新表，且没有任何回溯真实 IP 的需求，所以这里存真 hash。
  *
- * 盐取站点域名，防止彩虹表反查。
+ * 关于盐的防护力，别高估它：它挡的是「明文落库」和「拿已知 IP 直接比对查表」，
+ * **挡不住暴力枚举** —— IPv4 空间只有 2^32 ≈ 43 亿，有 GPU 时全空间跑完是小时级，
+ * 截断到 64 bit 更是随便撞。点赞数据的敏感性本来就低（拿不到地理位置之外的更多信息，
+ * 且不提供取消），所以不上 HMAC；盐只当「别让明文 IP 直接躺在表里」的最低成本措施。
  */
 const WORKS_IP_SALT = 'https://www.xn--muu023g.xyz/';
 
@@ -364,7 +367,12 @@ export interface LikeState {
   liked: boolean;
 }
 
-/** 该作品的总赞数（累计所有天） */
+/**
+ * 该作品的总赞数（累计所有天）。
+ *
+ * WHERE work_id = ? 是「赞数按作品隔离」的唯一保证，去掉它会让每张作品都返回
+ * 全表计数。tests 里「赞数按作品隔离，不串号」那条用例就是钉这里的。
+ */
 function countLikes(workId: number): number {
   const rows = queryAll<{ c: number }>(
     `SELECT COUNT(*) AS c FROM work_likes WHERE work_id = ?`,
@@ -376,9 +384,16 @@ function countLikes(workId: number): number {
 /**
  * 点赞。幂等由复合主键保证。
  *
- * 用 `INSERT OR IGNORE ... RETURNING` 而不是「先 SELECT 再判断」：前者是单语句、
- * 并发安全（两个并发请求不会都判定为新赞），且返回行数直接就是「新赞还是重复赞」。
+ * **并发安全的真正来源**是「同步函数 + Node 单线程 + 复合主键唯一」这三个条件凑在一起，
+ * 不是 `RETURNING` 单语句本身：整个 insert→判断→返回之间没有 await，两个并发 HTTP
+ * 请求根本不会交错执行。即便真交错，主键唯一性也会让第二个请求的插入被 OR IGNORE
+ * 吃掉。`RETURNING` 的作用只是把「这次是不是新赞」直接读出来，省掉一次 SELECT。
  * 选 execReturning 而不是裸 queryAll，是为了让这一行真的落盘（queryAll 不标脏）。
+ *
+ * **校验作品存在性**靠 `INSERT ... SELECT ... FROM works WHERE id = ?`：work_likes 没有
+ * 外键（works 表本身也没有外键），如果直接 VALUES 一个来路不明的 workId，会给不存在的
+ * 作品写进一行垃圾，并让 countLikes 对任意 id 都返回虚假的正数。改成 SELECT 之后，
+ * 作品不存在 → 0 行 → liked:false、计数 0，天然无副作用，也不用抛异常（签名保持不变）。
  *
  * 注意语义：同一 IP 次日可以再给同一张图点赞，计数会累加 —— 这是「热度」而非「人数」，
  * 前端文案必须是「N 次点赞」而不是「N 人喜欢」。
@@ -386,13 +401,23 @@ function countLikes(workId: number): number {
 export function addLike(workId: number, ipHash: string, now: number = Date.now()): LikeState {
   const inserted = execReturning(
     `INSERT OR IGNORE INTO work_likes (work_id, day, ip_hash, created_at)
-     VALUES (?, ?, ?, ?) RETURNING work_id`,
-    [workId, isoDay(now), ipHash, now]
+     SELECT id, ?, ?, ? FROM works WHERE id = ? RETURNING work_id`,
+    [isoDay(now), ipHash, now, workId]
   ).length > 0;
   return { likes: countLikes(workId), liked: inserted };
 }
 
-/** 只读不改。GET 与 POST 共用它，保证两条路由的口径一致。 */
+/**
+ * 只读不改。GET 与 POST 共用它，保证两条路由的口径一致。
+ *
+ * `AND day = ?` 是「按天限流」的全部实现，去掉它就会让昨天点过的用户今天仍显示已赞，
+ * 而 addLike 却拒收 —— 两边口径打架，前端按钮状态还会跟计数对不上。
+ * 那条「昨天点过赞，今天 liked 仍为 false」的用例钉的就是它。
+ *
+ * 可感知后果：`day` 走 db.isoDay()，**是 UTC**（与 events / sessions 全仓统一口径）。
+ * 东八区用户本地 00:00–08:00 的点赞会被算作前一天，所以早上 8 点前他再点一次会被拒，
+ * 按钮显示「未点赞」但点不动。这是全仓统一口径的既定代价，不是这里引入的。
+ */
 export function likeStateOf(workId: number, ipHash: string, now: number = Date.now()): LikeState {
   const rows = queryAll(
     `SELECT 1 AS ok FROM work_likes WHERE work_id = ? AND day = ? AND ip_hash = ?`,

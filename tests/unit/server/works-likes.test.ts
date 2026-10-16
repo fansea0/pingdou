@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import initSqlJs from 'sql.js';
 
 let tmp = '';
 let works: typeof import('../../../server/works.js');
@@ -79,6 +80,32 @@ describe('addLike 幂等', () => {
     const next = works.addLike(id, 'iphash-a', Date.parse('2026-10-18T10:00:00Z'));
     expect(next).toEqual({ likes: 2, liked: true });
   });
+
+  it('赞数按作品隔离，不串号', async () => {
+    const a = await seedWork('A');
+    const b = await seedWork('B');
+    works.addLike(a, 'iphash-a');
+    works.addLike(b, 'iphash-b');
+    expect(works.likeStateOf(a, 'iphash-a').likes).toBe(1);
+  });
+
+  it('昨天点过赞，今天 liked 仍为 false', async () => {
+    const id = await seedWork();
+    works.addLike(id, 'iphash-a', Date.parse('2026-10-17T10:00:00Z'));
+    expect(works.likeStateOf(id, 'iphash-a', Date.parse('2026-10-18T10:00:00Z')))
+      .toEqual({ likes: 1, liked: false });
+  });
+});
+
+describe('不存在的作品', () => {
+  it('addLike 对非法 id 不写行、不返回虚假赞数', async () => {
+    expect(works.addLike(9999, 'iphash-x')).toEqual({ likes: 0, liked: false });
+    expect(db.queryAll('SELECT 1 FROM work_likes WHERE work_id = ?', [9999]).length).toBe(0);
+  });
+
+  it('likeStateOf 对非法 id 返回 0 / false', async () => {
+    expect(works.likeStateOf(9999, 'iphash-x')).toEqual({ likes: 0, liked: false });
+  });
 });
 
 describe('likeStateOf', () => {
@@ -104,5 +131,48 @@ describe('DB 里不落明文 IP', () => {
     const rows = db.queryAll<{ ip_hash: string }>('SELECT ip_hash FROM work_likes');
     expect(rows[0]?.ip_hash).not.toBe(raw);
     expect(rows[0]?.ip_hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+describe('落盘', () => {
+  /**
+   * 真正去磁盘上的 stats.db 里数行数（用只读的第二个连接），而不是查内存库。
+   *
+   * 查内存库是查不出问题的：不管 flushNow 有没有真的写文件，sql.js 的内存实例里
+   * 那行都还在，断言照样通过 —— 换成损坏实现（execReturning → queryAll）也是绿的。
+   * 只有重开磁盘文件才能证明这行真的被写出去了。
+   */
+  async function likesOnDisk(workId: number): Promise<number> {
+    const distDir = resolve(process.cwd(), 'node_modules/sql.js/dist');
+    const SQL = await initSqlJs({ locateFile: (f: string) => resolve(distDir, f) });
+    const disk = new SQL.Database(new Uint8Array(readFileSync(join(tmp, 'stats.db'))));
+    const stmt = disk.prepare(`SELECT COUNT(*) AS c FROM work_likes WHERE work_id = ?`);
+    try {
+      stmt.bind([workId]);
+      let n = 0;
+      while (stmt.step()) n = Number(stmt.getAsObject().c);
+      return n;
+    } finally {
+      stmt.free();
+      disk.close();
+    }
+  }
+
+  it('点赞会落盘（不依赖后续无关写操作）', async () => {
+    const id = await seedWork();
+    works.addLike(id, 'iphash-a');
+    // seedWork 里的 createWork 自己调过 flushNow，那时 dirty 已被复位成 false，
+    // 所以之后没有任何别的写操作在标脏。这里能写出去，只能是 addLike 自己标了脏
+    // —— 这正是 execReturning 存在的理由。
+    db.flushNow();
+    expect(await likesOnDisk(id)).toBe(1);
+  });
+
+  it('重复点赞不落新行（内存与磁盘一致）', async () => {
+    const id = await seedWork();
+    works.addLike(id, 'iphash-a');
+    works.addLike(id, 'iphash-a');
+    db.flushNow();
+    expect(await likesOnDisk(id)).toBe(1);
   });
 });

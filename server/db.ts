@@ -265,7 +265,8 @@ export function execReturning<T = Record<string, unknown>>(
   return rows;
 }
 
-export function runInTransaction<T>(fn: () => T): T {  const database = requireDb();
+export function runInTransaction<T>(fn: () => T): T {
+  const database = requireDb();
   database.exec('BEGIN');
   try {
     const result = fn();
