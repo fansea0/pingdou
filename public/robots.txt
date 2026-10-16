@@ -10,4 +10,7 @@ Disallow: /statics
 # 纯 JSON 接口，抓取没有内容价值，只浪费抓取预算
 Disallow: /api/
 
+# 作品原图 / 缩略图目录，内容价值为零，只消耗抓取预算
+Disallow: /media/
+
 Sitemap: https://www.xn--muu023g.xyz/sitemap.xml

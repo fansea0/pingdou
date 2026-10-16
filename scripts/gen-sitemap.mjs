@@ -8,22 +8,24 @@
  * 提交即更新，永不过期；拿不到 git（例如 CI 里只 rsync 了源码）时
  * 退回当天日期。
  *
- * 只输出首页：站点是单页工具应用，/statics 是登录后的后台，
- * 本来就被 robots.txt 屏蔽，不属于可索引内容。
+ * 输出首页 + 作品库列表页。单作品详情页（/works/:id）刻意不进 sitemap：
+ * 作品数量随上传实时变动，维护逐条清单的成本高于收益，且本站是纯 SPA，
+ * 详情页是客户端渲染，进 sitemap 只会给爬虫一批收录质量差的 URL。
+ * 它们靠 /works 里的链接被爬到。
  *
  * 刻意不写 <changefreq>：百度和 Google 都已不参考这个字段，
  * 留着只会变成一个纯装饰性的错误信号。
  *
  * 权威域写死为 www + punycode，必须与 index.html 的 canonical、
- * robots.txt 的 Sitemap 行保持一致——改域名三处一起改。
+ * robots.txt 的 Sitemap 行保持一致——改域名三处一起改
+ * （实际字面量只有 scripts/site-config.mjs 一处，其余从这里读）。
  */
 
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-const SITE_URL = 'https://www.xn--muu023g.xyz/';
+import { SITE_URL, WORKS_URL } from './site-config.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const sitemapPath = path.join(repoRoot, 'public', 'sitemap.xml');
@@ -53,6 +55,10 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>${SITE_URL}</loc>
+    <lastmod>${lastmod}</lastmod>
+  </url>
+  <url>
+    <loc>${WORKS_URL}</loc>
     <lastmod>${lastmod}</lastmod>
   </url>
 </urlset>

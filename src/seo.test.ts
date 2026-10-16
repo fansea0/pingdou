@@ -98,6 +98,8 @@ describe('homepage SEO contract', () => {
     expect(robotsTxt).toContain('Disallow: /statics');
     // 纯 JSON 接口，抓取没有内容价值
     expect(robotsTxt).toContain('Disallow: /api/');
+    // 作品原图 / 缩略图目录本身不该被爬（作品页通过 /works 被爬到）
+    expect(robotsTxt).toContain('Disallow: /media/');
     expect(robotsTxt).toContain(`Sitemap: ${SITE_URL}sitemap.xml`);
     expect(robotsTxt).not.toMatch(/^Disallow:\s*\/\s*(?:#.*)?$/m);
   });
@@ -119,6 +121,17 @@ describe('homepage SEO contract', () => {
     const lastmod = sitemapDocument.querySelector('urlset > url > lastmod')?.textContent;
     expect(lastmod).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(lastmod).not.toBe('2026-07-16');
+  });
+
+  it('includes the public works gallery in sitemap', () => {
+    const sitemapDocument = new DOMParser().parseFromString(
+      readProjectFile('public/sitemap.xml'),
+      'application/xml',
+    );
+    const locs = Array.from(sitemapDocument.querySelectorAll('urlset > url > loc')).map(
+      (n) => n.textContent,
+    );
+    expect(locs).toContain(`${SITE_URL}works`);
   });
 
   it('keeps canonical, Open Graph, JSON-LD, robots and sitemap on one host', () => {
