@@ -380,8 +380,8 @@ const MEDIA_THUMB_RE    = /^[0-9a-f]{16}-t\.webp$/;     // 缩略图 works/<16he
 两个正则都必须测：`/media/works/not-hex.png` 一律 400，不落到 `sendFile` 上给路径穿越留机会。nginx 侧同样建议加一条：
 
 ```nginx
-location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ {
-    alias /var/lib/pingdou/media/works/;
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+    alias /var/lib/pingdou/media/works/$file;
 }
 ```
 
@@ -699,14 +699,14 @@ return <App />;
 `docs/DEPLOY.md` 与 `docs/nginx-https-setup.md` 各补一段：
 
 ```nginx
-location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ {
-    alias /var/lib/pingdou/media/works/;
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+    alias /var/lib/pingdou/media/works/$file;
 }
 ```
 
 用正则 `location` 而不是 `/media/` 前缀匹配，让 nginx 层也把非法文件名挡在门外，与 dev 路由的严格度对齐。
 
-注意这条是**正则 location**（`~` 前缀），alias 里的路径要跟着去掉正则捕获到的那段前缀 `works/`，这是 `alias` 在正则 location 下最常见的配错点 —— 写错会 404，而症状和「alias 末尾斜杠漏了」一模一样，排查时容易走偏。`/products/` 那条用的是普通前缀 location，两者写法不能照抄。
+注意这条是**正则 location**（`~` 前缀）。nginx 在正则 location 下用 `alias` 时的替换语义是「用 alias 的值替换掉 URI 中被该正则匹配掉的那一段，剩余部分再追加」—— 所以正则里必须用捕获组把文件名单独摘出来（`(?<file>...)` 配 alias 里的 `$file`）。若正则带 `$` 锚点匹配整条 URI，剩余部分为空，拼出来只有目录没有文件名，恒 404。这个失败模式极易被误判成「alias 末尾漏了斜杠」。`/products/` 那条是普通前缀 location，写法不能照抄。
 
 `assertRuntimePaths()` 补 `mkdirSync(PATHS.mediaDir, { recursive: true })`，与现有 `imagesDir` 兜底并列。
 

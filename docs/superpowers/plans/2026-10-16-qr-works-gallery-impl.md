@@ -1446,16 +1446,20 @@ Expected: PASS。
 作品原图与缩略图（admin 上传，前台作品库展示）走这条：
 
 ```nginx
-location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ {
-    alias /var/lib/pingdou/media/works/;
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+    alias /var/lib/pingdou/media/works/$file;
 }
 ```
 
-⚠️ 这里是**正则 location**（`~` 前缀），不是前缀 `location`——正则 location
-下的 `alias` 必须去掉正则里匹配掉的那段前缀（本例是 `works/`）。写错的症状
-是 404，和「alias 末尾漏了斜杠」完全一样，排查时容易往错的方向走。
+⚠️ 这里是**正则 location**（`~` 前缀），不是前缀 `location`，两者写法不能照抄。
 
-`/products/` 那条是普通前缀 location，两者写法**不能照抄**。
+关键在于 nginx 在正则 location 下用 `alias` 时的替换语义：**用 alias 的值替换掉
+URI 中被这个正则匹配掉的那一段，剩余部分再追加在后面。** 所以正则里必须用捕获组
+把文件名单独摘出来（`(?<file>...)` + alias 里的 `$file`）。
+
+如果写成 `location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ { alias .../media/works/; }`
+—— 正则带 `$` 锚点匹配的是**整条 URI**，剩余部分为空，拼出来只有目录没有文件名，
+**恒 404**。这个失败模式很容易被误判成「alias 末尾漏了斜杠」，排查会走偏。
 ```
 
 在 `docs/DEPLOY.md` 的 troubleshooting 表里追加一行：
