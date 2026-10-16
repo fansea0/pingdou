@@ -106,6 +106,19 @@ describe('listWorks 的搜索与排序参数', () => {
     );
   });
 
+  it('显式传 sort=latest 时不拼 sort（latest 是默认值，与不传 opts 完全一致）', async () => {
+    ok({ items: [], total: 0 });
+    await listWorks(20, 0, { sort: 'latest' });
+    // 断言的是「URL 里没有 sort」，不是「URL 里有 sort=latest」：实现把 latest
+    // 归一为「不传」（service 端回落 latest），所以显式传 latest 必须与不传 opts
+    // 拼出同一条 URL。这条钉住 listWorks 里 `opts.sort !== 'latest'` 那条 guard，
+    // 去掉 guard 后 URL 变成 `...&sort=latest`，本用例变红。
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/public/works?limit=20&offset=0',
+      expect.anything()
+    );
+  });
+
   it('q 为空串时不拼（避免 URL 里出现裸 q=）', async () => {
     ok({ items: [], total: 0 });
     await listWorks(20, 0, { q: '' });
@@ -159,7 +172,20 @@ describe('fetchLikeState', () => {
   it('GET 到正确的 URL', async () => {
     ok({ likes: 3, liked: true });
     await fetchLikeState(7);
-    expect(mockFetch).toHaveBeenCalledWith('/api/public/works/7/like', expect.anything());
+    expect(mockFetch).toHaveBeenCalledWith(
+      '/api/public/works/7/like',
+      expect.objectContaining({ credentials: 'include' })
+    );
+    // 这条才是关键断言。服务端 /api/public/works/:id/like 上 GET 与 POST 同时注册
+    // （server/index.ts:538 / :559），POST 是真写库的点赞接口 —— 一旦这里退化成
+    // POST，用户每次进详情页就会自动点赞一次。
+    //
+    // 不能写 expect.objectContaining({ method: 'GET' })：实现刻意不带 method
+    // 字段（fetch 不带 method 即 GET），那样断言会与实现不符。也不能用
+    // expect.anything()：那是恒真断言，完全约束不到 method，正是「GET 变 POST
+    // 仍然全绿」的根因。所以这里断言 init 上没有 method。
+    const init = mockFetch.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBeUndefined();
   });
 
   it('返回 liked=false 也算成功', async () => {
