@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { LocalDiskDriver, StorageNotFound } from '../../server/storage/localDisk';
 
 let root = '';
@@ -104,12 +104,15 @@ describe('路径穿越防护', () => {
     await expect(driver.put('/etc/passwd', BODY, 'image/png')).rejects.toThrow(/escapes root/);
   });
 
-  it('前缀近似的兄弟目录不算通过 —— media-evil/ 必须被拒', async () => {
-    // 不拼分隔符比较的话，"<root>-evil/x.png" 会被 "<root>" 前缀误判为合法
+  it('前缀近似的兄弟目录不算通过 —— <root>-evil/ 必须被拒', async () => {
+    // key 必须精确解析到刚建的 <root>-evil 本身。只有这样，裸 startsWith(rootDir)
+    // 那种漏拼分隔符的实现才会误判为合法；写成 '../media-evil-x/x.png' 的话，
+    // 它解析到 <root 父目录>/media-evil-x，和 <root> 毫无前缀关系，
+    // 错误实现同样会拒 —— 用例就成了空转，守不住任何东西。
     const sibling = `${root}-evil`;
     mkdirSync(sibling, { recursive: true });
     try {
-      await expect(driver.put('../media-evil-x/x.png', BODY, 'image/png'))
+      await expect(driver.put(`../${basename(root)}-evil/x.png`, BODY, 'image/png'))
         .rejects.toThrow(/escapes root/);
     } finally {
       rmSync(sibling, { recursive: true, force: true });
