@@ -10,6 +10,7 @@ import { renderBeadBoard, padToSquareGrid } from './board';
 import { cropGridToContent, DEFAULT_CROP_PADDING } from './crop';
 import { canvasToBlob, triggerDownload } from './exporter';
 import { applyWatermark, ensureWatermarkIcon } from './watermark';
+import { ensureWorksQrImage, drawWorksQr } from './qr';
 import { simplifyRareColors, summarizeColors } from './colorSimplifier';
 import { applyColorBudget } from './colorBudget';
 import {
@@ -218,10 +219,14 @@ export class Pipeline {
     if (!this.palette) throw new Error('Pipeline not initialized');
     const { indices, outW, outH, mask } = result;
 
+    const qrImage = await ensureWorksQrImage();
     const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
+      qrBandPx: qrImage ? qrImage.naturalHeight : 0,
     }, mask);
     await drawWatermark(canvas);
+    // 水印锚在页眉右侧、二维码锚在底部白带，相隔整个图纸高度，不会互相遮挡
+    if (qrImage) drawWorksQr(canvas, qrImage);
     const blob = await canvasToBlob(canvas);
     triggerDownload(blob, `pingdou-${outW}x${outH}-composite.png`);
   }
@@ -339,15 +344,20 @@ export class Pipeline {
           fontPx: 12,
           mask: boardMask,
         });
+        // QR 是异步资源：先 await 拿到，才能据此决定留白带多高。
+        // 拿不到就传 0 —— 版式与现状完全一致，导出照常成功。
+        const qrImage = await ensureWorksQrImage();
         const compositeCanvas = renderCompositeFromBoard(
           boardCanvas,
           boardIndices,
           boardW,
           boardH,
           this.palette,
-          boardMask
+          boardMask,
+          { qrBandPx: qrImage ? qrImage.naturalHeight : 0 }
         );
         await drawWatermark(compositeCanvas);
+        if (qrImage) drawWorksQr(compositeCanvas, qrImage);
         const blob = await canvasToBlob(compositeCanvas);
         // 文件名用实际输出尺寸：非方图 / 紧裁后都可能不等于 gridSize
         triggerDownload(blob, `pingdou-${boardW}x${boardH}.png`);

@@ -286,3 +286,56 @@ describe('renderCompositeFromBoard', () => {
     expect(withMask.height).toBe(allContent.height);
   });
 });
+
+describe('qrBandPx 底部留白带', () => {
+  // 2×2 共 4 格，但 palette 只有 3 项：第 4 格回到 0 号色，避免越界取到 undefined
+  const indices = new Uint8Array([0, 1, 2, 0]);
+  const mask = new Uint8Array(4);
+
+  // 图纸取 120×120：逐像素比对会分配 width×stripH×4 的缓冲，
+  // 用 320 的话单张就是 67 万个元素，vitest 深比较会明显拖慢单测。
+  function board(): HTMLCanvasElement {
+    const c = document.createElement('canvas');
+    c.width = 120; c.height = 120;
+    return c;
+  }
+
+  it('不传 qrBandPx 时输出与改动前一致（向后兼容）', () => {
+    const a = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask);
+    const b = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask, {});
+    expect(b.height).toBe(a.height);
+  });
+
+  it('传 qrBandPx 时画布高度恰好增加该值', () => {
+    const base = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask);
+    const withBand = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask, { qrBandPx: 111 });
+    expect(withBand.height - base.height).toBe(111);
+  });
+
+  it('图纸与色卡的纵向位置完全不变 —— 留白带只加在底部', () => {
+    // 版心用到的第一条色卡上边：padding + headerHeight + sectionGap + beadH + sectionGap/2
+    const base = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask);
+    const withBand = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask, { qrBandPx: 111 });
+    const opts = DEFAULT_COMPOSITE_OPTIONS;
+    const beadH = 120;
+    const legendTop =
+      opts.padding + opts.headerHeight + opts.sectionGap + beadH + opts.sectionGap / 2;
+    // 两张图在顶部条带内应逐像素一致 —— 证明留白带没有挤动任何既有内容
+    const ctxA = base.getContext('2d')!;
+    const ctxB = withBand.getContext('2d')!;
+    const stripH = Math.min(legendTop + 60, base.height);
+    expect(stripH).toBeGreaterThan(legendTop); // 确认比对范围真的覆盖到第一条色卡
+    expect(ctxA.getImageData(0, 0, base.width, stripH).data)
+      .toEqual(ctxB.getImageData(0, 0, withBand.width, stripH).data);
+  });
+
+  it('宽度不因留白带而变化', () => {
+    const base = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask);
+    const withBand = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask, { qrBandPx: 111 });
+    expect(withBand.width).toBe(base.width);
+  });
+
+  it('DEFAULT_COMPOSITE_OPTIONS.qrBandPx 默认 0', () => {
+    expect(DEFAULT_COMPOSITE_OPTIONS.qrBandPx).toBe(0);
+  });
+});

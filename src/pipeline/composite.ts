@@ -17,6 +17,8 @@ export interface CompositeOptions {
   readonly chipGap: number;
   readonly chipPaddingX: number;
   readonly swatchSize: number;
+  /** 底部为二维码预留的额外留白带高度（px）。缺省 / 0 = 不预留。 */
+  readonly qrBandPx?: number;
 }
 
 export const DEFAULT_COMPOSITE_OPTIONS: CompositeOptions = {
@@ -30,6 +32,7 @@ export const DEFAULT_COMPOSITE_OPTIONS: CompositeOptions = {
   chipGap: 10,
   chipPaddingX: 10,
   swatchSize: 18,
+  qrBandPx: 0,
 };
 
 /** 图纸很小时（比如 3×3 试跑），版式宽度至少给到这么多 */
@@ -248,6 +251,10 @@ export function renderCompositeFromBoard(
   const legendH = lines.length * opts.chipHeight + Math.max(0, lines.length - 1) * opts.chipGap;
 
   const canvasW = contentW + opts.padding * 2;
+  // 底部边距单独算：二维码的留白带加在这里，页眉/图纸/色卡的纵向布局一律不动，
+  // 所以色卡既不会被压、也不会重排。色卡折行只看 contentW（= canvasW - padding*2），
+  // 与底部边距无关。
+  const bottomPad = opts.padding + (opts.qrBandPx ?? 0);
   const canvasH =
     opts.padding +
     opts.headerHeight +
@@ -255,7 +262,7 @@ export function renderCompositeFromBoard(
     beadCanvas.height +
     opts.sectionGap +
     legendH +
-    opts.padding;
+    bottomPad;
 
   const canvas = document.createElement('canvas');
   canvas.width = canvasW;
