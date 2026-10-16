@@ -6,6 +6,7 @@ import {
   DEFAULT_COMPOSITE_OPTIONS,
 } from '@/pipeline/composite';
 import { rulerBandPx } from '@/pipeline/board';
+import { applyWatermark } from '@/pipeline/watermark';
 import type { Palette } from '@/types';
 
 const palette: Palette = [
@@ -139,37 +140,40 @@ describe('headerSummary', () => {
   });
 });
 
+const originalGetContext = HTMLCanvasElement.prototype.getContext;
+
+afterEach(() => {
+  HTMLCanvasElement.prototype.getContext = originalGetContext;
+});
+
+/**
+ * 记录所有 fillText（连同当时的 font），jsdom 的 canvas 桩不落像素，只能从调用侧断言。
+ * 调用方负责在渲染前调用；每个用例结束由上面的 afterEach 恢复 getContext。
+ */
+function captureFillText(): { text: string; x: number; font: string }[] {
+  const calls: { text: string; x: number; font: string }[] = [];
+  HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, id: string) {
+    const ctx = originalGetContext.call(this, id) as unknown as
+      | { fillText: (t: string, x: number, y: number) => void; font: string }
+      | null;
+    if (!ctx) return null;
+    return new Proxy(ctx, {
+      get(target, prop) {
+        if (prop === 'fillText') {
+          return (t: string, x: number, y: number) => {
+            calls.push({ text: String(t), x, font: target.font });
+            target.fillText(t, x, y);
+          };
+        }
+        const value = (target as unknown as Record<string | symbol, unknown>)[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  } as typeof HTMLCanvasElement.prototype.getContext;
+  return calls;
+}
+
 describe('header estimate placement', () => {
-  const originalGetContext = HTMLCanvasElement.prototype.getContext;
-
-  afterEach(() => {
-    HTMLCanvasElement.prototype.getContext = originalGetContext;
-  });
-
-  /** 记录所有 fillText，jsdom 的 canvas 桩不落像素，只能从调用侧断言 */
-  function captureFillText(): { text: string; x: number }[] {
-    const calls: { text: string; x: number }[] = [];
-    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, id: string) {
-      const ctx = originalGetContext.call(this, id) as unknown as
-        | { fillText: (t: string, x: number, y: number) => void }
-        | null;
-      if (!ctx) return null;
-      return new Proxy(ctx, {
-        get(target, prop) {
-          if (prop === 'fillText') {
-            return (t: string, x: number, y: number) => {
-              calls.push({ text: String(t), x });
-              target.fillText(t, x, y);
-            };
-          }
-          const value = (target as unknown as Record<string | symbol, unknown>)[prop];
-          return typeof value === 'function' ? value.bind(target) : value;
-        },
-      });
-    } as typeof HTMLCanvasElement.prototype.getContext;
-    return calls;
-  }
-
   it('draws the estimate to the right of the main header line', () => {
     const calls = captureFillText();
     const indices = new Uint8Array(400);
@@ -290,6 +294,7 @@ describe('renderCompositeFromBoard', () => {
 describe('qrBandPx 底部留白带', () => {
   const OUT_W = 30;
   const OUT_H = 14;
+  const BAND = 111;
   // palette 只有 3 项，按 i % 3 取色：既铺满整块图纸，又不会越界取到 undefined
   const indices = Uint8Array.from(
     { length: OUT_W * OUT_H },
@@ -297,43 +302,61 @@ describe('qrBandPx 底部留白带', () => {
   );
   const mask = new Uint8Array(OUT_W * OUT_H);
 
-  // 图纸取 1000×450（横向大板）：成品画布约 1040×598，短边 598 正好落进
-  // brandKeepOutPx「不被 14px 字号下限压平」的区间（短边×0.025 > 14 即短边 > 560），
-  // 也就是底部加 111px 留白带真的会改变品牌预留宽的区间。
-  // 旧的 120×120 fixture 短边只有 340，被 max(14, …) 压平，留白带怎么加
-  // keepOut 都不动，这条守卫用例等于没有判别力。
-  function board(): HTMLCanvasElement {
+  /**
+   * 横向大图纸（成品画布约 1040×598）。只给「只读 canvas.width / canvas.height
+   * 的数值断言」和 fillText 观测用 —— 这两类断言都不做 getImageData，开销可忽略。
+   * 短边（高度）598 落在 brandKeepOutPx「不被 14px 下限压平」的区间里
+   * （min(W,H)*0.025 > 14），所以加留白带后预留宽真的会跟着变。
+   */
+  function bigLandscapeBoard(): HTMLCanvasElement {
     const c = document.createElement('canvas');
     c.width = 1000; c.height = 450;
     return c;
   }
 
-  it('fixture 确实落在 keepOut 会变的横向区间内（否则下面的守卫用例是空跑）', () => {
-    const base = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask);
-    const withBand = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: 111 });
-    expect(base.width).toBeGreaterThan(base.height);           // 横向：短边是高度
-    expect(Math.min(base.width, base.height)).toBeGreaterThan(560);
-    expect(Math.min(withBand.width, withBand.height)).toBeLessThan(2560); // 未触到 64px 上限
+  /**
+   * 小图纸（成品画布约 340×268）。逐像素比对那条必须用它：
+   * 「加留白带后图纸与色卡的纵向位置一像素未动」这个命题在小画布上同样成立，
+   * 但大 fixture 下这一条要 5.9s，越过 vitest 默认 5s 阈值，只能靠用例级
+   * timeout 补救 —— 那是隐患不是余量，慢机器 / CI 上直接红。
+   * 这里刻意不加用例级 timeout：默认 5s 阈值本身就是这道用例的性能护栏，
+   * 哪天有人把 fixture 换回大板，它会因超时变红，正是我们想要的。
+   */
+  function smallBoard(): HTMLCanvasElement {
+    const c = document.createElement('canvas');
+    c.width = 120; c.height = 120;
+    return c;
+  }
+
+  it('横向大 fixture 的短边（高度）随留白带变长，且仍在 brandKeepOutPx 的比例区间内', () => {
+    const base = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask);
+    const withBand = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: BAND });
+    // 横向板：短边是高度
+    expect(base.width).toBeGreaterThan(base.height);
+    // 短边 × 0.025 落在 (14, 64) 内 → brandKeepOutPx 按比例缩放，既没被下限压平
+    // 也没被上限封顶，留白带一变，预留宽就跟着变（下面 keepOut 用例的前提）
+    expect(Math.min(base.width, base.height) * 0.025).toBeGreaterThan(14);
+    expect(Math.min(withBand.width, withBand.height) * 0.025).toBeLessThan(64);
   });
 
   it('不传 qrBandPx 时输出与改动前一致（向后兼容）', () => {
-    const a = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask);
-    const b = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask, {});
+    const a = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask);
+    const b = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask, {});
     expect(b.height).toBe(a.height);
   });
 
   it('传 qrBandPx 时画布高度恰好增加该值', () => {
-    const base = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask);
-    const withBand = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: 111 });
-    expect(withBand.height - base.height).toBe(111);
+    const base = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask);
+    const withBand = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: BAND });
+    expect(withBand.height - base.height).toBe(BAND);
   });
 
   it('图纸与色卡的纵向位置完全不变 —— 留白带只加在底部', () => {
     // 版心用到的第一条色卡上边：padding + headerHeight + sectionGap + beadH + sectionGap/2
-    const base = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask);
-    const withBand = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: 111 });
+    const base = renderCompositeFromBoard(smallBoard(), indices, OUT_W, OUT_H, palette, mask);
+    const withBand = renderCompositeFromBoard(smallBoard(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: BAND });
     const opts = DEFAULT_COMPOSITE_OPTIONS;
-    const beadH = 450;
+    const beadH = 120;
     const legendTop =
       opts.padding + opts.headerHeight + opts.sectionGap + beadH + opts.sectionGap / 2;
     // 两张图在顶部条带内应逐像素一致 —— 证明留白带没有挤动任何既有内容
@@ -343,15 +366,101 @@ describe('qrBandPx 底部留白带', () => {
     expect(stripH).toBeGreaterThan(legendTop); // 确认比对范围真的覆盖到第一条色卡
     expect(ctxA.getImageData(0, 0, base.width, stripH).data)
       .toEqual(ctxB.getImageData(0, 0, withBand.width, stripH).data);
-  }, 20000); // 逐像素比对 1040×596×4 ≈ 250 万个元素，超出默认 5s 时限
+  });
 
   it('宽度不因留白带而变化', () => {
-    const base = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask);
-    const withBand = renderCompositeFromBoard(board(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: 111 });
+    const base = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask);
+    const withBand = renderCompositeFromBoard(bigLandscapeBoard(), indices, OUT_W, OUT_H, palette, mask, { qrBandPx: BAND });
     expect(withBand.width).toBe(base.width);
   });
 
   it('DEFAULT_COMPOSITE_OPTIONS.qrBandPx 默认 0', () => {
     expect(DEFAULT_COMPOSITE_OPTIONS.qrBandPx).toBe(0);
+  });
+
+  describe('品牌预留位（brandKeepOutPx）永不与页眉信息重叠', () => {
+    // mask 全 0 → 三种颜色都用上、420 颗全部计入，与 headerSummary 的入参一致
+    const MAIN_TEXT = headerSummary(OUT_W, OUT_H, palette.length, OUT_W * OUT_H).main;
+    const BRAND_TEXT = '拼豆.xyz'; // DEFAULT_WATERMARK_OPTIONS.text
+
+    /** 走渲染层同一个 measureText 实现量出某次 fillText 的文字宽度 */
+    function textWidth(call: { text: string; font: string }): number {
+      const probe = document.createElement('canvas').getContext('2d')!;
+      probe.font = call.font;
+      return probe.measureText(call.text).width;
+    }
+
+    /**
+     * 合成一张成品图，再按 pipeline 的方式贴品牌标识，返回 fillText 记录。
+     * 品牌标识的落笔位置就是「品牌预留位」的真实边界 —— 不在测试里复刻
+     * brandKeepOutPx 的公式：公式一改，测试里的常量不会跟着改，断言就成了摆设。
+     */
+    function renderMarked(qrBandPx?: number): { text: string; x: number; font: string }[] {
+      const calls = captureFillText();
+      const canvas = renderCompositeFromBoard(
+        bigLandscapeBoard(),
+        indices,
+        OUT_W,
+        OUT_H,
+        palette,
+        mask,
+        qrBandPx === undefined ? undefined : { qrBandPx }
+      );
+      // jsdom 下图标不会加载，观测到的品牌左边缘只含文字；真图标还会再往左占
+      // 约 1.4em，由 composite 的 6.2em 预留宽一起兜住。
+      applyWatermark(canvas, { anchor: 'header-right' });
+      return calls;
+    }
+
+    /** 品牌标识右对齐，x 是它的右锚点，左边缘要减去文字宽 */
+    function brandMarkLeft(calls: { text: string; x: number; font: string }[]): number {
+      const mark = calls.find(call => call.text === BRAND_TEXT);
+      if (!mark) throw new Error('品牌标识没有落笔，applyWatermark 的调用方式变了？');
+      return mark.x - textWidth(mark);
+    }
+
+    /**
+     * keepOut 一律用 fillText 观测，不用逐像素：tests/setup.ts 的 canvas 桩里
+     * fillText 是空实现、不落像素，所以无论预留宽涨多少，页眉区域像素都是同一片，
+     * 逐像素比对在两种情况下必然相等 —— 大 fixture 对「观测 keepOut」零收益，
+     * 只会让用例慢十几倍。
+     */
+    it('页眉主信息整段落在品牌标识左侧，留白带把预留位撑宽也压不到它', () => {
+      const base = renderMarked();
+      const withBand = renderMarked(BAND);
+      const opts = DEFAULT_COMPOSITE_OPTIONS;
+
+      const [baseMain, bandMain] = [base, withBand].map(calls =>
+        calls.filter(call => call.text === MAIN_TEXT)
+      );
+      expect(baseMain).toHaveLength(1);
+      expect(bandMain).toHaveLength(1);
+
+      for (const [calls, main] of [[base, baseMain[0]], [withBand, bandMain[0]]] as const) {
+        const markLeft = brandMarkLeft(calls);
+        expect(main.x).toBe(opts.padding); // 主信息左对齐在 padding
+        expect(main.x).toBeLessThan(markLeft);
+        expect(main.x + textWidth(main)).toBeLessThan(markLeft);
+      }
+    });
+
+    it('预估工时被画出来时，也整段落在品牌标识左侧（宁缺勿叠）', () => {
+      const base = renderMarked();
+      const withBand = renderMarked(BAND);
+
+      const [baseTime, bandTime] = [base, withBand].map(calls =>
+        calls.filter(call => /小时/.test(call.text))
+      );
+      // 这个 fixture 下工时右侧还有约 450px 余量，两张画布都画得下 ——
+      // 这条断言同时锁住了「预留宽不会被算得过大、把工时整段吃掉」
+      expect(baseTime).toHaveLength(1);
+      expect(bandTime).toHaveLength(1);
+
+      for (const [calls, time] of [[base, baseTime[0]], [withBand, bandTime[0]]] as const) {
+        const markLeft = brandMarkLeft(calls);
+        expect(time.x).toBeGreaterThan(DEFAULT_COMPOSITE_OPTIONS.padding);
+        expect(time.x + textWidth(time)).toBeLessThan(markLeft);
+      }
+    });
   });
 });

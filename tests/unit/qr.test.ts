@@ -244,11 +244,16 @@ describe('pipeline 接入：二维码留白带真的进了成品图', () => {
   });
 
   it('exportMulti 的成品高度比无码时恰好多出二维码高度', async () => {
-    const base = await exportedCanvas(null, p => p.exportMulti(source(40, 20), 24, 4, [], false, false));
+    // 显式关掉紧裁剪（tightCrop = false）：这条用例只想量「二维码留白带给成品
+    // 加了多少高度」，不该跟着裁剪链路的改动一起变红
+    const exportNoCrop = (p: import('@/pipeline/pipeline').Pipeline) =>
+      p.exportMulti(source(40, 20), 24, 4, [], false, false, false);
+
+    const base = await exportedCanvas(null, exportNoCrop);
     canvasToBlob.mockClear();
     drawWorksQr.mockClear();
 
-    const withQr = await exportedCanvas(QR, p => p.exportMulti(source(40, 20), 24, 4, [], false, false));
+    const withQr = await exportedCanvas(QR, exportNoCrop);
 
     expect(withQr.height - base.height).toBe(QR.naturalWidth);
     expect(drawWorksQr).toHaveBeenCalledWith(withQr, QR);
