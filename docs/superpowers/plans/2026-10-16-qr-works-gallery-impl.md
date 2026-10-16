@@ -50,7 +50,7 @@
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalDiskDriver, StorageNotFound } from '../../server/storage/localDisk';
@@ -67,7 +67,7 @@ afterEach(() => {
   if (root && existsSync(root)) rmSync(root, { recursive: true, force: true });
 });
 
-const BODY = Buffer.from('hello-qr');
+const BODY = Buffer.from('hello-qr'); // 8 字节 —— 下面的 size 断言写死 8，别改成 BODY.byteLength（那样断言就自证了）
 
 describe('LocalDiskDriver put/get 往返', () => {
   it('写入后能原样读回', async () => {
@@ -78,7 +78,7 @@ describe('LocalDiskDriver put/get 往返', () => {
 
   it('put 返回 key / 字节数 / contentType', async () => {
     const info = await driver.put('works/aabbccddeeff0011.png', BODY, 'image/png');
-    expect(info).toEqual({ key: 'works/aabbccddeeff0011.png', size: 12, contentType: 'image/png' });
+    expect(info).toEqual({ key: 'works/aabbccddeeff0011.png', size: 8, contentType: 'image/png' });
   });
 
   it('put 会自动创建缺失的中间目录', async () => {
@@ -102,7 +102,7 @@ describe('LocalDiskDriver head', () => {
   it('存在的文件返回 size', async () => {
     await driver.put('works/aabbccddeeff0011.png', BODY, 'image/png');
     const info = await driver.head('works/aabbccddeeff0011.png');
-    expect(info?.size).toBe(12);
+    expect(info?.size).toBe(8);
   });
 
   it('不存在的文件返回 null 而不是抛错', async () => {
@@ -1926,9 +1926,11 @@ describe('qrBandPx 底部留白带', () => {
   const indices = new Uint8Array([0, 1, 2, 3]);
   const mask = new Uint8Array(4);
 
+  // 图纸取 120×120：逐像素比对会分配 width×stripH×4 的缓冲，
+  // 用 320 的话单张就是 67 万个元素，vitest 深比较会明显拖慢单测。
   function board(): HTMLCanvasElement {
     const c = document.createElement('canvas');
-    c.width = 320; c.height = 320;
+    c.width = 120; c.height = 120;
     return c;
   }
 
@@ -1949,7 +1951,7 @@ describe('qrBandPx 底部留白带', () => {
     const base = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask);
     const withBand = renderCompositeFromBoard(board(), indices, 2, 2, palette, mask, { qrBandPx: 111 });
     const opts = DEFAULT_COMPOSITE_OPTIONS;
-    const beadH = 320;
+    const beadH = 120;
     const legendTop =
       opts.padding + opts.headerHeight + opts.sectionGap + beadH + opts.sectionGap / 2;
     // 两张图在顶部条带内应逐像素一致 —— 证明留白带没有挤动任何既有内容
@@ -2499,14 +2501,19 @@ git commit -m "feat(导航): 抽出 matchRoute 路由 + 新增站点导航栏"
 创建 `src/api/works.test.ts`：
 
 ```ts
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { listWorks, fetchWork } from './works';
 
 const mockFetch = vi.fn();
 
-afterEach(() => {
+// ⚠️ stub 必须装在 beforeEach：装在 afterEach 的话，第一个用例跑的时候
+// 还没有 fetch 替身，会真的发请求。
+beforeEach(() => {
   mockFetch.mockReset();
   vi.stubGlobal('fetch', mockFetch);
+});
+
+afterEach(() => {
   vi.unstubAllGlobals();
 });
 
