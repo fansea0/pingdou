@@ -132,9 +132,9 @@ export function App() {
           <span className="subtitle-palette">（MARD {palette.length} 色）</span>
         </p>
         <SiteStats />
-        {/* 读真实 pathname 而不是写死 "/": App 只在 home 渲染，但 /works/:id
-            在详情页落地前会掉回 App，写死的话导航栏会高亮「生成图纸」。
-            Task 8 补上 WorkDetailPage 后这条分支自然不再被走到，但保留也无害。 */}
+        {/* 读真实 pathname 而不是写死 "/": App 只在 home 或未知路径渲染；
+            未知路径下两个导航项都不高亮，所以读 pathname 与写死 "/" 等价。
+            保留读取是为了将来若引入 client-side 路由，导航栏不会错位。 */}
         <SiteNav current={typeof window !== 'undefined' ? window.location.pathname : '/'} />
       </header>
 

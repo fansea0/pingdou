@@ -19,6 +19,23 @@ interface WorkDetailPageProps {
 const KNOWN_EXTS = new Set(['.png', '.jpg', '.webp']);
 const FALLBACK_EXT = '.png';
 
+/**
+ * Windows 禁止的 9 个文件名字符 + 路径分隔符。
+ *
+ * 为什么需要它：标题是用户可输入的，后端 normalizeTitle 只 trim 和截断，
+ * 不过滤 `/`（评审起真实后端上传过含 `/` 的标题，原样入库）。
+ *
+ * 注意这不是「防路径穿越」—— 浏览器在落盘时本来就会把这些字符消毒成 `_`，
+ * 不存在写出目录的风险。改这里的收益只是让落盘文件名符合我们的预期
+ * （与浏览器自己会做的替换一致，而不是换个字符），避免出现「标题里的
+ * `/` 恰好在 `.` 前面、结果扩展名被算错」这类外观问题。
+ */
+const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|]/g;
+
+function safeFileName(title: string): string {
+  return title.replace(UNSAFE_FILENAME_CHARS, '_').trim() || 'work';
+}
+
 function imageExt(imageUrl: string): string {
   // (?=[?#]|$) 而不是 $：CDN 加签名参数时后缀不再在末尾
   const m = /\.([a-z0-9]+)(?=[?#]|$)/i.exec(imageUrl);
@@ -70,7 +87,11 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
     return (
       <div className="app works-detail">
         <SiteNav current={`/works/${id}`} />
-        <p className="works-detail-state">加载中…</p>
+        {/* 两态都在首次请求返回之后才出现 —— 那时 SR 用户已经听完了文档标题，
+            没有 live region 就不会播报。这里沿用 App.tsx:273 toast 的写法
+            （role="status" + aria-live="polite"），不引入 role="alert"：
+            错误态对访客是普通信息，不是需要打断当前朗读的紧急事件。 */}
+        <p className="works-detail-state" role="status" aria-live="polite">加载中…</p>
       </div>
     );
   }
@@ -82,7 +103,11 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
     return (
       <div className="app works-detail">
         <SiteNav current={`/works/${id}`} />
-        <div className="works-detail-state works-detail-state--error">
+        <div
+          className="works-detail-state works-detail-state--error"
+          role="status"
+          aria-live="polite"
+        >
           <p>作品不存在或已下架</p>
           <a className="works-detail-btn" href="/works">返回作品库</a>
         </div>
@@ -133,11 +158,13 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
               被带 download 的 <a> 引用 → 浏览器直接下载（微信外浏览器 / Safari / Chrome 桌面）
             所以不需要 Content-Disposition，也不需要 dev 路由与 nginx 各写一套 ?dl=1 分支。
             扩展名从 imageUrl 推，不写死 .png —— 原图不保证是 PNG。
+            文件名先过 safeFileName：标题里的 / : 等字符由我们自己替换掉，
+            免得落盘名被浏览器事后消毒成另一副样子（理由见 safeFileName 注释）。
           */}
           <a
             className="works-detail-btn"
             href={work.imageUrl}
-            download={`${work.title}${imageExt(work.imageUrl)}`}
+            download={`${safeFileName(work.title)}${imageExt(work.imageUrl)}`}
           >
             下载原图
           </a>

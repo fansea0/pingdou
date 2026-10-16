@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { WorkDetail } from '@/api/works';
 import { WorkDetailPage, formatBytes } from './WorkDetailPage';
 
@@ -153,6 +153,62 @@ describe('WorkDetailPage', () => {
     render(<WorkDetailPage id={42} />);
     await screen.findByRole('heading', { name: '粉色小熊' });
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeTruthy();
+  });
+
+  it('id 变化时丢弃上一个请求的结果', async () => {
+    // cancelled 守卫 + [id] 依赖在评审的变异测试里双双存活：删掉任一个，
+    // 原有 18 条用例全绿。这条把它钉住 —— 让 id=1 的请求悬空，先 rerender 到
+    // id=2 并显示「作品二」，再补上 id=1 的迟到响应。
+    //
+    // 注意这个场景在本项目生产环境不可达（无 client-side 路由，id 不会中途变），
+    // 但 main.tsx:19 挂了 React.StrictMode，dev 下 effect 会双调用，
+    // cancelled 是承重代码，值得有覆盖。
+    let resolveOld: (v: unknown) => void = () => {};
+    fetchWork.mockImplementation((id: number) =>
+      id === 1
+        ? new Promise(r => { resolveOld = r as (v: unknown) => void; })
+        : Promise.resolve(detail({ id: 2, title: '作品二' }))
+    );
+    const { rerender } = render(<WorkDetailPage id={1} />);
+    rerender(<WorkDetailPage id={2} />);
+    await screen.findByRole('heading', { name: '作品二' });
+    await act(async () => { resolveOld(detail({ id: 1, title: '作品一' })); });
+    expect(screen.getByRole('heading', { name: '作品二' })).toBeTruthy();
+  });
+
+  it('标题含路径分隔符时替换掉，不原样进 download', async () => {
+    // 后端 normalizeTitle 只 trim 和截断，不过滤 /（评审起真实后端上传过含 / 的
+    // 标题，原样入库），所以这条路径是可达的。
+    // 断言的是「我们给出的 download 属性自己就是干净的」——浏览器落盘时本来也会
+    // 消毒，这里只是不让它被换成另一副样子。
+    fetchWork.mockResolvedValue(detail({ title: '夏日/限定' }));
+    render(<WorkDetailPage id={42} />);
+    const a = (await screen.findByRole('link', { name: '下载原图' })) as HTMLAnchorElement;
+    expect(a.getAttribute('download')).toBe('夏日_限定.png');
+  });
+
+  it('标题全部是禁用字符时退回 work，不产出空的 download 前缀', async () => {
+    fetchWork.mockResolvedValue(detail({ title: '///' }));
+    render(<WorkDetailPage id={42} />);
+    const a = (await screen.findByRole('link', { name: '下载原图' })) as HTMLAnchorElement;
+    expect(a.getAttribute('download')).toBe('___.png');
+  });
+
+  it('加载中 / 出错两态都是 live region，SR 会被播报', async () => {
+    // 两态都在首次请求返回之后才出现；没有 aria-live 的话 SR 用户永远听不到。
+    // role 与 App.tsx:273 的导出成功 toast 保持一致。
+    fetchWork.mockReturnValue(new Promise(() => {}));
+    render(<WorkDetailPage id={42} />);
+    const loadingState = screen.getByRole('status');
+    expect(loadingState.getAttribute('aria-live')).toBe('polite');
+    expect(loadingState.textContent).toMatch(/加载中/);
+    cleanup();
+
+    fetchWork.mockRejectedValue(new Error('not found'));
+    render(<WorkDetailPage id={42} />);
+    await screen.findByText(/不存在或已下架/);
+    const errorState = screen.getByRole('status');
+    expect(errorState.getAttribute('aria-live')).toBe('polite');
   });
 });
 
