@@ -12,6 +12,7 @@ import { MobileActionBar } from '@/components/MobileActionBar';
 import { SiteStats } from '@/components/SiteStats';
 import { ProductShowcase } from '@/components/ProductShowcase';
 import { Disclaimer } from '@/components/Disclaimer';
+import { SiteNav } from '@/components/SiteNav';
 import { computeLegend } from '@/pipeline/legend';
 import { estimateAssemblyHours, formatAssemblyHours } from '@/pipeline/timeEstimate';
 import { usePageView, trackImageExport } from '@/hooks/useTracking';
@@ -131,6 +132,7 @@ export function App() {
           <span className="subtitle-palette">（MARD {palette.length} 色）</span>
         </p>
         <SiteStats />
+        <SiteNav current="/" />
       </header>
 
       {error && <p className="error">处理异常：{error.message}</p>}
