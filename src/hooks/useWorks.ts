@@ -52,13 +52,13 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
   /**
    * 「当前这一批数据」的序号，每次首屏 effect 重跑就 +1。
    *
-   * effect 里的 cancelled 标志只能回答「这个 effect 还在不在」，回答不了
-   * 「回来的这份数据是不是现在要的那份」：搜「小」的请求完全可能比搜「小熊」
-   * 的请求后到，cancelled 在这里救不了（它只管自己那次 effect）。序号才是
-   * 唯一的仲裁者 —— 不是最新序号的那份，一律丢掉。
+   * 边界要说准，别夸大：在 effect 内部，seq 其实是 cancelled 的真子集 ——
+   * 序号一变，旧 effect 的 cleanup 必然已经跑过、cancelled 必然已是真。
+   * 所以 effect 里不存在「cancelled 挡不住、只有 seq 能挡」的乱序场景，
+   * 删掉 effect 里的序号校验并不会削弱那里的防护。
    *
-   * loadMore 也在同一个仲裁里：翻页途中用户改了搜索词，那一页属于旧搜索词，
-   * 拼到新结果上就是「两个搜索词混在一起」的列表。
+   * 真正不可替代的是 loadMore：它不在 effect 里，没有任何 cleanup 罩着，
+   * 翻页途中用户改了搜索词/排序时，旧批次的那一页只有靠这个序号才拦得住。
    */
   const seqRef = useRef(0);
 
@@ -87,8 +87,9 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
 
     listWorks(pageSize, 0, { q: debouncedQuery, sort })
       .then(page => {
-        // 三重防护：组件没卸载、effect 没被清理、且这是最新一次请求。
-        // 顺序刻意是 cancelled 在前 —— 它更便宜。
+        // 双重防护：这个 effect 没被清理、且这是最新一次请求。在 effect 内这两条
+        // 其实是重合的（seq 一变，本次 cleanup 必然已跑），这里双写是防御性的 ——
+        // 不可替代的仲裁在 loadMore 那条路上，见 seqRef 的注释。
         if (cancelled || seq !== seqRef.current) return;
         // 整页替换而不是追加：换搜索词/排序后上一批结果不再相关，
         // 留着就是「新词的前 10 条 + 上一个词的第 11-20 条」。
@@ -123,6 +124,11 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
     listWorks(pageSize, offset, { q: debouncedQuery, sort })
       .then(page => {
         pendingRef.current = false;
+        // 必须排在下面那两条 early-return 之前：序号不符时直接 return 会跳过
+        // 结尾的 setLoadingMore(false)，而 loadingMore 这个 state effect 和 reload
+        // 都从不清它 —— 守卫就把「加载更多」永久锁死（hasMore 还是 true，按钮却
+        // 永远点不动）。换搜索词也救不回来，因为没有任何路径会复位它。
+        setLoadingMore(false);
         if (!aliveRef.current) return;
         // 翻页途中 query/sort 变了，这一页已经不属于当前这批了，丢掉。
         // 不丢的话它会拼到新搜索结果后面 —— 正是「换了词还看到旧词的尾巴」。
@@ -136,15 +142,15 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
           return [...prev, ...page.items.filter(i => !seen.has(i.id))];
         });
         setTotal(page.total);
-        setLoadingMore(false);
       })
       .catch((e: unknown) => {
         pendingRef.current = false;
+        // 与 then 分支同理：这里 return 得早，loadingMore 的复位必须提前。
+        setLoadingMore(false);
         if (!aliveRef.current) return;
         if (seq !== seqRef.current) return;
         // 只写 loadMoreError：写 error 会把整个列表顶掉，用户已经看到的卡片全没了。
         setLoadMoreError(e instanceof Error ? e : new Error(String(e)));
-        setLoadingMore(false);
       });
   }, [items.length, loading, loadingMore, pageSize, debouncedQuery, sort]);
 

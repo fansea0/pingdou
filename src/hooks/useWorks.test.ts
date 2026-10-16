@@ -188,6 +188,85 @@ describe('乱序防护（核心）', () => {
     expect(result.current.items.map(i => i.title)).toEqual(['熊结果']);
     expect(result.current.total).toBe(1);
   });
+
+  // 下面两条钉住「序号丢弃那一页时 loadingMore 也要复位」。用排序切换而不是
+  // 改搜索词来制造序号变化：排序是纯按钮、立即发请求，触发窗口真实存在，
+  // 而且不牵扯防抖定时器，断言不会变脆。
+  //
+  // 这条正是评审实测 PROBE_B1 那条卡死路径：序号丢弃时若 return 早于
+  // setLoadingMore(false)，loadingMore 会永久停在 true —— effect 和 reload
+  // 都从不清它，守卫就把之后的每次 loadMore 全挡掉，用户看到「有更多」却
+  // 点不动。换搜索词也救不回来。
+  it('序号丢弃的那一页不会把 loadingMore 永久卡在 true（成功路径）', async () => {
+    const deferreds: Array<{ resolve: (v: unknown) => void }> = [];
+    listWorks.mockImplementation(() => new Promise(res => deferreds.push({ resolve: res })));
+
+    const { result } = renderHook(() => useWorks());
+    await act(async () => {});
+    await act(async () => {
+      deferreds[0]!.resolve({ items: [item(1, 'A')], total: 100 });
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => { result.current.loadMore() });          // 在途（offset=1, sort=latest）
+    expect(deferreds).toHaveLength(2);
+    act(() => { result.current.setSort('hot'); });      // 序号变了，且不发防抖
+    expect(deferreds).toHaveLength(3);
+
+    await act(async () => {                             // 新排序的首屏先到
+      deferreds[2]!.resolve({ items: [item(9, 'H')], total: 100 });
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasMore).toBe(true);
+
+    // 旧批次的在途页后到 —— 数据必须被丢弃
+    await act(async () => {
+      deferreds[1]!.resolve({ items: [item(2, '旧排序第二页')], total: 100 });
+    });
+    expect(result.current.items.map(i => i.title)).toEqual(['H']);
+
+    // 关键：丢弃之后 loadingMore 必须已经复位，否则下面这个请求发不出去
+    expect(result.current.loadingMore).toBe(false);
+    listWorks.mockClear();
+    act(() => { result.current.loadMore(); });
+    expect(listWorks).toHaveBeenCalledTimes(1);
+    expect(listWorks).toHaveBeenCalledWith(20, 1, { q: '', sort: 'hot' });
+  });
+
+  it('序号丢弃的那一页失败时同样要复位 loadingMore（错误路径）', async () => {
+    const deferreds: Array<{
+      resolve: (v: unknown) => void;
+      reject: (r: unknown) => void;
+    }> = [];
+    listWorks.mockImplementation(
+      () => new Promise((res, rej) => deferreds.push({ resolve: res, reject: rej })));
+
+    const { result } = renderHook(() => useWorks());
+    await act(async () => {});
+    await act(async () => {
+      deferreds[0]!.resolve({ items: [item(1, 'A')], total: 100 });
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => { result.current.loadMore(); });          // 这一页最后会失败
+    expect(deferreds).toHaveLength(2);
+    act(() => { result.current.setSort('hot'); });
+    expect(deferreds).toHaveLength(3);
+    await act(async () => {
+      deferreds[2]!.resolve({ items: [item(9, 'H')], total: 100 });
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {                             // 旧批次的在途页失败
+      deferreds[1]!.reject(new Error('boom'));
+    });
+
+    expect(result.current.loadingMore).toBe(false);
+    listWorks.mockClear();
+    act(() => { result.current.loadMore(); });
+    expect(listWorks).toHaveBeenCalledTimes(1);
+    expect(listWorks).toHaveBeenCalledWith(20, 1, { q: '', sort: 'hot' });
+  });
 });
 
 describe('搜索时清空旧结果', () => {
