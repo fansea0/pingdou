@@ -40,6 +40,9 @@ function detail(overrides: Partial<WorkDetail> = {}): WorkDetail {
     bytes: 245_760,
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_100_000,
+    // WorkSummary.likes 是必填的（列表接口一次 SQL 带回，见 server/works.ts 的 toSummary），
+    // 夹具漏掉它会直接 typecheck 失败 —— 与 updatedAt 同理。0 表示这个夹具还没被赞过。
+    likes: 0,
     ...overrides,
   };
 }
