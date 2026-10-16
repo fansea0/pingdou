@@ -19,7 +19,7 @@ export interface WorkDetail extends WorkSummary {
   description: string;
   imageUrl: string;
   bytes: number;
-  /** 后台列表要按「最近改过的」排序，前台用不上，所以只在 detail 上给 */
+  /** 仅 detail 携带：后台要显示「最后改于」，公开列表不暴露 */
   updatedAt: number;
 }
 
@@ -86,13 +86,16 @@ function normalizeDimension(raw: unknown): number {
 }
 
 /**
- * multipart 的文本字段一律是字符串，JSON 接口则是真 boolean。
- * 空串 / '0' / 'false' 都算「明确的关」——未勾选的 checkbox 在 multipart 里
+ * multipart 的文本字段一律是字符串，JSON 接口可能送真 boolean，也可能送数字 0/1。
+ * 空串 / '0' / 'false' / 数字 0 都算「明确的关」——未勾选的 checkbox 在 multipart 里
  * 干脆不出现（undefined），那种情况才走 fallback。
  */
 export function normalizePublished(raw: unknown, fallback: boolean): boolean {
   if (raw === undefined || raw === null) return fallback;
   if (typeof raw === 'boolean') return raw;
+  // 数字必须单独判：JSON 接口会送真 0，严格不等下 0 !== '0' 为真，
+  // 落到末尾会把草稿判成「上架」——静默、且没有任何报错，是最难防的一类。
+  if (typeof raw === 'number') return raw !== 0;
   return raw !== '' && raw !== '0' && raw !== 'false';
 }
 
@@ -181,38 +184,53 @@ export async function createWork(input: CreateWorkInput): Promise<WorkDetail> {
   const hex = randomBytes(8).toString('hex');
   const imageKey = `works/${hex}${ext}`;
   const thumbKey = input.thumb ? `works/${hex}-t.webp` : '';
+  let created: WorkRow[] = [];
 
-  await storage.put(imageKey, input.image.body, input.image.mime);
-  if (input.thumb) {
-    // 缩略图写失败不回滚原图和记录：没有缩略图是可降级状态
-    // （前端会用原图当缩略图），强行失败反而让用户白传一次大图
-    await storage.put(thumbKey, input.thumb.body, input.thumb.mime).catch(e => {
-      console.warn('[works] 缩略图写入失败，降级为无缩略图', e);
-    });
+  try {
+    await storage.put(imageKey, input.image.body, input.image.mime);
+    if (input.thumb) {
+      // 缩略图写失败不回滚原图和记录：没有缩略图是可降级状态
+      // （前端会用原图当缩略图），强行失败反而让用户白传一次大图
+      await storage.put(thumbKey, input.thumb.body, input.thumb.mime).catch(e => {
+        console.warn('[works] 缩略图写入失败，降级为无缩略图', e);
+      });
+    }
+
+    const now = Date.now();
+    runStmt(
+      `INSERT INTO works
+         (title, description, image_key, thumb_key, width, height, bytes, published, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        normalizeTitle(input.title),
+        normalizeDescription(input.description),
+        imageKey,
+        thumbKey,
+        normalizeDimension(input.width),
+        normalizeDimension(input.height),
+        input.image.body.byteLength,
+        normalizePublished(input.published, true) ? 1 : 0,
+        now,
+        now,
+      ]
+    );
+
+    // 用 last_insert_rowid() 而不是 image_key 回读：image_key 碰撞的概率极低，
+    // 但真撞上会「静默返回另一条作品的数据（含它的标题）」，不报错，最难排查。
+    //
+    // 顺序有讲究：必须在 flushNow() 之前读。flushNow() 里的 db.export() 会把
+    // 连接的 last_insert_rowid 复位成 0（sql.js 实测），先 flush 再查必然查不到行。
+    created = queryAll<WorkRow>(`SELECT * FROM works WHERE id = last_insert_rowid()`);
+    if (!created[0]) throw new Error('createWork: missing after insert');
+    flushNow();
+  } catch (err) {
+    // 参数都归一化过了，走到这里基本只剩 DB 故障。但文件已经落盘了 ——
+    // 不回收就是一条没有记录、也没有主键可追溯的孤儿文件，只能靠人肉扫盘清理。
+    await removeQuietly(imageKey);
+    await removeQuietly(thumbKey);
+    throw err;
   }
 
-  const now = Date.now();
-  runStmt(
-    `INSERT INTO works
-       (title, description, image_key, thumb_key, width, height, bytes, published, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      normalizeTitle(input.title),
-      normalizeDescription(input.description),
-      imageKey,
-      thumbKey,
-      normalizeDimension(input.width),
-      normalizeDimension(input.height),
-      input.image.body.byteLength,
-      normalizePublished(input.published, true) ? 1 : 0,
-      now,
-      now,
-    ]
-  );
-  flushNow();
-
-  const created = queryAll<WorkRow>(`SELECT * FROM works WHERE image_key = ?`, [imageKey]);
-  if (!created[0]) throw new Error('createWork: missing after insert');
   return toDetail(created[0]);
 }
 

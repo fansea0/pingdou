@@ -249,8 +249,14 @@ describe('deleteWork', () => {
   it('无缩略图的作品也能删', async () => {
     const { works, paths } = await freshWorks();
     const w = await works.createWork({ image: { body: PNG, mime: 'image/png' } });
+    const img = join(paths.PATHS.mediaDir, 'works', w.imageUrl.split('/').pop()!);
+    expect(existsSync(img)).toBe(true);
+
     await expect(works.deleteWork(w.id)).resolves.toBeUndefined();
-    expect(existsSync(join(paths.PATHS.mediaDir, 'works'))).toBe(true); // 目录留着，不删目录
+    // 光验「不抛错 + works/ 目录还在」是没有判别力的：目录在 createWork 阶段
+    // 就已经是 true，删成功删失败都过。必须验记录真没了、原图真没了。
+    expect(works.listAllWorks()).toHaveLength(0);
+    expect(existsSync(img)).toBe(false);
   });
 
   it('对不存在的 id 抛 work not found', async () => {
@@ -280,5 +286,11 @@ describe('normalizePublished', () => {
     const { works } = await freshWorks();
     expect(works.normalizePublished(true, false)).toBe(true);
     expect(works.normalizePublished(false, true)).toBe(false);
+  });
+
+  it('JSON 接口送来的数字 0/1 语义正确', async () => {
+    const { works } = await freshWorks();
+    expect(works.normalizePublished(0, true)).toBe(false);
+    expect(works.normalizePublished(1, false)).toBe(true);
   });
 });
