@@ -27,17 +27,18 @@ const DEFAULT_SITE_CONFIG =
  * 放在系统临时目录下会一路找到 / 才停，解析不到仓库里的 qrcode 直接崩。
  */
 function runGen(overrides: Record<string, string> = {}) {
+  // 先把源文件读进内存，再建临时目录写出去：源脚本不存在时读取直接抛错，
+  // 临时目录压根不会被建出来，红阶段不留垃圾。
+  // （清理仍由调用方的 finally 负责 —— 产物就在临时目录里，
+  //   在 runGen 内部删掉的话，调用方拿到返回时已经读不到 out 了。）
+  const genQrSource = readFileSync(join(repoRoot, 'scripts', 'gen-qr.mjs'), 'utf8');
+  const siteConfigSource = overrides['site-config.mjs'] ?? DEFAULT_SITE_CONFIG;
+
   const tmp = mkdtempSync(join(repoRoot, '.tmp-gen-qr-'));
   const scripts = join(tmp, 'scripts');
   mkdirSync(scripts, { recursive: true });
-  writeFileSync(
-    join(scripts, 'site-config.mjs'),
-    overrides['site-config.mjs'] ?? DEFAULT_SITE_CONFIG
-  );
-  writeFileSync(
-    join(scripts, 'gen-qr.mjs'),
-    readFileSync(join(repoRoot, 'scripts', 'gen-qr.mjs'), 'utf8')
-  );
+  writeFileSync(join(scripts, 'site-config.mjs'), siteConfigSource);
+  writeFileSync(join(scripts, 'gen-qr.mjs'), genQrSource);
   // gen-qr.mjs 用 import.meta.url 推导 repoRoot = scripts/ 的上一级，
   // 这里脚本就在 <tmp>/scripts/，推导结果正好是 <tmp>
   const out = join(tmp, 'public', 'brand', 'works-qr.png');
@@ -77,6 +78,18 @@ describe('gen-qr.mjs', () => {
     } finally {
       rmSync(r.tmp, { recursive: true, force: true });
     }
+  });
+});
+
+describe('入库的产物', () => {
+  // runGen() 只验了「脚本现在能生成一张 111×111 的码」。真正被 git 跟踪、
+  // 直接上线、且首次 `npm run dev`（不触发 prebuild）会被取用的就是这个文件，
+  // 必须单独守住：它被手改/误删，或 qrcode 升补丁版本改了编码字节时，
+  // 坏产物会静默合入，而 CI 依然全绿。
+  it('committed 的 works-qr.png 本身是 111×111', () => {
+    const committed = join(repoRoot, 'public', 'brand', 'works-qr.png');
+    expect(existsSync(committed)).toBe(true);
+    expect(pngSize(readFileSync(committed))).toEqual({ width: 111, height: 111 });
   });
 });
 

@@ -40,11 +40,19 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const outPath = path.join(repoRoot, 'public', 'brand', 'works-qr.png');
 
 const qr = QRCode.create(WORKS_URL, { errorCorrectionLevel: ERROR_CORRECTION });
+const px = (qr.modules.size + 2 * QUIET_ZONE_MODULES) * MODULE_SIZE_PX;
+
 if (qr.version !== EXPECTED_VERSION) {
+  // 升级和降级要分开说：文案反了会把排查方向带偏（有人会照着「变大了」
+  // 去查显示尺寸，而实际可能是二维码变小了）。
+  const grew = qr.version > EXPECTED_VERSION;
   console.error(
-    `[gen-qr] 期望 version ${EXPECTED_VERSION}，实际 ${qr.version}。\n` +
-      `        URL "${WORKS_URL}"（${WORKS_URL.length} 字符）已超出该版本容量，二维码会变大。\n` +
-      `        请确认新版式仍可接受后，同步更新 EXPECTED_VERSION 和设计文档。`
+    `[gen-qr] 期望 version ${EXPECTED_VERSION}，实际 ${qr.version}（URL "${WORKS_URL}"，${WORKS_URL.length} 字符）。\n` +
+      (grew
+        ? `        URL 变长导致版本升级，成品会涨到 ${px}px（当前版式是 111px）。\n` +
+          `        请确认新版式仍可接受后，同步更新 EXPECTED_VERSION 和设计文档。`
+        : `        URL 变短导致版本下降，成品缩到 ${px}px。\n` +
+          `        确认无需保持原尺寸后，可下调 EXPECTED_VERSION。`)
   );
   process.exit(1);
 }
@@ -57,5 +65,4 @@ const buf = await QRCode.toBuffer(WORKS_URL, {
 });
 writeFileSync(outPath, buf);
 
-const px = (qr.modules.size + 2 * QUIET_ZONE_MODULES) * MODULE_SIZE_PX;
 console.log(`[gen-qr] 已写入 public/brand/works-qr.png（version=${qr.version}, ${px}px, → ${WORKS_URL}）`);
