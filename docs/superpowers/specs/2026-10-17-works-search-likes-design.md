@@ -237,8 +237,12 @@ fetchLikeState(id: number): Promise<{ likes: number; liked: boolean }>
 - 已确认：**不做**「从详情页返回时记住搜索词和滚动位置」
 
 **打破的既有约束**：Task 8 台账记有「本项目无 client-side 路由，整页刷新」。
-搜索进 URL 意味着列表页需要监听 `popstate` 才能让浏览器前进/后退键生效。
-这是一处**架构约束的松动**，在 spec 中明示，Task 8 的相关注释需同步更新。
+搜索进 URL 后，卡片跳转仍是 `<a href>` 全页跳转，从详情页「后退」回到
+`/works?q=xxx` 是一次**全新加载**，`parseListQuery` 直接从 URL 读回初值。
+
+**因此不需要监听 `popstate`** —— 那个监听器只在页面不卸载、仅靠
+`history.pushState` 切换视图时才需要触发。本项目没有 client-side 路由，
+页面每次导航都会重新挂载，加了也不会被触发。**实现时不要加这个监听器。**
 
 ### 5.3 Hook（`src/hooks/useWorks.ts`）
 
