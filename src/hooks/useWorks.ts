@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { listWorks, type WorkSummary } from '@/api/works';
+import { listWorks, type WorkSummary, type WorkSort } from '@/api/works';
 
 const PAGE_SIZE = 20;
+/** 搜索防抖：每敲一个字都发请求没必要，等用户停下来再发。 */
+const SEARCH_DEBOUNCE_MS = 300;
 
 export interface UseWorksResult {
   items: WorkSummary[];
@@ -15,11 +17,19 @@ export interface UseWorksResult {
   hasMore: boolean;
   loadMore: () => void;
   reload: () => void;
+  /** 当前搜索词（原始输入，未防抖）—— 搜索框要即时回显，所以给的是这个。 */
+  query: string;
+  setQuery: (q: string) => void;
+  sort: WorkSort;
+  setSort: (s: WorkSort) => void;
 }
 
 /**
  * 作品库列表。分页用「加载更多」而不是无限滚动 —— 作品量级还小，
  * 按钮行为可预期、也更好测（spec 7.3）。
+ *
+ * 排序完全交给服务端：这里的 items 一律按响应里的原样存，不按 likes 之类
+ * 的字段重排。排名实时变化会让「点进详情再返回」看到的位次和刚才不一样。
  */
 export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
   const [items, setItems] = useState<WorkSummary[]>([]);
@@ -29,6 +39,8 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
   const [error, setError] = useState<Error | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<Error | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<WorkSort>('latest');
 
   // 卸载后不再 setState。首屏请求用 effect 内的 cancelled 标志就够了，
   // loadMore 不在 effect 里，只能靠这个 ref。
@@ -37,6 +49,18 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
   // 渲染才对闭包可见：同一 tick 里连点两次，两次 handler 拿到的都是
   // loadingMore === false，会用同一个 offset 重复拉一页。ref 是同步的。
   const pendingRef = useRef(false);
+  /**
+   * 「当前这一批数据」的序号，每次首屏 effect 重跑就 +1。
+   *
+   * effect 里的 cancelled 标志只能回答「这个 effect 还在不在」，回答不了
+   * 「回来的这份数据是不是现在要的那份」：搜「小」的请求完全可能比搜「小熊」
+   * 的请求后到，cancelled 在这里救不了（它只管自己那次 effect）。序号才是
+   * 唯一的仲裁者 —— 不是最新序号的那份，一律丢掉。
+   *
+   * loadMore 也在同一个仲裁里：翻页途中用户改了搜索词，那一页属于旧搜索词，
+   * 拼到新结果上就是「两个搜索词混在一起」的列表。
+   */
+  const seqRef = useRef(0);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -46,26 +70,40 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
     };
   }, []);
 
+  // 搜索词防抖：query 变化后等 SEARCH_DEBOUNCE_MS 才真正发请求。
+  // 卸载/连续输入时 clearTimeout 是必须的，否则前几次输入排的定时器照样会
+  // 到点触发，把早就没意义的中间态也发出去。
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    const seq = ++seqRef.current;
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    listWorks(pageSize, 0)
+    listWorks(pageSize, 0, { q: debouncedQuery, sort })
       .then(page => {
-        if (cancelled) return;
+        // 三重防护：组件没卸载、effect 没被清理、且这是最新一次请求。
+        // 顺序刻意是 cancelled 在前 —— 它更便宜。
+        if (cancelled || seq !== seqRef.current) return;
+        // 整页替换而不是追加：换搜索词/排序后上一批结果不再相关，
+        // 留着就是「新词的前 10 条 + 上一个词的第 11-20 条」。
         setItems(page.items);
         setTotal(page.total);
         setLoading(false);
       })
       .catch((e: unknown) => {
-        if (cancelled) return;
+        if (cancelled || seq !== seqRef.current) return;
         setError(e instanceof Error ? e : new Error(String(e)));
         setLoading(false);
       });
 
     return () => { cancelled = true; };
-  }, [pageSize, nonce]);
+  }, [pageSize, nonce, debouncedQuery, sort]);
 
   const loadMore = useCallback(() => {
     // loadingMore 必须一起看。以前这个守卫只读 loading（首屏标志）与 pendingRef，
@@ -77,11 +115,18 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
     pendingRef.current = true;
     setLoadingMore(true);
     setLoadMoreError(null);
+    const seq = seqRef.current;
     const offset = items.length;
-    listWorks(pageSize, offset)
+    // 用 debouncedQuery 而不是 query：防抖的 300ms 里 loading 还是 false，
+    // loadMore 点得动，而此时屏幕上的卡片属于 debouncedQuery 那一批。
+    // 带 query 会拉回来一页跟 offset 不匹配的、屏幕上根本没出现过的数据。
+    listWorks(pageSize, offset, { q: debouncedQuery, sort })
       .then(page => {
         pendingRef.current = false;
         if (!aliveRef.current) return;
+        // 翻页途中 query/sort 变了，这一页已经不属于当前这批了，丢掉。
+        // 不丢的话它会拼到新搜索结果后面 —— 正是「换了词还看到旧词的尾巴」。
+        if (seq !== seqRef.current) return;
         // offset 分页 + 后端 ORDER BY created_at DESC, id DESC：两次请求之间若有
         // 新作品插到最前，整页会往后挪一位，offset 就会把上一页的尾项再拉回来 ——
         // 页面上出现重复卡片，React 也会抛重复 key 警告。按 id 去重即可。
@@ -96,11 +141,12 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
       .catch((e: unknown) => {
         pendingRef.current = false;
         if (!aliveRef.current) return;
+        if (seq !== seqRef.current) return;
         // 只写 loadMoreError：写 error 会把整个列表顶掉，用户已经看到的卡片全没了。
         setLoadMoreError(e instanceof Error ? e : new Error(String(e)));
         setLoadingMore(false);
       });
-  }, [items.length, loading, loadingMore, pageSize]);
+  }, [items.length, loading, loadingMore, pageSize, debouncedQuery, sort]);
 
   const reload = useCallback(() => {
     // 清干净再 setNonce 重跑首屏 effect（nonce 是触发它重跑的关键，别删）。
@@ -124,5 +170,9 @@ export function useWorks(pageSize: number = PAGE_SIZE): UseWorksResult {
     hasMore: items.length < total,
     loadMore,
     reload,
+    query,
+    setQuery,
+    sort,
+    setSort,
   };
 }

@@ -117,7 +117,9 @@ describe('WorksListPage', () => {
     await waitFor(() => expect(screen.getByText('B')).toBeTruthy());
     expect(screen.getByText('A')).toBeTruthy();
     expect(listWorks).toHaveBeenCalledTimes(2);
-    expect(listWorks.mock.calls[1]).toEqual([20, 1]);
+    // 第三个参数是 Task 6 起才有的搜索词/排序 —— 没有搜索词时是 { q: '', sort: 'latest' }，
+    // api 层会把它折叠成与改造前完全一样的请求（空 q 与 latest 都不进 query）。
+    expect(listWorks.mock.calls[1]).toEqual([20, 1, { q: '', sort: 'latest' }]);
     expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
   });
 
