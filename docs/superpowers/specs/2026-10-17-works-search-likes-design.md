@@ -87,13 +87,23 @@ function ipHashOf(ip: string): string {
 
 ### 3.3 写入路径
 
-```ts
-// 单语句，天然幂等，并发安全
-const changes = runInsertLike(workId, ipHash);  // INSERT OR IGNORE
-return { liked: changes > 0, likes: countLikes(workId) };
+```sql
+INSERT OR IGNORE INTO work_likes (work_id, day, ip_hash, created_at)
+VALUES (?, ?, ?, ?) RETURNING work_id
 ```
 
-`INSERT OR IGNORE` 在主键冲突时静默跳过，`changes === 0` 即「这是重复赞」。
+**实测确认**（sql.js）：主键冲突时 `RETURNING` 返回 **0 行**，插入成功返回 **1 行**，
+次日同 IP 再赞返回 **1 行**。因此「是否新赞」直接由返回行数判定。
+
+```ts
+const rows = queryAll('... RETURNING work_id', [workId, day, ipHash, now]);
+const inserted = rows.length > 0;   // true = 新赞，false = 今天已经点过了
+return { liked: inserted, likes: countLikes(workId) };
+```
+
+选 `RETURNING` 而非「读 `db.changes`」的原因：仓库现有的 `runStmt()` 返回 `void`，
+拿不到受影响行数；`queryAll()` 已经是通用读接口，`RETURNING` 能零改动复用。
+
 **不需要先 SELECT 再判断** —— 少一次查询，且两个并发请求不会都判定为「新赞」。
 
 **`alreadyLiked: true` 时不重复计数**，这是幂等的第二步（数据库挡住了重复插入，
