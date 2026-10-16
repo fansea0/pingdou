@@ -12,6 +12,7 @@
                     │  ├─ /assets/      长缓存 1y   │
                     │  ├─ /static-data/ 前端静态数据│  mard.json / 默认图
                     │  ├─ /products/──► alias       │  /var/lib/pingdou/images
+                    │  ├─ /media/works/─► alias(正则)│  /var/lib/pingdou/media/works
                     │  └─ /api/    ──► 127.0.0.1:3000│  Express
                     └──────────────────────────────┘
                                    ▲
@@ -81,10 +82,12 @@ grep -E '^(PORT|PINGDOU_DATA_DIR)=' .env
 但**权限**不会自动设置成 nginx 可读。手动设一次：
 
 ```bash
-mkdir -p /var/lib/pingdou/images
+mkdir -p /var/lib/pingdou/images /var/lib/pingdou/media
 chown -R root:root /var/lib/pingdou
-chmod 755 /var/lib/pingdou /var/lib/pingdou/images
+chmod 755 /var/lib/pingdou /var/lib/pingdou/images /var/lib/pingdou/media
 chmod -R a+rX /var/lib/pingdou/images
+# 作品库文件（media/）同理：nginx 要读，否则作品图 403
+chmod -R a+rX /var/lib/pingdou/media
 # stats.db 不需要 nginx 读——统计库只给后端用
 ```
 
@@ -158,6 +161,14 @@ journalctl -u pingdou-backend -n 20 --no-pager
   location /products/ { alias /var/lib/pingdou/images/; }
   ```
   `alias` 结尾的 `/` 必须有。**不要**配 `location /data/`（旧版本产物，新版不再使用）。
+- **作品图 location**（同样必须配；注意这是**正则 location**，`alias` 不能带 `works/`）：
+  ```nginx
+  location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ {
+      alias /var/lib/pingdou/media/works/;
+  }
+  ```
+  正则 location 的 `alias` 会把正则匹配掉的那段前缀（这里 `works/`）一起替换掉，
+  写成 `/var/lib/pingdou/media/works/works/` 会恒 404。
 
 ```bash
 nginx -t && systemctl enable --now nginx
@@ -300,6 +311,7 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 | 登录后立刻掉登录态 | 先确认 cookie 有没有到后端：`curl -i -X POST localhost/api/auth/logout \| grep -ci '^set-cookie:'`。nginx 默认会透传，所以更可能是 `secure` 属性（`NODE_ENV=production` 时 cookie 只在 HTTPS 下发）或前端没带 `credentials:'include'` |
 | admin 改了商品，访客没看到 | 商品走 SQLite，不会被 deploy 覆盖；浏览器可能缓存，强制刷新或加 `?t=<timestamp>` |
 | 商品图片 403 | `chmod -R a+rX /var/lib/pingdou/images` + nginx `location /products/` 的 `alias` 路径 |
+| 作品图 404 / 403 | `chmod -R a+rX /var/lib/pingdou/media` + 确认 nginx 有 `location ~ ^/media/works/...` 正则 alias（不是 `/media/` 前缀 location） |
 | 续期报 `Another instance of Certbot is already running` | `/var/log/letsencrypt/.certbot.lock` 残留（多半是上次续期被强杀），删掉即可 |
 | 续期报 `Timeout during connect` / `DNS SERVFAIL` | 正常现象，见上面「证书续期」一节，靠重试兜底 |
 | 续期报 `404` 或不含 ACME 路径 | 检查 80 端口的 `/.well-known/acme-challenge/` 是否被 301 跳转吃掉（要用 `location ^~`） |
@@ -340,9 +352,12 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 └── samples/                             ← SEO 用示例图
 
 /var/lib/pingdou/                        # ★ 运行时数据（重点保护）
-├── stats.db                             ← SQLite：商品表 + 用户表 + 事件表（后端写）
-└── images/
-    └── *.jpg, *.png                     ← 商品图片（admin 上传）
+├── stats.db                             ← SQLite：商品表 + 用户表 + 事件表 + 作品表（后端写）
+├── images/
+│   └── *.jpg, *.png                     ← 商品图片（admin 上传）
+└── media/                               ← 作品库文件（StorageDriver 所有，后端可写）
+    └── works/
+        └── <16hex>.png, <16hex>-t.webp  ← 作品原图 + 缩略图（admin 上传）
 ```
 
 ### 启动 env（`PINGDOU_DATA_DIR` 默认 `/var/lib/pingdou`，可不设）

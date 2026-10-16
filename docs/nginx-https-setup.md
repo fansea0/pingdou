@@ -9,6 +9,7 @@
 浏览器 ──443──► nginx ──┬── /            → /var/www/pingdou        (静态 dist)
                        ├── /assets/     → 同上，1 年缓存
                        ├── /products/   → /var/lib/pingdou/images  (alias)
+                       ├── /media/works/ → /var/lib/pingdou/media/works (正则 alias)
                        └── /api/        → 127.0.0.1:3000           (Express)
                 ──80──►  只放行 ACME 校验，其余 301 跳 443
 ```
@@ -239,7 +240,27 @@ location /products/ { alias /var/lib/pingdou/images/; }
 - 目录权限要 `chmod -R a+rX`，nginx worker（非 root）才读得到
 - `stats.db` **绝不能**给 nginx 读或暴露，它只归后端用
 
-### 4.5 `/assets/` 为什么能永久缓存
+### 4.5 `location /media/works/` 的正则 alias
+
+作品原图与缩略图（admin 上传，前台作品库展示）走这条：
+
+```nginx
+location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ {
+    alias /var/lib/pingdou/media/works/;
+}
+```
+
+⚠️ 这里是**正则 location**（`~` 前缀），不是前缀 `location`——正则 location
+下的 `alias` 必须去掉正则里匹配掉的那段前缀（本例是 `works/`）。写错的症状
+是 404，和「alias 末尾漏了斜杠」完全一样，排查时容易往错的方向走。
+
+`/products/` 那条是普通前缀 location，两者写法**不能照抄**。
+
+文件名只允许这 2 种形状（16 位小写 hex + `.png` / `-t.webp`），与后端
+`server/index.ts` 里 `/media/works/:filename` 的白名单保持一致。正则同时起到了
+「不把 `media/` 下的其它文件暴露出去」的作用。
+
+### 4.6 `/assets/` 为什么能永久缓存
 
 Vite 产物文件名带内容 hash（`index.a1b2c3.js`），内容变了文件名就变，所以可以放心 `expires 1y`。`immutable` 告诉浏览器"别回来问我要不要更新"。没带 hash 的文件（`index.html`）绝不能这么配，否则用户永远拿不到新版本。
 

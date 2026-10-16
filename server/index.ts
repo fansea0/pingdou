@@ -4,6 +4,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { initDb, querySummary, queryPublicTotals, queryRegions, trackEvent, touchSession, flushNow, queryAll, dayRange, getSetting, listAllSettings, setSetting } from './db.js';
 import { resolveRegion, geoStatus } from './geo.js';
@@ -19,6 +20,12 @@ import {
   checkUserPassword,
 } from './users.js';
 import { reconcileAssignments, revokeAllForProduct, hasActiveAssignment, getActiveAssignmentsForUser } from './assignments.js';
+import {
+  listPublishedWorks, getPublishedWork, listAllWorks,
+  createWork, updateWorkMeta, replaceWorkImage, deleteWork,
+  normalizePublished,
+  type UpdateWorkMeta,
+} from './works.js';
 
 // 后端固定端口 3000（dev / prod 一致）。可通过 PORT 环境变量覆盖。
 // 前端 dev / preview 都走 5173（见 vite.config.ts）；
@@ -36,6 +43,9 @@ if (process.env.STATICS_PASSWORD) {
 function assertRuntimePaths(): void {
   // PATHS 已经从 paths.ts 顶层 throw；这里只做目录兜底
   mkdirSync(PATHS.imagesDir, { recursive: true });
+  // 作品原图 + 缩略图。driver 的 put() 自己也会建目录，这里建的是 media/ 本身，
+  // 让 /media/works/ 兜底路由在「一条作品都没上传过」时也能正常响应。
+  mkdirSync(PATHS.mediaDir, { recursive: true });
   // db 文件由 initDb 自己处理（如果 PINGDOU_DATA_DIR 不存在 initDb 会写不到，先建根目录兜底）
   mkdirSync(PATHS.dataDir, { recursive: true });
 }
@@ -76,6 +86,18 @@ function handleUpload(fieldName: string) {
     upload.single(fieldName)(req, res, (err: any) => {
       if (!err) return next();
       const payload = multerErrorPayload(err);
+      if (payload) return res.status(payload.status).json(payload.body);
+      return next(err);
+    });
+  };
+}
+
+/** 两个文件 + 若干文本字段的上传（如作品原图 + 浏览器端生成的缩略图）。 */
+function handleUploadFields(specs: { name: string; maxCount: number }[]) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    upload.fields(specs)(req, res, (err: any) => {
+      if (!err) return next();
+      const payload = multerErrorPayload(err); // 复用现有错误映射，不新增文案
       if (payload) return res.status(payload.status).json(payload.body);
       return next(err);
     });
@@ -422,6 +444,121 @@ app.get('/api/public/products', (_req, res) => {
   } catch (e) {
     console.error('[public/products]', e);
     return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+// 公开作品列表：只走 listPublishedWorks（草稿在数据层就被滤掉），不区分「不存在」
+// 与「未上架」—— 对外只有一种形状。
+app.get('/api/public/works', (req, res) => {
+  try {
+    const limit = Number(req.query.limit ?? 20);
+    const offset = Number(req.query.offset ?? 0);
+    return res.json(listPublishedWorks(limit, offset));
+  } catch (e) {
+    console.error('[public/works]', e);
+    return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+app.get('/api/public/works/:id', (req, res) => {
+  try {
+    // 非数字 id → NaN → getPublishedWork 直接 null → 404（不会 500）
+    const work = getPublishedWork(Number(req.params.id));
+    if (!work) return res.status(404).json({ error: 'not found' });
+    return res.json(work);
+  } catch (e) {
+    console.error('[public/works/:id]', e);
+    return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+// dev-only 兜底：把 /media/works/<file> 直读盘。生产走 nginx location 直读，性能更高。
+// 文件名走严格白名单，非法名字一律 400 —— 不落到 sendFile 上给路径穿越留机会。
+const MEDIA_FILENAME_RE = /^[0-9a-f]{16}\.png$/;
+const MEDIA_THUMB_RE = /^[0-9a-f]{16}-t\.webp$/;
+app.get('/media/works/:filename', (req, res) => {
+  const filename = String(req.params.filename ?? '');
+  if (!MEDIA_FILENAME_RE.test(filename) && !MEDIA_THUMB_RE.test(filename)) {
+    return res.status(400).json({ error: 'invalid filename' });
+  }
+  const fullPath = join(PATHS.mediaDir, 'works', filename);
+  res.sendFile(fullPath, (err) => {
+    if (!err) return;
+    if ((err as any).code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+    console.error('[media/works/:filename] sendFile failed', err);
+    if (!res.headersSent) res.status(500).json({ error: 'serve failed' });
+  });
+});
+
+// admin 作品接口。列表走 listAllWorks（含草稿），这条路径必须 requireAuth + requireAdmin，
+// 绝不能和 /api/public/works 共用数据源。
+const WORK_IMAGE_FIELDS = [
+  { name: 'file', maxCount: 1 },
+  { name: 'thumb', maxCount: 1 },
+];
+
+function workImageFrom(req: express.Request, field: 'file' | 'thumb') {
+  const files = (req as any).files as Record<string, Express.Multer.File[]> | undefined;
+  const f = files?.[field]?.[0];
+  return f ? { body: f.buffer, mime: f.mimetype } : undefined;
+}
+
+app.get('/api/admin/works', requireAuth, requireAdmin, (_req, res) => {
+  try {
+    return res.json(listAllWorks());
+  } catch (e) {
+    console.error('[admin/works]', e);
+    return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+app.post('/api/admin/works', requireAuth, requireAdmin, handleUploadFields(WORK_IMAGE_FIELDS), async (req, res) => {
+  const image = workImageFrom(req, 'file');
+  if (!image) return res.status(400).json({ error: 'file required' });
+  try {
+    return res.json(await createWork({
+      title: req.body?.title,
+      description: req.body?.description,
+      published: req.body?.published,
+      width: req.body?.width,
+      height: req.body?.height,
+      image,
+      thumb: workImageFrom(req, 'thumb'),
+    }));
+  } catch (e: any) {
+    return res.status(400).json({ error: e.message ?? 'create failed' });
+  }
+});
+
+app.put('/api/admin/works/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { title, description, published } = req.body ?? {};
+  const patch: UpdateWorkMeta = {};
+  if (typeof title === 'string') patch.title = title;
+  if (typeof description === 'string') patch.description = description;
+  if (published !== undefined) patch.published = normalizePublished(published, true);
+  try {
+    return res.json(await updateWorkMeta(Number(req.params.id), patch));
+  } catch (e: any) {
+    return res.status(404).json({ error: e.message ?? 'update failed' });
+  }
+});
+
+app.post('/api/admin/works/:id/image', requireAuth, requireAdmin, handleUploadFields(WORK_IMAGE_FIELDS), async (req, res) => {
+  const image = workImageFrom(req, 'file');
+  if (!image) return res.status(400).json({ error: 'file required' });
+  try {
+    return res.json(await replaceWorkImage(Number(req.params.id), image, workImageFrom(req, 'thumb')));
+  } catch (e: any) {
+    return res.status(404).json({ error: e.message ?? 'upload failed' });
+  }
+});
+
+app.delete('/api/admin/works/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await deleteWork(Number(req.params.id));
+    return res.json({ ok: true });
+  } catch (e: any) {
+    return res.status(404).json({ error: e.message ?? 'delete failed' });
   }
 });
 
