@@ -40,7 +40,8 @@
 - 新增 `server/works.ts`：作品 CRUD（query 直读，无内存 cache）
 - `server/index.ts` 新增公开 API + admin API + `/media/*` dev 兜底路由 + 双文件上传中间件
 - `server/paths.ts` 新增 `mediaDir`
-- 新增 `scripts/site-config.mjs`；新增 `scripts/gen-qr.mjs` 挂进 `prebuild`；`gen-sitemap.mjs` 改为 import 共享常量并新增 `/works`
+- 新增 `scripts/site-config.mjs`；新增 `scripts/gen-qr.mjs`（终审修复后挂 `npm run gen:qr`，
+  **不再**挂 `prebuild`，产物提交进仓库）；`gen-sitemap.mjs` 改为 import 共享常量并新增 `/works`
 - 前端新增 `src/pipeline/qr.ts`；`composite.ts` 新增 `qrBandPx`；`pipeline.ts` 两条导出路径接入
 - 前端新增 `src/router.ts`、`src/components/SiteNav.tsx`、`src/pages/WorksListPage.tsx`、`src/pages/WorkDetailPage.tsx`、`src/api/works.ts`、`src/hooks/useWorks.ts`
 - 后台新增 `src/pages/admin/WorksTab.tsx`；`AdminDashboard` 新增第 4 个 tab
@@ -61,7 +62,8 @@
 ### 1.4 成功标准
 
 - `npm test` 现有全部通过 + 新增测试全部通过（计划正文口径以各任务实际用例数为准）
-- `npm run typecheck` 0 错误；`npm run build` 通过（`prebuild` 正常产出 QR 与 sitemap）
+- `npm run typecheck` 0 错误；`npm run build` 通过（`prebuild` 产出 sitemap；QR 是入库产物，
+  终审修复后构建不再重新生成，`dist/brand/works-qr.png` 由 Vite 从 `public/` 拷出）
 - 导出 PNG 可被微信「扫一扫」和系统相机识别；连续 3 次导出尺寸均正常且色卡区未被压
 - 断网 / 拦截 QR 资源时，导出仍然成功（只是没有二维码），不抛错
 - admin 上传一张 3MB PNG → 磁盘出现原图 + WebP 缩略图各一份 → `/works` 列表 3 秒内可浏览
@@ -139,7 +141,7 @@ admin 上传：File ──> 浏览器 canvas 480px/WebP ──┐              �
 | `scripts/gen-sitemap.mjs` | import 共享 `SITE_URL`；新增 `/works` |
 | `public/robots.txt` | `/media/` 加进 Disallow |
 | `src/seo.test.ts` | 断言 sitemap 含 `/works` |
-| `package.json` | `prebuild` 加 `gen-qr.mjs`；新增 devDependency `qrcode` |
+| `package.json` | 新增 devDependency `qrcode` + 脚本 `gen:qr`（终审修复：`gen-qr.mjs` 已从 `prebuild` 摘出，`prebuild` 只留 `gen-sitemap.mjs`） |
 | `README.md` / `docs/DEPLOY.md` / `docs/nginx-https-setup.md` | 补文档 |
 
 ### 2.3 运行时目录布局
@@ -435,7 +437,8 @@ export const WORKS_URL = `${SITE_URL}${WORKS_PATH}`;
 
 > 诚实说明：域名硬编码从 4 处（`index.html` 的 canonical/og/twitter、`src/seo.test.ts`、`gen-sitemap.mjs`）收到 3 处。`index.html` 收不动是因为它是构建产物入口、没有模板注入机制；要彻底解决需要引入 HTML 模板化，属于构建流程改造，不在本次范围。
 
-**`scripts/gen-qr.mjs`**（新增，挂进 `prebuild`）：
+**`scripts/gen-qr.mjs`**（新增；原计划挂 `prebuild`，终审修复后改为 `npm run gen:qr` 手动跑，
+理由见文末风险表「部署脚本跳过依赖安装」一行）：
 
 ```js
 const TARGET_URL = WORKS_URL;                    // https://www.xn--muu023g.xyz/works
@@ -741,6 +744,6 @@ location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
 | iOS Safari `<a download>` 支持有限 | 桌面/移动 Safari 上「下载原图」可能变成新标签预览 | 已用「长按保存图片」提示兜底，两条路径都保留 |
 | 作品库页面为 CSR，单页 SEO 弱 | 百度收录量可能低于预期 | 已列入非目标。若后续要做，走预渲染专项 |
 | `/media/` 是新前缀，prod nginx 未同步 | 图片 404 | 部署清单已包含 nginx 改动；`DEPLOY.md` troubleshooting 表补一行「作品图 403/404 → 检查 `/media/` alias」 |
-| `qrcode` 引入构建期依赖 | `npm ci` 多装一个包 | devDependency，不进生产 bundle；版本锁 `^1.5.4` |
-| `qrcode` 引入构建期依赖 | `npm run build` 多了 prebuild 一步，若生产用 `npm ci --omit=dev` 会缺包 | 当前部署脚本与 GitHub Actions 都跑完整 `npm ci`（见 README「部署」与 `.github/workflows/main.yml`），不受影响。若将来改成 `--omit=dev`，需把 `gen-qr.mjs` 挪到独立 CI 步骤或直接提交产物（产物本来就要提交进仓库，删掉 `prebuild` 里那一行也能工作，只是换域名时要手动重跑脚本） |
+| `qrcode` 引入构建期依赖 | 装依赖多花时间 | devDependency，不进生产 bundle；版本锁 `^1.5.4`。**已从 `prebuild` 摘出**（终审修复，2026-10-16）：`prebuild` 现在只跑 `gen-sitemap.mjs`（零外部依赖），二维码产物已提交进仓库，线上构建不再需要 `qrcode`。重新生成跑 `npm run gen:qr` |
+| 部署脚本跳过依赖安装导致线上构建失败 | 服务器 `node_modules` 是上次部署留下的，新增 devDependency 后构建期 `ERR_MODULE_NOT_FOUND`，`set -euo pipefail` 直接把部署打断；CI 是 `git reset --hard` **之后**才调脚本，于是停在「新代码 + 旧 node_modules + 旧 dist」，功能静默没上线 | **终审原写的「部署脚本与 CI 都跑完整 `npm ci`，不受影响」是错的**——仓库不提交 `package-lock.json`，脚本用的是条件式 `npm install`（原来还按 `node_modules` 是否存在跳过），`.github/workflows/main.yml` 里没有任何 install/test 步骤，只 SSH 跑脚本。已修：脚本改为**无条件 `npm install`**（依赖无变化时幂等且秒级；按目录存在性判断的「无变动才跳过」反而会因为「目录存在但内容过期」静默用旧依赖构建）。详见 README「部署」 |
 | 浏览器生成缩略图时超大图占内存 | 低内存设备上传失败 | `MAX_IMAGE_BYTES = 5MB` 已在闸口前拦住；缩略图生成失败不阻断上传 |

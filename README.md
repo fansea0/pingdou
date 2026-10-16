@@ -119,30 +119,42 @@ server {
 > ⚠️ 鉴权用的是 cookie（`credentials: 'include'`），所以代理时一定要把 `Cookie` /
 > `Set-Cookie` 头原样透传，否则登录态会丢。
 
-### 前后端独立部署（CI 已配置）
+### 部署（CI 已配置）
 
-GitHub Actions `.github/workflows/main.yml` 会在服务器上：
-1. `git pull` 拉新代码
-2. 杀掉旧的前后端进程
-3. `npm ci` 装依赖（如有变更）
-4. `npm run build:server` 编译后端
-5. `npm run build` 编译前端
-6. 先后端 (3000) → 前端 (5173) 各起一个进程，独立 PID / 日志
+`.github/workflows/main.yml` 里只有一个 `deploy` job。它**不自己装依赖、不自己构建**，
+只在服务器上跑两步：
 
-如果不想走 GitHub Actions，本地手动部署：
+```bash
+git fetch origin main && git reset --hard origin/main   # CI 做的
+bash scripts/deploy-server.sh                            # 脚本做的
+```
+
+`scripts/deploy-server.sh` 依次做：补 node 的 PATH → **`npm install`** → `npm run build:server`
++ `npm run build` → 把 `dist/` 拷到 `/var/www/pingdou` → 检查运行时目录与 systemd env →
+`systemctl restart pingdou-backend` + `nginx -t && systemctl reload nginx` → 健康检查。
+
+三点值得记住：
+
+- **没有 `npm ci`**。仓库不提交 `package-lock.json`，脚本用的是 `npm install`。
+- **`npm install` 是无条件的**，不再看 `node_modules` 目录在不在。服务器上的
+  `node_modules` 是上一次部署留下的，「目录存在」不代表「包是新的」—— 新增或升级
+  依赖后跳过安装，构建期就会 `ERR_MODULE_NOT_FOUND` 直接把部署打断。
+- **`prebuild` 只跑 `scripts/gen-sitemap.mjs`**（只用 Node 内置模块，零外部依赖）。
+  二维码 `public/brand/works-qr.png` 是**提交进仓库的产物**，不再由构建生成，
+  所以线上构建不依赖 devDependency `qrcode`。改了二维码参数跑 `npm run gen:qr`
+  并把产物提交回去。给 `prebuild` 加新的第三方依赖前先想清楚：它会跟着每次部署一起跑。
+
+如果不想走 GitHub Actions，手动部署时同样用 `npm install`，别照搬 `npm ci`：
 ```bash
 # 在服务器上
 cd /root/project/pingdou
-npm ci
-npm run build:server           # 编译后端到 dist-server/
-npm run build                  # 编译前端到 dist/
+bash scripts/deploy-server.sh   # 推荐：和 CI 走同一条路径，行为完全一致
 
-# 终端 A
-PORT=3000 nohup npm run start:backend   > backend.log  2>&1 &
-
-# 终端 B
-nohup npx vite preview --host 0.0.0.0 --port 5173 > frontend.log 2>&1 &
 ```
+
+（后端由 systemd 的 `pingdou-backend` 托管、前端静态产物由 nginx 托管，**不需要**再
+nohup 起 vite preview 或 `npm run start:backend`；见 [`docs/DEPLOY.md`](./docs/DEPLOY.md)
+与 [`docs/nginx-https-setup.md`](./docs/nginx-https-setup.md)。）
 
 环境变量（**生产部署必填**，详见 [`docs/DEPLOY.md#运行时数据管理`](./docs/DEPLOY.md#运行时数据管理)）：
 - `PRODUCTS_JSON_PATH` — 商品数据 JSON 文件（必填）
@@ -154,12 +166,12 @@ nohup npx vite preview --host 0.0.0.0 --port 5173 > frontend.log 2>&1 &
 
 ## 作品库
 
-导出图纸的**右下角有一个二维码**（111×111，构建期由 `scripts/gen-qr.mjs` 预生成），
+导出图纸的**右下角有一个二维码**（111×111，由 `scripts/gen-qr.mjs` 生成、产物提交进仓库），
 扫码直接进入公开作品库 `/works`。
 
-- **导出图二维码**：`/brand/works-qr.png`，由 `scripts/gen-qr.mjs` 在 `prebuild` 阶段生成
-  （version 3 / ECC L / 模块 3px / 静区 4 模块），产出物**提交进仓库**，
-  这样首次 `npm run dev`（不跑 prebuild）也不会 404。
+- **导出图二维码**：`/brand/works-qr.png`，由 `scripts/gen-qr.mjs` 生成
+  （version 3 / ECC L / 模块 3px / 静区 4 模块）。产物**提交进仓库**，`prebuild` **不**跑它
+  （理由见下方「部署」），要重新生成跑 `npm run gen:qr`。
 - **二维码落位**：`composite.ts` 的 `qrBandPx` 只把底部边距加宽，页眉 / 图纸 / 色卡
   的纵向布局一行不动 —— 色卡既不会被压也不会重排。画不出二维码时（资源 404 /
   被拦截 / jsdom）自动降级为「不画码」，导出照常成功。

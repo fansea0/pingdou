@@ -451,7 +451,7 @@ app.get('/api/public/products', (_req, res) => {
 // 与「未上架」—— 对外只有一种形状。
 app.get('/api/public/works', (req, res) => {
   try {
-    const limit = Number(req.query.limit ?? 20);
+    const limit = Number(req.query.limit || 20); // `?limit=`（空串）也要走默认值，?? 挡不住空串
     const offset = Number(req.query.offset ?? 0);
     return res.json(listPublishedWorks(limit, offset));
   } catch (e) {

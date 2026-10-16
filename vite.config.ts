@@ -45,7 +45,9 @@ export default defineConfig({
         target: BACKEND_DEV_URL,
         changeOrigin: false,
       },
-      // 作品原图 / 缩略图：生产由 nginx `location /media/ { alias ...; }` 直读，
+      // 作品原图 / 缩略图：生产由 nginx 的**正则** location
+      // （`location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$`，
+      // alias 必须自带 `$file`，见 docs/nginx-https-setup.md 4.5）直读，
       // 这里转发到后端的 GET /media/works/:filename 兜底路由（dev-only）。
       // 少了这条，dev 下直接访问 /media/works/xxx.png 会被 Vite 的 SPA fallback
       // 兜回 index.html，前端 matchRoute 判成 home —— 用户看到的是整个首页。

@@ -9,7 +9,7 @@
 浏览器 ──443──► nginx ──┬── /            → /var/www/pingdou        (静态 dist)
                        ├── /assets/     → 同上，1 年缓存
                        ├── /products/   → /var/lib/pingdou/images  (alias)
-                       ├── /media/works/ → /var/lib/pingdou/media/works (正则 alias)
+                       ├── /media/works/ → /var/lib/pingdou/media/works (正则 alias, 1 年缓存)
                        └── /api/        → 127.0.0.1:3000           (Express)
                 ──80──►  只放行 ACME 校验，其余 301 跳 443
 ```
@@ -247,8 +247,23 @@ location /products/ { alias /var/lib/pingdou/images/; }
 ```nginx
 location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
     alias /var/lib/pingdou/media/works/$file;
+    # 作品图文件名是 16 位随机 hex，内容永不变（换图走 replaceWorkImage
+    # 会重新生成新的 hex），等于自带内容指纹，可以放心永久缓存。
+    # 不配的话每次访问都要回源，公网图又大，是纯浪费。
+    expires 1y;
+    add_header Cache-Control "public, immutable";
 }
 ```
+
+`expires 1y` + `immutable` 在这里成立的前提和 `/assets/` 不同：`/assets/` 靠的是 Vite 产物文件名里的
+内容 hash，`/media/` 靠的是后端生成文件名时用的随机 hex（见 `server/works.ts` 的落盘命名）——
+两种机制都能保证「内容变 → URL 变」，所以都不会出现「改了图但浏览器还拿旧的」。
+
+`add_header Cache-Control` 那行不能省：nginx 的 `expires` 只写 `Expires` 和 `Cache-Control: max-age=...`，
+不带 `immutable`，浏览器每次回来仍然会发条件请求（省了流量但没省请求）。
+
+**改图不换 URL 的情况不存在**：如果哪天出现「同名覆盖」，这条 `immutable` 会让用户永久看到旧图，
+那时必须先把 `immutable` 摘掉。
 
 ⚠️ 这里是**正则 location**（`~` 前缀），不是前缀 `location`，两者**不能照抄**。
 

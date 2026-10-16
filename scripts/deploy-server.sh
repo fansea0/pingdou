@@ -40,12 +40,14 @@ cd "$APP_DIR"
 echo "=========================================="
 echo " [2/6] 安装依赖"
 echo "=========================================="
-if [[ -d node_modules ]]; then
-  info "node_modules 已存在，跳过（依赖有变动时请先 rm -rf node_modules 再跑）"
-else
-  npm install
-  info "依赖安装完成"
-fi
+# 无条件执行，不按 node_modules 目录是否存在来决定跳不跳。
+# 「目录存在」不等于「内容与 package.json 一致」：服务器上的 node_modules
+# 是上一次部署装的，一旦 package.json 新增/升级依赖（比如 devDependency），
+# 旧目录里就永远没有那个包，症状是后面的构建期脚本 ERR_MODULE_NOT_FOUND。
+# 依赖无变化时 npm install 是幂等的，几秒就完事，省这点时间不值得换一份
+# 「静默用旧依赖构建」的风险。要彻底重装时手动 rm -rf node_modules 再跑。
+npm install
+info "依赖安装完成"
 
 echo "=========================================="
 echo " [3/6] 构建前后端"
