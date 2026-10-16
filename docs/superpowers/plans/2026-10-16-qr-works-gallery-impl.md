@@ -361,7 +361,7 @@ git commit -m "feat(存储): 作品图 StorageDriver 接口 + LocalDiskDriver，
   - `works` 表（DDL 见 Step 3）
   - `server/works.ts` 导出：
     - `interface WorkSummary { id: number; title: string; thumbUrl: string; width: number; height: number; createdAt: number }`
-    - `interface WorkDetail extends WorkSummary { description: string; imageUrl: string; bytes: number }`
+    - `interface WorkDetail extends WorkSummary { description: string; imageUrl: string; bytes: number; updatedAt: number }`
     - `interface WorkImage { body: Buffer; mime: string }`
     - `interface CreateWorkInput { title?: unknown; description?: unknown; published?: unknown; width?: unknown; height?: unknown; image: WorkImage; thumb?: WorkImage }`
     - `interface UpdateWorkMeta { title?: string; description?: string; published?: boolean }`
@@ -725,6 +725,8 @@ export interface WorkDetail extends WorkSummary {
   description: string;
   imageUrl: string;
   bytes: number;
+  /** 元数据改动时间。列表不需要它，详情页和后台用得上。 */
+  updatedAt: number;
 }
 
 export interface WorkImage {
@@ -841,7 +843,9 @@ export function listPublishedWorks(
   limit: number,
   offset: number
 ): { items: WorkSummary[]; total: number } {
-  const lim = Math.max(1, Math.min(60, Math.floor(limit) || 20));
+  // 注意别写成 `Math.floor(limit) || 20`：0 是合法的"要 1 条"信号，
+  // 被 || 当假值吞掉后会变成默认 20 条，与「limit 钳制到 [1,60]」的用例冲突。
+  const lim = Math.max(1, Math.min(60, Number.isFinite(limit) ? Math.floor(limit) : 20));
   const off = Math.max(0, Math.floor(offset) || 0);
   const rows = queryAll<WorkRow>(
     `SELECT * FROM works
@@ -2683,6 +2687,8 @@ export interface WorkDetail extends WorkSummary {
   description: string;
   imageUrl: string;
   bytes: number;
+  /** 元数据改动时间。列表不需要它，详情页和后台用得上。 */
+  updatedAt: number;
 }
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
