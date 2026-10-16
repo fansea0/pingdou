@@ -168,32 +168,34 @@ describe('allowLike 纯函数边界（M-4）', () => {
     expect(allowLike('ip-b', t0 + 10)).toBe(false);
   });
 
-  // I-4 护栏：桶超过 4096 条后触发全量扫描，TTL（10 秒）外的条目被丢弃、TTL 内的留下。
-  it('桶超过 4096 条时清理：10 秒前的条目被丢弃，新的留下', async () => {
+  // I-4：桶超过 4096 条会走进扫描分支。
+  //
+  // **这条用例证明不了「真的删掉了过期条目」，也证明不了节流生效** —— 不是漏写，是
+  // 结构上观测不到：只有「比上次早 10 秒以上」的条目会被删，而早 10 秒的条目早就落在
+  // 1 秒窗口之外，删与不删 allowLike 的返回值都是 true。删除的效果只体现在内存上，
+  // 要观测就得导出 likeBuckets 或统计遍历次数，那是为测试改产品形状，不做。
+  // 这里能钉住的是「超过阈值时这条分支被走到、返回值仍自洽、不抛异常」。
+  it('桶超过 4096 条时走扫描分支，返回值仍自洽', async () => {
     const allowLike = await allow();
     const t0 = 1_700_000_000_000;
-    // 填到 4097 条（超过阈值）。'fresh' 是唯一一条「年轻」的条目。
     for (let i = 0; i < 4097; i++) allowLike(`bulk-${i}`, t0);
-    allowLike('fresh', t0 + 15_000);
 
-    // 这一发把 size 顶到阈值之外且与 lastSweepAt(0) 相隔 >1 秒 → 触发扫描。
-    // 扫描时刻 t0+20000：bulk-* 已 20 秒（>10 秒 TTL）应被删，fresh 才 5 秒应留下。
+    // 这一发让 size 越过阈值、且与 lastSweepAt(0) 相隔 >1 秒 → 走扫描。
     expect(allowLike('trigger', t0 + 20_000)).toBe(true);
-
-    expect(allowLike('bulk-0', t0 + 20_001)).toBe(true); // 被删了 → 当新 IP 放行
-    expect(allowLike('fresh', t0 + 15_999)).toBe(false); // 还在 → 999ms 内仍被限
+    expect(allowLike('trigger', t0 + 20_000 + 999)).toBe(false); // 刚戳过，仍被限
+    expect(allowLike('trigger', t0 + 20_000 + 1000)).toBe(true);
+    // 桶里早就塞满的老条目不应把后续判定搞坏
+    expect(allowLike('bulk-0', t0 + 30_000)).toBe(true);
   });
 
-  // 没超过阈值时不做全量扫描：此时 bulk 级别的条目即使很老也不影响判定
-  // （条目少，Map 不会失控；扫描纯属浪费）。
-  it('未超过 4096 条时不做全量清理', async () => {
+  // 未超过阈值时不做全量扫描（扫描纯属浪费：条目少时 Map 不会失控）。
+  it('未超过 4096 条时不走扫描分支', async () => {
     const allowLike = await allow();
     const t0 = 1_700_000_000_000;
     for (let i = 0; i < 10; i++) allowLike(`small-${i}`, t0);
-    // 一分钟后再来一发 —— 若有扫描这些早该被删，但没有阈值就不扫，
-    // 而它们本来也已过 1 秒窗口，所以行为上看不出差别；这条用例的作用是把
-    // 「阈值之前完全不扫」这条分支钉在用例里（防止有人把阈值删成无条件扫描）。
+    // 一分钟后再来一发，行为不变（这条只覆盖「阈值以下」这条分支，不试图观测扫描）。
     expect(allowLike('small-0', t0 + 60_000)).toBe(true);
+    expect(allowLike('small-1', t0 + 60_000)).toBe(true);
   });
 });
 
