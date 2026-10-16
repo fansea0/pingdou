@@ -26,6 +26,8 @@
 - **排序是 `sort=hot`（用户可选）**；`sort=latest` 是默认值，行为与现状完全一致
 - **点赞不支持取消**；同一 IP 对同一张图每天限一次
 - **展示文案是「N 次点赞」，绝不写「N 人喜欢」**（同 IP 次日可再赞，写人数会误导）
+- **排名不实时变化**：列表顺序以服务端响应为准，**客户端严禁按 likes 重排**。
+  点赞只改数字不改位置。理由与测试见 spec §4.2.1
 - **移动端触摸区 ≥44px**
 - **验证命令**：`npm test`（全量，基线 **551 passed / 68 files**）、`npm run typecheck`、`npm run build`
 - **TS 导入带 `.js` 后缀；前端不装新依赖**
@@ -1845,6 +1847,45 @@ describe('点赞按钮', () => {
     expect(likeWork).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('排名不实时变化（用户明确要求）', () => {
+  it('点赞后卡片顺序不变（客户端绝不重排）', async () => {
+    // 服务端返回的顺序是 A(1赞) 在前、B(0赞) 在后 —— 注意 B 赞完会反超 A
+    listWorks.mockResolvedValue({
+      items: [work(1, 'A', 1), work(2, 'B', 0)], total: 2,
+    });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    fireEvent.click(screen.getByRole('button', { name: '最热' }));
+    await waitFor(() => expect(screen.getByText('B')).toBeTruthy());
+
+    // 赞 B：若按点赞数重排，B 应该跳到 A 前面
+    likeWork.mockResolvedValue({ ok: true, likes: 1, alreadyLiked: true });
+    fireEvent.click(screen.getByRole('button', { name: /0 次点赞/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /1 次点赞/ })).toBeTruthy());
+
+    // 顺序必须仍是 A、B
+    const titles = screen.getAllByRole('link').map(a => a.textContent);
+    expect(titles.some(t => t?.includes('A'))).toBe(true);
+    const idxA = titles.findIndex(t => t?.includes('A'));
+    const idxB = titles.findIndex(t => t?.includes('B'));
+    expect(idxA).toBeLessThan(idxB);
+  });
+
+  it('点赞只改数字不改 DOM 位置', async () => {
+    listWorks.mockResolvedValue({
+      items: [work(1, 'A', 1), work(2, 'B', 0)], total: 2,
+    });
+    likeWork.mockResolvedValue({ ok: true, likes: 1, alreadyLiked: true });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    const before = screen.getAllByRole('link').map(a => a.textContent);
+    fireEvent.click(screen.getByRole('button', { name: /0 次点赞/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /1 次点赞/ })).toBeTruthy());
+    const after = screen.getAllByRole('link').map(a => a.textContent);
+    expect(after).toEqual(before);
+  });
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -2355,6 +2396,7 @@ git commit -m "feat(作品库): 详情页点赞 + LikeButton 抽共用 + README 
 - [ ] 两个页面的点赞文案都是「N 次点赞」，没有「N 人喜欢」
 - [ ] 两类空状态区分正确
 - [ ] 搜索词进 URL 用的是 `replaceState`
+- [ ] **点赞后列表顺序不变**（客户端没有做任何按 likes 的重排）
 - [ ] `src/router.ts` 里那条「无 client-side 路由」的旧注释已更新（搜索进 URL 打破了该约束）
 - [ ] **没有**新增 `popstate` 监听器：本项目是全页跳转，后退回列表页是全新加载、
       `parseListQuery` 直接读 URL。加了也不会触发（见 spec §5.2）
