@@ -139,9 +139,11 @@ describe('GET /api/public/works/:id/like', () => {
     expect(r.body).toEqual({ likes: 1, liked: false });
   });
 
-  // 护栏：like 路由必须注册在 /:id 之后。若注册在前，`:id` 会把字面量 "like"
-  // 当成 id 吃掉，Number('like') = NaN → 一律 404，看起来像「路由不存在」。
-  it('GET 路由也必须注册在 :id 之后（草稿 404、不存在的 id 404）', async () => {
+  // 打卡时的假设是「顺序错了 → :id 吞掉 like → 全 404」。实测（变异验证 M5）这个
+  // 假设不成立：Express 5 按整段匹配，`:id` 只吃一段，`/:id` 根本匹配不到 `/:id/like`，
+  // 把 like 路由挪到 :id 之前 19 条用例照样全绿。所以这条用例钉的是**真正的不变量**
+  // —— GET like 对草稿与不存在的 id 都得 404（读操作也走 getPublishedWork 校验）。
+  it('GET like 对草稿与不存在的 id 都返回 404', async () => {
     const { app, works } = await bootApp();
     const draft = await works.createWork({
       title: 'D', published: false, image: { body: PNG, mime: 'image/png' },
@@ -170,12 +172,14 @@ describe('令牌桶限流', () => {
   it('429 时不产生任何 DB 写入', async () => {
     const { app, works } = await bootApp();
     const db = await import('../../../server/db.js');
-    const w = await works.createWork({
-      title: 'A', image: { body: PNG, mime: 'image/png' },
-    });
-    await asIp(app, '6.6.6.6').post(`/api/public/works/${w.id}/like`);
+    const a = await works.createWork({ title: 'A', image: { body: PNG, mime: 'image/png' } });
+    const b = await works.createWork({ title: 'B', image: { body: PNG, mime: 'image/png' } });
+    await asIp(app, '6.6.6.6').post(`/api/public/works/${a.id}/like`);
     const before = db.queryAll('SELECT * FROM work_likes').length;
-    await asIp(app, '6.6.6.6').post(`/api/public/works/${w.id}/like`);
+    // 第二次必须打**另一张**作品：同图重复点赞靠复合主键幂等，有没有 429 都不新增行，
+    // 那样这条断言对「限流闸被摘掉」是零判别力（已实测：变异 1/2 下它照样绿）。
+    const second = await asIp(app, '6.6.6.6').post(`/api/public/works/${b.id}/like`);
+    expect(second.status).toBe(429);
     const after = db.queryAll('SELECT * FROM work_likes').length;
     expect(after).toBe(before);
   });
