@@ -24,6 +24,7 @@ import {
   listPublishedWorks, getPublishedWork, listAllWorks,
   createWork, updateWorkMeta, replaceWorkImage, deleteWork,
   normalizePublished,
+  addLike, likeStateOf, ipHashOf,
   type UpdateWorkMeta,
 } from './works.js';
 
@@ -114,6 +115,36 @@ app.use((req, _res, next) => {
   (req as any).clientIp = ip;
   next();
 });
+
+/**
+ * 点赞接口的进程内令牌桶：每 IP 每 1 秒最多 1 次。
+ *
+ * 为什么光靠主键不够：复合主键挡住了「重复插入」，但挡不住「同一 IP 疯狂 POST
+ * 触发的写事务 + COUNT 查询」—— 那些请求照样会打到 DB。这里在进 DB 之前就掐掉，
+ * 超了直接 429，一条 SQL 都不发。
+ *
+ * 已知局限（部署形态相关，勿当 bug 修）：只在单进程内有效。当前是 systemd 单进程
+ * 跑一个 node，够用；将来横向扩展成多进程必须换成 Redis 之类的共享存储。
+ *
+ * 另外注意：令牌桶是**模块级** Map。测试里靠 vi.resetModules() 让 server/index.js
+ * 重新求值来清桶，否则用例之间会互相污染（同 IP 上一次的 now 被当成这次的 last）。
+ */
+const LIKE_RATE_LIMIT_MS = 1000;
+const likeBuckets = new Map<string, number>();
+
+export function allowLike(ip: string, now: number = Date.now()): boolean {
+  // 顺手清理过期条目，防止 Map 无限增长（站主一个人点一天也就几十条，
+  // 但恶意 IP 可以用大量伪造地址把 Map 撑大）
+  if (likeBuckets.size > 4096) {
+    for (const [k, t] of likeBuckets) {
+      if (now - t > LIKE_RATE_LIMIT_MS * 10) likeBuckets.delete(k);
+    }
+  }
+  const last = likeBuckets.get(ip) ?? 0;
+  if (now - last < LIKE_RATE_LIMIT_MS) return false;
+  likeBuckets.set(ip, now);
+  return true;
+}
 
 /**
  * 这次请求算不算「我自己」。
@@ -451,11 +482,11 @@ app.get('/api/public/products', (_req, res) => {
 // 与「未上架」—— 对外只有一种形状。
 app.get('/api/public/works', (req, res) => {
   try {
-    const limit = Number(req.query.limit || 20); // `?limit=`（空串）也要走默认值，?? 挡不住空串
+    const limit = Number(req.query.limit || 10); // `?limit=`（空串）也要走默认值，?? 挡不住空串
     const offset = Number(req.query.offset ?? 0);
-    // Task 2 的最小迁移：只为跟上 listPublishedWorks 的新签名（options 对象），
-    // 固定 sort='latest'。q / sort 的透传由 Task 3 改写这一行。
-    return res.json(listPublishedWorks({ limit, offset, sort: 'latest' }));
+    const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const sort = req.query.sort === 'hot' ? 'hot' : 'latest'; // 白名单，非法值回落 latest
+    return res.json(listPublishedWorks({ limit, offset, q, sort }));
   } catch (e) {
     console.error('[public/works]', e);
     return res.status(500).json({ error: 'query failed' });
@@ -471,6 +502,57 @@ app.get('/api/public/works/:id', (req, res) => {
   } catch (e) {
     console.error('[public/works/:id]', e);
     return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+/**
+ * 点赞状态查询。公开、无需登录 —— 与公开列表同一性质。
+ * liked 需要回传 IP 才能判断，所以 POST 与 GET 共用同一个 likeStateOf。
+ *
+ * 注册顺序：必须排在上面 `app.get('/api/public/works/:id')` **之后** —— express 按
+ * 注册顺序匹配，`:id` 会把字面量 "like" 当成 id 吞掉（Number('like') = NaN → 404，
+ * 看起来像「路由不存在」而不是「顺序错了」）。
+ */
+app.get('/api/public/works/:id/like', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!getPublishedWork(id)) return res.status(404).json({ error: 'not found' });
+    const ip = (req as any).clientIp ?? 'unknown';
+    return res.json(likeStateOf(id, ipHashOf(ip)));
+  } catch (e) {
+    console.error('[public/works/:id/like]', e);
+    return res.status(500).json({ error: 'query failed' });
+  }
+});
+
+/**
+ * 点赞。公开、无需登录。
+ *
+ * 语义提醒（影响后续 UI 文案）：计数是「次」不是「人」—— 同一 IP 次日可以再给同一张
+ * 图点赞，计数累加；且不支持取消。前端文案必须写「N 次点赞」而不是「N 人喜欢」。
+ *
+ * 三道闸的分工：复合主键挡重复插入、令牌桶挡高频 POST（超限不碰 DB）、
+ * express.json({limit:'64kb'}) 挡超大 body。
+ */
+app.post('/api/public/works/:id/like', (req, res) => {
+  try {
+    // 404 必须在这里判：addLike 对不存在的 id 不抛错，只返回 {likes:0, liked:false}，
+    // 那样草稿点赞会静默变成 200 + 0 赞，而不是 404。
+    const id = Number(req.params.id);
+    if (!getPublishedWork(id)) return res.status(404).json({ error: 'not found' });
+
+    const ip = (req as any).clientIp ?? 'unknown';
+    if (!allowLike(ip)) {
+      // 限流时不碰 DB —— 这正是这道闸的意义
+      return res.status(429).json({ error: 'too many likes, try again later' });
+    }
+
+    // addLike 幂等：重复点赞 liked=false 且计数不变
+    const next = addLike(id, ipHashOf(ip));
+    return res.json({ ok: true, likes: next.likes, alreadyLiked: next.liked });
+  } catch (e) {
+    console.error('[public/works/:id/like POST]', e);
+    return res.status(500).json({ error: 'like failed' });
   }
 });
 
