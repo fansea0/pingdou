@@ -251,9 +251,16 @@ export function renderCompositeFromBoard(
   const legendH = lines.length * opts.chipHeight + Math.max(0, lines.length - 1) * opts.chipGap;
 
   const canvasW = contentW + opts.padding * 2;
-  // 底部边距单独算：二维码的留白带加在这里，页眉/图纸/色卡的纵向布局一律不动，
-  // 所以色卡既不会被压、也不会重排。色卡折行只看 contentW（= canvasW - padding*2），
-  // 与底部边距无关。
+  // 底部边距单独算：二维码的留白带加在这里。页眉、图纸、色卡三段的 y 坐标
+  // 一个都没动，色卡折行也只看 contentW，所以色卡既不会被压、也不会重排 ——
+  // 这是本选项唯一要保证的事。
+  //
+  // 唯一会跟着底部留白带变的，是页眉里 brandKeepOutPx(canvasW, canvasH)：
+  // 它取最终画布的 min(W,H) 算水印字号对应的品牌预留宽，画布变高后横向图板的
+  // 短侧变大、预留宽也变大，于是临界情况下「· 预估工时」会被整段省略。
+  // 这不是 bug：applyWatermark 同样按最终画布的 min(W,H) 定字号，水印真的
+  // 变大了，预留位同步变大，两者始终一致；宁可少画一句工时，也不能让水印压到
+  // 页眉主信息上。applyWatermark 是在贴完二维码的最终画布上调用的。
   const bottomPad = opts.padding + (opts.qrBandPx ?? 0);
   const canvasH =
     opts.padding +

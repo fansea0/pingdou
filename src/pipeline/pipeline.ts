@@ -222,7 +222,8 @@ export class Pipeline {
     const qrImage = await ensureWorksQrImage();
     const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
-      qrBandPx: qrImage ? qrImage.naturalHeight : 0,
+      // 与 drawWorksQr 的边长同源（取 naturalWidth），理由见 exportMulti 里的注释
+      qrBandPx: qrImage ? qrImage.naturalWidth : 0,
     }, mask);
     await drawWatermark(canvas);
     // 水印锚在页眉右侧、二维码锚在底部白带，相隔整个图纸高度，不会互相遮挡
@@ -354,7 +355,10 @@ export class Pipeline {
           boardH,
           this.palette,
           boardMask,
-          { qrBandPx: qrImage ? qrImage.naturalHeight : 0 }
+          // 留白带用 naturalWidth 而不是 naturalHeight：drawWorksQr 的边长取的是
+          // naturalWidth，两处必须同源，否则将来产出非方图时留白带高度会和实际绘制
+          // 边长对不上（图被拉歪，且顶端越过带上沿压到色卡）。
+          { qrBandPx: qrImage ? qrImage.naturalWidth : 0 }
         );
         await drawWatermark(compositeCanvas);
         if (qrImage) drawWorksQr(compositeCanvas, qrImage);
