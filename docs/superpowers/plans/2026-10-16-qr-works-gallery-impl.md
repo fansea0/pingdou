@@ -913,10 +913,15 @@ export async function createWork(input: CreateWorkInput): Promise<WorkDetail> {
       now,
     ]
   );
+  // 用 last_insert_rowid() 而不是 image_key 回读：image_key 碰撞的概率极低，
+  // 但真撞上会「静默返回另一条作品的数据（含它的标题）」，不报错，最难排查。
+  //
+  // 顺序有讲究：必须在 flushNow() 之前读。flushNow() 里的 db.export() 会把
+  // 连接的 last_insert_rowid 复位成 0（sql.js 实测），先 flush 再查必然查不到行。
+  const created = queryAll<WorkRow>(`SELECT * FROM works WHERE id = last_insert_rowid()`);
+  if (!created[0]) throw new Error('createWork: missing after insert');
   flushNow();
 
-  const created = queryAll<WorkRow>(`SELECT * FROM works WHERE image_key = ?`, [imageKey]);
-  if (!created[0]) throw new Error('createWork: missing after insert');
   return toDetail(created[0]);
 }
 
