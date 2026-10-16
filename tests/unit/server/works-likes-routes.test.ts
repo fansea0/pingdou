@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import request from 'supertest';
+import type { Database } from 'sql.js';
 
 let tmp = '';
+/** Database.prototype.prepare 上的计数 spy，用例内在断言后登记，afterEach 统一还原 */
+let restoreSqlSpy: (() => void) | null = null;
 
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'works-likes-routes-'));
@@ -16,6 +19,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (restoreSqlSpy) {
+    restoreSqlSpy();
+    restoreSqlSpy = null;
+  }
   delete process.env.PINGDOU_DATA_DIR;
   if (tmp && existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
 });
@@ -101,7 +108,7 @@ describe('POST /api/public/works/:id/like', () => {
     expect(r.status).toBe(404);
   });
 
-    it('不需要登录即可点赞（公开功能）', async () => {
+  it('不需要登录即可点赞（公开功能）', async () => {
     const { app, works } = await bootApp();
     const w = await works.createWork({
       title: 'A', image: { body: PNG, mime: 'image/png' },
@@ -124,21 +131,54 @@ describe('POST /api/public/works/:id/like', () => {
     expect(second.status).toBe(429); // 第二次被频率闸拦下，不进 DB
   });
 
-  // I-1 护栏：429 时不该有任何 SQL 发出去。用「另一张图」观察不到「读 SQL」，
-  // 所以这里换成草稿 id —— 命中 404 分支必然先跑 getPublishedWork 的 SELECT。
-  // 桶在 404 之前时，第二次请求压根走不到 getPublishedWork：行数不变只能说明
-  // 「addLike 没写」，配合上面的 429 断言才把「读也没发生」钉住。
-  it('草稿点赞同 IP 第二次 429（读路径也被频率闸挡在前面）', async () => {
+  // I-1 护栏：429 时不该有任何 SQL 发出去 —— 读路径也算，所以这条用例数的是
+  // **真正 prepare 的 SQL 条数**，不是行数。
+  //
+  // 为什么必须数 SQL 而不是看行数（上一轮写法在这里翻过车）：只断言「429 +
+  // work_likes 行数为 0」的话，在 allowLike 之前插一条真·预读 getPublishedWork
+  // 的变异 E 下照样全绿 —— 预读只读不写，行数当然不变，「读也被挡住了」根本没被钉住。
+  //
+  // 计数点选在 sql.js 的 Database.prototype.prepare：server/db.ts 的 runStmt /
+  // queryAll / execReturning 全部经由 requireDb().prepare(sql)，prepare 的调用次数
+  // 就是真实发出的 SQL 条数（initDb 的建表 / exec 不走 prepare，不污染计数）。
+  // 场景用草稿 id：首次请求命中 404 分支，必然跑一次 getPublishedWork 的 SELECT，
+  // 第二次被 429 挡下时应当是 0 —— 若有人在 allowLike 前加预读，这里立刻 > 0。
+  it('草稿点赞同 IP 第二次 429（读路径零 SQL）', async () => {
     const { app, works } = await bootApp();
     const db = await import('../../../server/db.js');
     const draft = await works.createWork({
       title: 'D', published: false, image: { body: PNG, mime: 'image/png' },
     });
-    expect((await asIp(app, '4.4.4.5')
-      .post(`/api/public/works/${draft.id}/like`)).status).toBe(404);
+
+    // sql.js 在 vitest 下只暴露 default（即 initSqlJs 工厂），从它拿 Database 类。
+    // 该类是工厂级共享的同一份 prototype，所以新 init 一次不影响 server/db.ts
+    // 内部持有的那个实例 —— 基线断言 prepared===1 本身就是「spy 打对了地方」的证据。
+    const initSqlJs = (await import('sql.js')).default;
+    const wasmDir = resolve(process.cwd(), 'node_modules/sql.js/dist');
+    const SQL = await initSqlJs({ locateFile: (f: string) => resolve(wasmDir, f) });
+    const proto = SQL.Database.prototype;
+    const original = proto.prepare;
+    let prepared = 0;
+    const spy = vi.spyOn(proto, 'prepare').mockImplementation(function (
+      this: Database,
+      ...args: Parameters<typeof original>
+    ) {
+      prepared++;
+      return original.apply(this, args);
+    });
+    restoreSqlSpy = () => spy.mockRestore();
+
+    prepared = 0;
+    const first = await asIp(app, '4.4.4.5')
+      .post(`/api/public/works/${draft.id}/like`);
+    expect(first.status).toBe(404);
+    expect(prepared).toBe(1); // 草稿走 404 分支：一条 getPublishedWork 的 SELECT
+
+    prepared = 0;
     const second = await asIp(app, '4.4.4.5')
       .post(`/api/public/works/${draft.id}/like`);
     expect(second.status).toBe(429);
+    expect(prepared).toBe(0); // 429：一条 SQL 都不发
     expect(db.queryAll('SELECT * FROM work_likes').length).toBe(0);
   });
 });
