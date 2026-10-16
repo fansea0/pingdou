@@ -1,29 +1,62 @@
+/*
+ * 分段控件（segmented control）：一个容器装住全部导航项，选中项是容器内的
+ * 高亮色块。
+ *
+ * 之前是两个等重量的描边药丸并排居中 —— 两个都长得像按钮，谁是当前页只靠
+ * 「换了背景色 + 加粗」区分，主次层级读不出来。分段控件把选择范围收进一个
+ * 容器里，当前项就自然成为容器内唯一的实心块，一眼可辨。
+ */
 .site-nav {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
   justify-content: center;
   margin: var(--space-3) 0 var(--space-1);
+  /* 内边距是「轨道」的厚度：容器自身是浅色底，项在里面滑动 */
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  /* 宽度不给死，由两项内容撑开；但让容器比纯内容稍宽一点，两端留出呼吸 */
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+/* 容器宽度撑不满时，让两个项均分，避免「选中块长短不一」显得随意 */
+@media (min-width: 480px) {
+  .site-nav {
+    width: 320px;
+  }
 }
 
 .site-nav-link {
+  flex: 1;
   padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border-radius: calc(var(--radius-md) - var(--space-1));
   color: var(--color-text-muted);
   text-decoration: none;
   font-size: var(--text-sm);
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  text-align: center;
+  white-space: nowrap;
+  transition: color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .site-nav-link:hover {
   color: var(--color-text);
-  border-color: var(--color-border-strong);
+}
+
+/* hover 时给一层半透明底，未选中项也有「可点」的反馈 */
+.site-nav-link:not(.site-nav-link--active):hover {
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .site-nav-link--active {
-  color: var(--color-accent-hover);
-  border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  color: #fff;
+  background: var(--color-accent);
   font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.site-nav-link--active:hover {
+  color: #fff;
+  background: var(--color-accent-hover);
 }

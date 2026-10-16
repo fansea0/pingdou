@@ -22,13 +22,36 @@
   margin-bottom: var(--space-3);
 }
 
+/*
+ * 显式断点，不用 repeat(auto-fill, minmax(220px, 1fr))。
+ *
+ * 那个写法在 375px 手机上算出来的列宽是 343px，跨不过 220px 的下限 → 整页
+ * 只有 1 列，单张卡片全宽、图片再按 4:5 撑到 ~430px 高，一屏只看得到一张图。
+ * 「auto-fill 不会横向溢出」是对的，但单列本身就是问题。
+ *
+ * 显式写死列数才能让「手机就是两列」成为设计意图而不是碰巧的副作用。
+ * 手机两列时单图约 165px 宽（375 - 边距 32 - 间隙 12）÷ 2，一屏 4-6 张。
+ */
 .works-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (min-width: 600px) {
+  .works-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-4);
+  }
+}
+
+@media (min-width: 1000px) {
+  .works-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .works-card {
@@ -64,10 +87,17 @@
 }
 
 .works-card-title {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   padding: var(--space-3);
   font-size: var(--text-sm);
   font-weight: 600;
+  /* 两列时卡片只有约 165px 宽，不截断的话一个长标题就能把整行卡片顶得
+     高低不齐，网格的齐整感全没了。两行放不下就省略号 —— 完整标题在详情页。 */
+  min-height: calc(var(--text-sm) * 1.5 * 2 + var(--space-3) * 2);
+  line-height: 1.5;
 }
 
 .works-more {
