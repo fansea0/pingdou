@@ -245,16 +245,25 @@ location /products/ { alias /var/lib/pingdou/images/; }
 作品原图与缩略图（admin 上传，前台作品库展示）走这条：
 
 ```nginx
-location ~ ^/media/works/[0-9a-f]{16}(-t)?\.(png|webp)$ {
-    alias /var/lib/pingdou/media/works/;
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+    alias /var/lib/pingdou/media/works/$file;
 }
 ```
 
-⚠️ 这里是**正则 location**（`~` 前缀），不是前缀 `location`——正则 location
-下的 `alias` 必须去掉正则里匹配掉的那段前缀（本例是 `works/`）。写错的症状
-是 404，和「alias 末尾漏了斜杠」完全一样，排查时容易往错的方向走。
+⚠️ 这里是**正则 location**（`~` 前缀），不是前缀 `location`，两者**不能照抄**。
 
-`/products/` 那条是普通前缀 location，两者写法**不能照抄**。
+按 nginx 官方文档：`alias` 用在正则 location 里时，它的值指定的是一条**完整文件路径**
+（complete file path），而不是「前缀」——所以这条路径里**必须自带文件名**，通常写成对
+正则捕获组的引用（官方示例 `location ~ ^/users/(.+\.(?:gif|jpe?g|png))$ { alias /data/w3/images/$1; }`）。
+
+写成 `alias /var/lib/pingdou/media/works/;`（不带捕获）会得到「目录 + 文件名缺失」的
+完整路径，nginx 找不到文件 → **每一张图都 404**。症状和「alias 末尾漏了斜杠」一模一样，
+排查时极易往错方向走：反复补斜杠、加 `try_files` 都救不回来，因为问题根本不在斜杠，
+而在于文件名没被带出来。**要用命名捕获把文件名摘出来**（上面的 `(?<file>...)` + `$file`）。
+
+前缀 `location` 走的是完全另一套语义（`alias /data/w3/images/;` 配 `/i/top.gif` 会取到
+`/data/w3/images/top.gif`），它不需要捕获组——所以 `/products/` 那条前缀 location 的写法
+不能直接搬到正则 location 上，反之亦然。
 
 文件名只允许这 2 种形状（16 位小写 hex + `.png` / `-t.webp`），与后端
 `server/index.ts` 里 `/media/works/:filename` 的白名单保持一致。正则同时起到了
