@@ -194,16 +194,19 @@ describe('WorkDetailPage', () => {
     expect(a.getAttribute('download')).toBe('___.png');
   });
 
-  it('加载中 / 出错两态都是 live region，SR 会被播报', async () => {
-    // 两态都在首次请求返回之后才出现；没有 aria-live 的话 SR 用户永远听不到。
+  it('加载中是 live region，SR 会被播报', async () => {
+    // 加载态在首次请求返回之后才出现；没有 aria-live 的话 SR 用户永远听不到。
     // role 与 App.tsx:273 的导出成功 toast 保持一致。
     fetchWork.mockReturnValue(new Promise(() => {}));
     render(<WorkDetailPage id={42} />);
     const loadingState = screen.getByRole('status');
     expect(loadingState.getAttribute('aria-live')).toBe('polite');
     expect(loadingState.textContent).toMatch(/加载中/);
-    cleanup();
+  });
 
+  it('出错态也是 live region', async () => {
+    // 与加载态分开写：合成一条时，加载态的失败会短路掉这一段断言，
+    // 只留下加载态有覆盖、错误态无覆盖。
     fetchWork.mockRejectedValue(new Error('not found'));
     render(<WorkDetailPage id={42} />);
     await screen.findByText(/不存在或已下架/);
