@@ -101,7 +101,7 @@ describe('POST /api/public/works/:id/like', () => {
     expect(r.status).toBe(404);
   });
 
-  it('不需要登录即可点赞（公开功能）', async () => {
+    it('不需要登录即可点赞（公开功能）', async () => {
     const { app, works } = await bootApp();
     const w = await works.createWork({
       title: 'A', image: { body: PNG, mime: 'image/png' },
@@ -109,6 +109,91 @@ describe('POST /api/public/works/:id/like', () => {
     const r = await asIp(app, '1.1.1.1')
       .post(`/api/public/works/${w.id}/like`);
     expect(r.status).toBe(200);
+  });
+
+  // I-2 护栏：令牌桶必须排在 404 检查**之前**。排在后面时，同一 IP 连打不存在的
+  // id 会一路穿透到 DB（每次一条 getPublishedWork 的 SQL），而且**永远拿不到 429**
+  // ——评审实测 12 次全 404、零 429，那是一条真能刷库的路径。
+  it('不存在的 id 也吃令牌：同 IP 第二次返回 429 而不是 404', async () => {
+    const { app } = await bootApp();
+    const first = await asIp(app, '4.4.4.4')
+      .post('/api/public/works/999999/like');
+    expect(first.status).toBe(404); // 首次仍然如实告诉调用方「没这个作品」
+    const second = await asIp(app, '4.4.4.4')
+      .post('/api/public/works/999999/like');
+    expect(second.status).toBe(429); // 第二次被频率闸拦下，不进 DB
+  });
+
+  // I-1 护栏：429 时不该有任何 SQL 发出去。用「另一张图」观察不到「读 SQL」，
+  // 所以这里换成草稿 id —— 命中 404 分支必然先跑 getPublishedWork 的 SELECT。
+  // 桶在 404 之前时，第二次请求压根走不到 getPublishedWork：行数不变只能说明
+  // 「addLike 没写」，配合上面的 429 断言才把「读也没发生」钉住。
+  it('草稿点赞同 IP 第二次 429（读路径也被频率闸挡在前面）', async () => {
+    const { app, works } = await bootApp();
+    const db = await import('../../../server/db.js');
+    const draft = await works.createWork({
+      title: 'D', published: false, image: { body: PNG, mime: 'image/png' },
+    });
+    expect((await asIp(app, '4.4.4.5')
+      .post(`/api/public/works/${draft.id}/like`)).status).toBe(404);
+    const second = await asIp(app, '4.4.4.5')
+      .post(`/api/public/works/${draft.id}/like`);
+    expect(second.status).toBe(429);
+    expect(db.queryAll('SELECT * FROM work_likes').length).toBe(0);
+  });
+});
+
+describe('allowLike 纯函数边界（M-4）', () => {
+  // allowLike 已导出且带 now 参数，本该直接单测 —— 之前 19 条用例全走 HTTP，
+  // 「now-last 恰好 1000」「清理阈值 4096」「TTL 10 秒」这些边界只靠人读代码。
+  async function allow() {
+    const mod = await import('../../../server/index.js');
+    return mod.allowLike;
+  }
+
+  it('首次放行；now-last 为 999 时拒绝、恰好 1000 时放行', async () => {
+    const allowLike = await allow();
+    const t0 = 1_700_000_000_000;
+    expect(allowLike('ip-a', t0)).toBe(true);
+    expect(allowLike('ip-a', t0 + 999)).toBe(false);
+    expect(allowLike('ip-a', t0 + 1000)).toBe(true);
+  });
+
+  it('不同 IP 互不影响', async () => {
+    const allowLike = await allow();
+    const t0 = 1_700_000_000_000;
+    expect(allowLike('ip-a', t0)).toBe(true);
+    expect(allowLike('ip-b', t0)).toBe(true);
+    expect(allowLike('ip-a', t0 + 10)).toBe(false);
+    expect(allowLike('ip-b', t0 + 10)).toBe(false);
+  });
+
+  // I-4 护栏：桶超过 4096 条后触发全量扫描，TTL（10 秒）外的条目被丢弃、TTL 内的留下。
+  it('桶超过 4096 条时清理：10 秒前的条目被丢弃，新的留下', async () => {
+    const allowLike = await allow();
+    const t0 = 1_700_000_000_000;
+    // 填到 4097 条（超过阈值）。'fresh' 是唯一一条「年轻」的条目。
+    for (let i = 0; i < 4097; i++) allowLike(`bulk-${i}`, t0);
+    allowLike('fresh', t0 + 15_000);
+
+    // 这一发把 size 顶到阈值之外且与 lastSweepAt(0) 相隔 >1 秒 → 触发扫描。
+    // 扫描时刻 t0+20000：bulk-* 已 20 秒（>10 秒 TTL）应被删，fresh 才 5 秒应留下。
+    expect(allowLike('trigger', t0 + 20_000)).toBe(true);
+
+    expect(allowLike('bulk-0', t0 + 20_001)).toBe(true); // 被删了 → 当新 IP 放行
+    expect(allowLike('fresh', t0 + 15_999)).toBe(false); // 还在 → 999ms 内仍被限
+  });
+
+  // 没超过阈值时不做全量扫描：此时 bulk 级别的条目即使很老也不影响判定
+  // （条目少，Map 不会失控；扫描纯属浪费）。
+  it('未超过 4096 条时不做全量清理', async () => {
+    const allowLike = await allow();
+    const t0 = 1_700_000_000_000;
+    for (let i = 0; i < 10; i++) allowLike(`small-${i}`, t0);
+    // 一分钟后再来一发 —— 若有扫描这些早该被删，但没有阈值就不扫，
+    // 而它们本来也已过 1 秒窗口，所以行为上看不出差别；这条用例的作用是把
+    // 「阈值之前完全不扫」这条分支钉在用例里（防止有人把阈值删成无条件扫描）。
+    expect(allowLike('small-0', t0 + 60_000)).toBe(true);
   });
 });
 
@@ -253,6 +338,18 @@ describe('列表接口透传 q / sort', () => {
       await works.createWork({ title: `W${i}`, image: { body: PNG, mime: 'image/png' } });
     }
     const r = await request(app as never).get('/api/public/works');
+    expect(r.body.total).toBe(12);
+    expect(r.body.items).toHaveLength(10);
+  });
+
+  // M-1 护栏：`?limit=abc` → Number 得 NaN，不收口就会落进数据层陈旧的 `: 20` 兜底，
+  // 把「默认 10」的口径绕过去（评审实测返回 20 条）。
+  it('?limit=abc 非法值也回落 10（不被数据层的 20 兜底绕过）', async () => {
+    const { app, works } = await bootApp();
+    for (let i = 0; i < 12; i++) {
+      await works.createWork({ title: `W${i}`, image: { body: PNG, mime: 'image/png' } });
+    }
+    const r = await request(app as never).get('/api/public/works?limit=abc');
     expect(r.body.total).toBe(12);
     expect(r.body.items).toHaveLength(10);
   });

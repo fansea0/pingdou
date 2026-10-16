@@ -120,8 +120,8 @@ app.use((req, _res, next) => {
  * 点赞接口的进程内令牌桶：每 IP 每 1 秒最多 1 次。
  *
  * 为什么光靠主键不够：复合主键挡住了「重复插入」，但挡不住「同一 IP 疯狂 POST
- * 触发的写事务 + COUNT 查询」—— 那些请求照样会打到 DB。这里在进 DB 之前就掐掉，
- * 超了直接 429，一条 SQL 都不发。
+ * 触发的写事务 + COUNT 查询」—— 那些请求照样会打到 DB。这里在 POST handler 的第一行
+ * 就掐掉（早于 getPublishedWork 的存在性校验），超了直接 429，一条 SQL 都不发。
  *
  * 已知局限（部署形态相关，勿当 bug 修）：只在单进程内有效。当前是 systemd 单进程
  * 跑一个 node，够用；将来横向扩展成多进程必须换成 Redis 之类的共享存储。
@@ -130,15 +130,32 @@ app.use((req, _res, next) => {
  * 重新求值来清桶，否则用例之间会互相污染（同 IP 上一次的 now 被当成这次的 last）。
  */
 const LIKE_RATE_LIMIT_MS = 1000;
+const LIKE_BUCKET_SWEEP_THRESHOLD = 4096;
+const LIKE_BUCKET_TTL_MS = LIKE_RATE_LIMIT_MS * 10;
 const likeBuckets = new Map<string, number>();
+/** 上次全量清理的时刻。用来把清理节流成最多每秒一次，见 allowLike。 */
+let lastSweepAt = 0;
 
 export function allowLike(ip: string, now: number = Date.now()): boolean {
   // 顺手清理过期条目，防止 Map 无限增长（站主一个人点一天也就几十条，
-  // 但恶意 IP 可以用大量伪造地址把 Map 撑大）
-  if (likeBuckets.size > 4096) {
+  // 但恶意 IP 可以用大量伪造地址把 Map 撑大）。
+  //
+  // 为什么要 lastSweepAt 节流：清理本身是 O(n) 全量遍历，而它在 Map 超过阈值后的
+  // **每一次**调用里都会跑。评审实测 size=100000 时平均 222µs/次、20000 时 49µs/次 ——
+  // 在一个专门为了「防打爆 DB」而写的闸里内建 CPU 放大是自相矛盾的（打不爆 DB 却打满了
+  // CPU）。节流到每 LIKE_RATE_LIMIT_MS 最多一次后，最坏情况的扫描频率被钉死在 1Hz，
+  // 成本与桶的大小解耦。
+  //
+  // 保留 size 阈值而不是「无条件定期扫」：条目少时完全不扫，省掉常态开销。
+  // 节流只是把清理推迟 ≤1 秒，条目数在极端情况下最多多涨一秒钟的量，无副作用。
+  if (
+    likeBuckets.size > LIKE_BUCKET_SWEEP_THRESHOLD &&
+    now - lastSweepAt > LIKE_RATE_LIMIT_MS
+  ) {
     for (const [k, t] of likeBuckets) {
-      if (now - t > LIKE_RATE_LIMIT_MS * 10) likeBuckets.delete(k);
+      if (now - t > LIKE_BUCKET_TTL_MS) likeBuckets.delete(k);
     }
+    lastSweepAt = now;
   }
   const last = likeBuckets.get(ip) ?? 0;
   if (now - last < LIKE_RATE_LIMIT_MS) return false;
@@ -482,7 +499,12 @@ app.get('/api/public/products', (_req, res) => {
 // 与「未上架」—— 对外只有一种形状。
 app.get('/api/public/works', (req, res) => {
   try {
-    const limit = Number(req.query.limit || 10); // `?limit=`（空串）也要走默认值，?? 挡不住空串
+    // `?limit=`（空串）也要走默认值，?? 挡不住空串。
+    // 再收一道 NaN：`?limit=abc` 会得到 NaN 并落进数据层那个陈旧的 `: 20` 兜底，
+    // 于是新的「默认 10」口径被 `?limit=abc` 绕过（评审实测返回 20 条）。这里收口，
+    // 非法值一律当「没传」，语义比数据层的兜底更明确，也不必改 works.ts。
+    const rawLimit = Number(req.query.limit || 10);
+    const limit = Number.isFinite(rawLimit) ? rawLimit : 10;
     const offset = Number(req.query.offset ?? 0);
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
     const sort = req.query.sort === 'hot' ? 'hot' : 'latest'; // 白名单，非法值回落 latest
@@ -509,9 +531,9 @@ app.get('/api/public/works/:id', (req, res) => {
  * 点赞状态查询。公开、无需登录 —— 与公开列表同一性质。
  * liked 需要回传 IP 才能判断，所以 POST 与 GET 共用同一个 likeStateOf。
  *
- * 注册顺序：必须排在上面 `app.get('/api/public/works/:id')` **之后** —— express 按
- * 注册顺序匹配，`:id` 会把字面量 "like" 当成 id 吞掉（Number('like') = NaN → 404，
- * 看起来像「路由不存在」而不是「顺序错了」）。
+ * 注册顺序：与上面的 `app.get('/api/public/works/:id')` 先后无所谓 —— express
+ * 按整段路径匹配，`:id` 只吃一段，`/:id` 匹配不到 `/:id/like`（已实测两种顺序
+ * 行为一致）。放在 `:id` 之后只是为了阅读时先详情后子资源。
  */
 app.get('/api/public/works/:id/like', (req, res) => {
   try {
@@ -536,16 +558,25 @@ app.get('/api/public/works/:id/like', (req, res) => {
  */
 app.post('/api/public/works/:id/like', (req, res) => {
   try {
-    // 404 必须在这里判：addLike 对不存在的 id 不抛错，只返回 {likes:0, liked:false}，
-    // 那样草稿点赞会静默变成 200 + 0 赞，而不是 404。
-    const id = Number(req.params.id);
-    if (!getPublishedWork(id)) return res.status(404).json({ error: 'not found' });
-
     const ip = (req as any).clientIp ?? 'unknown';
+
+    // 令牌桶必须排在 404 检查**之前**：排在后面时，「不存在/草稿 id」这条路径会先打
+    // 一条 getPublishedWork 的 SQL 才被 404 挡掉，于是 (a) 429 路径并非零 SQL，
+    // (b) 同一 IP 连打不存在的 id 可以无限次穿透到 DB —— 那是一条真正可被利用的刷库
+    // 路径（评审实测：12 次全部 404、零 429）。放前面后超限请求一条 SQL 都不发。
+    //
+    // 代价（已知且接受）：无效 id 的请求会消耗**调用方自己**的令牌额度（自伤），
+    // 但不会影响别人 —— 桶按 IP 分开。被误伤的表现是「点错了，第二次直接 429」，
+    // 1 秒后自动恢复，远好于被刷库。
     if (!allowLike(ip)) {
       // 限流时不碰 DB —— 这正是这道闸的意义
       return res.status(429).json({ error: 'too many likes, try again later' });
     }
+
+    // 404 仍然要判：令牌桶只管频率、不管资源是否合法。addLike 对不存在的 id 不抛错，
+    // 只返回 {likes:0, liked:false}，那样草稿点赞会静默变成 200 + 0 赞，而不是 404。
+    const id = Number(req.params.id);
+    if (!getPublishedWork(id)) return res.status(404).json({ error: 'not found' });
 
     // addLike 幂等：重复点赞 liked=false 且计数不变
     const next = addLike(id, ipHashOf(ip));
