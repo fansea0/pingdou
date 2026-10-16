@@ -40,6 +40,26 @@ async function loginAdmin(app: unknown): Promise<string> {
   return cookies.map(c => c.split(';')[0]).join('; ');
 }
 
+/** 起一个已登录的 merchant 会话。用于断言 admin 接口对非管理员是 403 而不是 401。 */
+async function loginMerchant(app: unknown): Promise<string> {
+  const users = await import('../../../server/users.js');
+  users.seedDefaultAdminIfEmpty();
+  users.createUser({
+    username: 'mike',
+    password: 'pw1234',
+    role: 'merchant',
+    mustChangePassword: true,
+  });
+  const r = await request(app as never)
+    .post('/api/auth/login')
+    .send({ username: 'mike', password: 'pw1234' });
+  expect(r.status).toBe(200);
+  const cookies = r.headers['set-cookie'] as unknown as string[];
+  return cookies.map(c => c.split(';')[0]).join('; ');
+}
+
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
 describe('GET /api/public/works', () => {
@@ -61,6 +81,19 @@ describe('GET /api/public/works', () => {
     const r = await request(app).get('/api/public/works?limit=2&offset=1');
     expect(r.body.items).toHaveLength(2);
     expect(r.body.total).toBe(3);
+  });
+
+  // 护栏：把路由里的 listPublishedWorks 换成 listAllWorks（「含草稿的列表挂到公开
+  // 路径」是这个项目的第一硬约束），这条用例必须立刻变红。works.test.ts 只覆盖
+  // 数据层，覆盖不到这行接线。
+  it('公开列表不含草稿', async () => {
+    const { app, works } = await bootApp();
+    await works.createWork({ title: '已上架', image: { body: PNG, mime: 'image/png' } });
+    await works.createWork({ title: '草稿', published: false, image: { body: PNG, mime: 'image/png' } });
+    const r = await request(app).get('/api/public/works');
+    expect(r.status).toBe(200);
+    expect(r.body.total).toBe(1);
+    expect(r.body.items.map((i: { title: string }) => i.title)).toEqual(['已上架']);
   });
 });
 
@@ -116,6 +149,24 @@ describe('GET /media/works/:filename', () => {
       expect((await request(app).get(`/media/works/${bad}`)).status).toBe(400);
     }
   });
+
+  // 白名单必须覆盖 works.ts 按 mime 派生出的全部扩展名：EXT_BY_MIME 里
+  // image/jpeg -> .jpg、image/webp -> .webp，而 multer 的 fileFilter 明确放行
+  // 这两种 mime。只放行 .png 会让 jpeg/webp 作品存得上、URL 却永久 400。
+  it('jpeg 原图：上传后 imageUrl 能被 /media/works/ 取到', async () => {
+    const { app } = await bootApp();
+    const cookie = await loginAdmin(app);
+    const created = await request(app)
+      .post('/api/admin/works')
+      .set('Cookie', cookie)
+      .attach('file', JPEG, { filename: 'a.jpg', contentType: 'image/jpeg' });
+    expect(created.status).toBe(200);
+    expect(created.body.imageUrl).toMatch(/^\/media\/works\/[0-9a-f]{16}\.jpg$/);
+
+    const r = await request(app).get(created.body.imageUrl);
+    expect(r.status).toBe(200);
+    expect(Buffer.from(r.body)).toEqual(JPEG);
+  });
 });
 
 describe('admin 作品接口', () => {
@@ -123,6 +174,37 @@ describe('admin 作品接口', () => {
     const { app } = await bootApp();
     expect((await request(app).post('/api/admin/works')).status).toBe(401);
     expect((await request(app).get('/api/admin/works')).status).toBe(401);
+  });
+
+  // 其余三条写路由各自要有 401 断言：摘掉任意一条的 requireAuth/requireAdmin，
+  // 之前 16 条用例仍然全绿。
+  it('PUT /api/admin/works/:id 未登录 401', async () => {
+    const { app } = await bootApp();
+    expect((await request(app).put('/api/admin/works/1').send({ title: 'x' })).status).toBe(401);
+  });
+
+  it('POST /api/admin/works/:id/image 未登录 401', async () => {
+    const { app } = await bootApp();
+    expect(
+      (await request(app).post('/api/admin/works/1/image').attach('file', PNG, { filename: 'a.png', contentType: 'image/png' })).status
+    ).toBe(401);
+  });
+
+  it('DELETE /api/admin/works/:id 未登录 401', async () => {
+    const { app } = await bootApp();
+    expect((await request(app).delete('/api/admin/works/1')).status).toBe(401);
+  });
+
+  it('merchant 角色访问 admin 作品接口 403', async () => {
+    const { app } = await bootApp();
+    const cookie = await loginMerchant(app);
+    expect((await request(app).get('/api/admin/works').set('Cookie', cookie)).status).toBe(403);
+    expect(
+      (await request(app).post('/api/admin/works').set('Cookie', cookie)
+        .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' })).status
+    ).toBe(403);
+    expect((await request(app).put('/api/admin/works/1').set('Cookie', cookie).send({ title: 'x' })).status).toBe(403);
+    expect((await request(app).delete('/api/admin/works/1').set('Cookie', cookie)).status).toBe(403);
   });
 
   it('创建作品：multipart 带 file + thumb + 文本字段', async () => {
@@ -207,5 +289,27 @@ describe('admin 作品接口', () => {
     const { app } = await bootApp();
     const cookie = await loginAdmin(app);
     expect((await request(app).delete('/api/admin/works/99999').set('Cookie', cookie)).status).toBe(404);
+  });
+
+  // fail-closed：客户端显式传 null 是「我明确要改这个字段，只是值非法」，
+  // 不能和「没传」一起走 fallback —— 否则会把草稿静默上架。
+  it('PUT 传 published=null 不上架（fail-closed）', async () => {
+    const { app } = await bootApp();
+    const cookie = await loginAdmin(app);
+    const created = await request(app)
+      .post('/api/admin/works')
+      .set('Cookie', cookie)
+      .field('published', '0')
+      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' });
+    expect(created.status).toBe(200);
+    expect((await request(app).get(`/api/public/works/${created.body.id}`)).status).toBe(404);
+
+    const put = await request(app)
+      .put(`/api/admin/works/${created.body.id}`)
+      .set('Cookie', cookie)
+      .send({ published: null });
+    expect(put.status).toBe(200);
+    // 仍然是草稿：公开详情继续 404
+    expect((await request(app).get(`/api/public/works/${created.body.id}`)).status).toBe(404);
   });
 });

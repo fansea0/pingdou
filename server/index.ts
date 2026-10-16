@@ -474,7 +474,12 @@ app.get('/api/public/works/:id', (req, res) => {
 
 // dev-only 兜底：把 /media/works/<file> 直读盘。生产走 nginx location 直读，性能更高。
 // 文件名走严格白名单，非法名字一律 400 —— 不落到 sendFile 上给路径穿越留机会。
-const MEDIA_FILENAME_RE = /^[0-9a-f]{16}\.png$/;
+//
+// 扩展名必须与 works.ts 的 EXT_BY_MIME 覆盖范围一致：jpg / webp / png 三种 mime
+// 都会被 multer 的 fileFilter 放行，works.ts 按原始 mime 派生扩展名原样落盘。
+// 少写一种，那些作品就「存得上、URL 永久 400」。白名单拦的是路径穿越
+// （必须是 16 位 hex + 固定扩展名），不是限制扩展名种类。
+const MEDIA_FILENAME_RE = /^[0-9a-f]{16}\.(png|jpg|webp)$/;
 const MEDIA_THUMB_RE = /^[0-9a-f]{16}-t\.webp$/;
 app.get('/media/works/:filename', (req, res) => {
   const filename = String(req.params.filename ?? '');
@@ -535,7 +540,9 @@ app.put('/api/admin/works/:id', requireAuth, requireAdmin, async (req, res) => {
   const patch: UpdateWorkMeta = {};
   if (typeof title === 'string') patch.title = title;
   if (typeof description === 'string') patch.description = description;
-  if (published !== undefined) patch.published = normalizePublished(published, true);
+  // null 也当成「客户端明确传了这个字段」，不走 fallback：把 null 当成「没传」会
+  // 用 fallback=true 把草稿静默上架。fail-closed 更安全，非法值一律不动 published。
+  if (published !== undefined && published !== null) patch.published = normalizePublished(published, true);
   try {
     return res.json(await updateWorkMeta(Number(req.params.id), patch));
   } catch (e: any) {

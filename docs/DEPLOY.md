@@ -163,7 +163,7 @@ journalctl -u pingdou-backend -n 20 --no-pager
   `alias` 结尾的 `/` 必须有。**不要**配 `location /data/`（旧版本产物，新版不再使用）。
 - **作品图 location**（同样必须配；注意这是**正则 location**，`alias` 必须自带文件名）：
   ```nginx
-  location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+  location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
       alias /var/lib/pingdou/media/works/$file;
   }
   ```
@@ -314,7 +314,7 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 | 登录后立刻掉登录态 | 先确认 cookie 有没有到后端：`curl -i -X POST localhost/api/auth/logout \| grep -ci '^set-cookie:'`。nginx 默认会透传，所以更可能是 `secure` 属性（`NODE_ENV=production` 时 cookie 只在 HTTPS 下发）或前端没带 `credentials:'include'` |
 | admin 改了商品，访客没看到 | 商品走 SQLite，不会被 deploy 覆盖；浏览器可能缓存，强制刷新或加 `?t=<timestamp>` |
 | 商品图片 403 | `chmod -R a+rX /var/lib/pingdou/images` + nginx `location /products/` 的 `alias` 路径 |
-| 作品图 404 / 403 | 403 先跑 `chmod -R a+rX /var/lib/pingdou/media`；404 先查 nginx 的 `location ~ ^/media/works/(?<file>...)` —— 正则 location 下 `alias` 必须用捕获组带出文件名（`alias .../$file`），且要确认配的不是 `/media/` 前缀 location |
+| 作品图 404 / 403 | 403 先跑 `chmod -R a+rX /var/lib/pingdou/media`；404 先查 nginx 的 `location ~ ^/media/works/(?<file>...)` —— 正则 location 下 `alias` 必须用捕获组带出文件名（`alias .../$file`），扩展名要覆盖 `png\|jpg\|webp` 三种（jpeg / webp 原图的作品图也是 404 高发点），并确认配的不是 `/media/` 前缀 location |
 | 续期报 `Another instance of Certbot is already running` | `/var/log/letsencrypt/.certbot.lock` 残留（多半是上次续期被强杀），删掉即可 |
 | 续期报 `Timeout during connect` / `DNS SERVFAIL` | 正常现象，见上面「证书续期」一节，靠重试兜底 |
 | 续期报 `404` 或不含 ACME 路径 | 检查 80 端口的 `/.well-known/acme-challenge/` 是否被 301 跳转吃掉（要用 `location ^~`） |

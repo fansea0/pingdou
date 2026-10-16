@@ -245,7 +245,7 @@ location /products/ { alias /var/lib/pingdou/images/; }
 作品原图与缩略图（admin 上传，前台作品库展示）走这条：
 
 ```nginx
-location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
+location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
     alias /var/lib/pingdou/media/works/$file;
 }
 ```
@@ -265,9 +265,12 @@ location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|webp))$ {
 `/data/w3/images/top.gif`），它不需要捕获组——所以 `/products/` 那条前缀 location 的写法
 不能直接搬到正则 location 上，反之亦然。
 
-文件名只允许这 2 种形状（16 位小写 hex + `.png` / `-t.webp`），与后端
-`server/index.ts` 里 `/media/works/:filename` 的白名单保持一致。正则同时起到了
-「不把 `media/` 下的其它文件暴露出去」的作用。
+文件名只允许两种形状：原图 `<16位小写hex>.png` / `.jpg` / `.webp`（三者任一），
+缩略图 `<16hex>-t.webp`。这与后端 `server/index.ts` 里 `/media/works/:filename` 的白名单
+**逐字对应**——两边必须同步改：作品图是按上传时的原始 mime 原样落盘
+（`server/works.ts` 的 `EXT_BY_MIME` 把 jpeg / png / webp 分别派生成
+`.jpg` / `.png` / `.webp`），nginx 这边少写一种扩展名，那类作品就存得上、URL 却
+永久 404。正则同时起到了「不把 `media/` 下的其它文件暴露出去」的作用。
 
 ### 4.6 `/assets/` 为什么能永久缓存
 
