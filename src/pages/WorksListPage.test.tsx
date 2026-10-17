@@ -337,7 +337,7 @@ describe('搜索框', () => {
       () => expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('小熊'),
       { timeout: 2000 },
     );
-    expect(screen.getByRole('button', { name: '最热' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '按最热排序' }).getAttribute('aria-pressed')).toBe('true');
     await waitFor(
       () => expect(listWorks).toHaveBeenCalledWith(10, 0, { q: '小熊', sort: 'hot' }),
       { timeout: 2000 },
@@ -366,27 +366,88 @@ describe('搜索框', () => {
 });
 
 describe('排序切换', () => {
-  it('有「最新」「最热」两个切换按钮', async () => {
+  it('有「按最新排序」「按最热排序」两个切换按钮', async () => {
     render(<WorksListPage />);
     await screen.findByText(/还没有上传作品/);
-    expect(screen.getByRole('button', { name: '最新' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '最热' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '按最新排序' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '按最热排序' })).toBeTruthy();
   });
 
-  it('点「最热」发 sort=hot 的请求', async () => {
+  it('点「按最热排序」发 sort=hot 的请求', async () => {
     render(<WorksListPage />);
     await screen.findByText(/还没有上传作品/);
     listWorks.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: '最热' }));
+    fireEvent.click(screen.getByRole('button', { name: '按最热排序' }));
     await waitFor(() => expect(listWorks).toHaveBeenCalledWith(10, 0, { q: '', sort: 'hot' }));
-    expect(screen.getByRole('button', { name: '最热' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '按最热排序' }).getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('默认「最新」按下、「最热」未按下', async () => {
+  it('默认「按最新排序」按下、「按最热排序」未按下', async () => {
     render(<WorksListPage />);
     await screen.findByText(/还没有上传作品/);
-    expect(screen.getByRole('button', { name: '最新' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: '最热' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button', { name: '按最新排序' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '按最热排序' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  /**
+   * 按钮里没有文字了（只剩图标），可访问名全靠 aria-label。
+   * 这条钉住它：去掉 aria-label 的话 getByRole 立刻失配，
+   * 屏幕阅读器会读出两个没名字的按钮 —— 用户根本分不清哪个是热度。
+   * aria-hidden 的 SVG 不参与命名（否则名字会变成「按钮 图标」）。
+   */
+  it('图标按钮的可访问名是中文标签，不含 SVG 里的内容', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    for (const name of ['按最新排序', '按最热排序']) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn.getAttribute('aria-label')).toBe(name);
+      // 文字标签搬到 title 上：桌面端 hover 能看到，触屏没有就靠 aria-label
+      expect(btn.getAttribute('title')).toBeTruthy();
+      expect(btn.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('排序挂在「共 N 件」那一行里（不另占一行，也不塞回搜索框）', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A')], total: 1 });
+    const { container } = render(<WorksListPage />);
+    await screen.findByText('A');
+
+    const countRow = container.querySelector('.works-count') as HTMLElement;
+    expect(countRow).toBeTruthy();
+    // 排序是这一行的子节点 —— 用户抱怨的「占空间」正是这么消掉的
+    expect(countRow.querySelector('.works-sort')).toBeTruthy();
+    expect(countRow.contains(screen.getByRole('button', { name: '按最热排序' }))).toBe(true);
+    // 反面：排序不在搜索框里了，搜索框回归单一职责
+    const search = container.querySelector('.works-search') as HTMLElement;
+    expect(search.querySelector('.works-sort')).toBeNull();
+  });
+
+  it('搜索出结果时（文案换成「找到 N 件…」）排序仍然在同一行', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, '小熊')], total: 1 });
+    const { container } = render(<WorksListPage />);
+    await screen.findByText('小熊');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '小熊' } });
+    await screen.findByText(/找到 1 件与「小熊」相关的作品/);
+
+    const countRow = container.querySelector('.works-count') as HTMLElement;
+    expect(countRow.querySelector('.works-sort')).toBeTruthy();
+    expect(countRow.contains(screen.getByRole('button', { name: '按最热排序' }))).toBe(true);
+  });
+
+  /**
+   * 排序跟着「共 N 件」这一行走之后有个必须钉住的后果：这一行如果被关进
+   * items.length > 0 的判断里，空库 / 搜不到结果时排序控件会整块消失 ——
+   * 而那恰恰是最需要它的场景（搜错了，换「最热」也许能翻出东西）。
+   * 所以这一行在「请求成功但零结果」时也必须在。
+   */
+  it('空结果时这一行仍在，排序控件不会消失', async () => {
+    listWorks.mockResolvedValue({ items: [], total: 0 });
+    const { container } = render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    const countRow = container.querySelector('.works-count') as HTMLElement;
+    expect(countRow).toBeTruthy();
+    expect(countRow.contains(screen.getByRole('button', { name: '按最热排序' }))).toBe(true);
+    expect(screen.getByText(/共 0 件/)).toBeTruthy();
   });
 });
 

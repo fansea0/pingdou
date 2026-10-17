@@ -16,10 +16,31 @@
   border-radius: var(--radius-md);
 }
 
+/* 「共 N 件」这一行同时承载排序 —— 它本来就在页面上，排序挂上来等于免费。
+   行高从一行 12px 文字（18px）撑到 44px（排序按钮的触摸区下限，spec §5.4），
+   多出的 26px 由上下各收 13px 抵消：上下本来各有一段 space-3（12px）的留白，
+   收 13px 之后相邻外边距折叠成 0.5px / -1px，视觉上「共 N 件」正好落在
+   搜索框与网格之间原来的中点，头部总高度一分没涨。
+   （相邻兄弟外边距折叠：正的那段 12px 加上负的那段 -13px，得 0.5px。）
+   为什么用 <div> 而不是原来的 <p>：<p> 是 phrasing 容器，塞不下 role="group"
+   的块级子元素，那是无效 HTML。 */
 .works-count {
+  --works-count-text-h: calc(var(--text-sm) * 1.5); /* 一行文字的高度 */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 44px;
+  margin-top: calc((var(--works-count-text-h) - 44px) / 2);
+  margin-bottom: calc(var(--space-3) - (44px - var(--works-count-text-h)) / 2);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-  margin-bottom: var(--space-3);
+}
+
+/* 文案自己占主位，可长可短（「找到 N 件与「xxx」相关的作品」很长），
+   不参与排序区的收缩。 */
+.works-count-text {
+  min-width: 0;
 }
 
 /*
@@ -161,8 +182,8 @@
   background: rgba(224, 120, 86, 0.92);
 }
 
-/* 头部压缩：搜索 + 排序并成一行（所有断点）。
-   排序已经进一步收进输入框内部，所以这一行里只剩输入框一个 flex 子项。 */
+/* 头部压缩：搜索独占一行（所有断点）。排序已经移到「共 N 件」那一行，
+   这里又变回一个只装一件事的普通输入框。 */
 .works-controls {
   display: flex;
   max-width: 1100px;
@@ -171,29 +192,23 @@
 }
 
 .works-search {
-  position: relative;
+  position: relative;   /* ✕ 的定位上下文 */
   display: flex;
   align-items: center;
   /* min-width:0 —— flex 子项默认 min-content 不肯缩，得让它先让位 */
   flex: 1;
   min-width: 0;
-
-  /* 排序徽章的宽度是这三个横向位置唯一的真相来源：
-     输入框的 padding-right、✕ 的 right 偏移都从它推出来，
-     所以「✕ 压在排序上」这种错位在 CSS 层面就不可能发生。 */
-  --works-sort-w: 80px;
-  /* 输入框右侧固定让出：徽章右内缩 + 徽章宽 + 一点间隙 */
-  --works-search-right: calc(var(--space-1) * 2 + var(--works-sort-w) + var(--space-2));
 }
 
 .works-search-input {
   width: 100%;
-  /* 52px 而不是 44px：排序要嵌在框内、同时保住自己 44px 的触摸区
-     （spec §5.4），44 + 上下各 4px 正好等于 52 —— 高度一分没让，
-     只是把「徽章嵌进边框」这件事的代价放在了输入框自己身上。
-     整行高度仍是 52px（改造前是 108px 的两行）。 */
-  min-height: 52px;
-  padding: var(--space-2) var(--works-search-right) var(--space-2) var(--space-4);
+  /* 44px：回到移动端触摸区下限，比上一轮为了把 44px 的排序徽章塞进框内
+     而撑起的 52px 让出 8px。padding-right 固定留 44px 给 ✕ —— 上一轮
+     的 --works-sort-w / --works-search-right / .works-search--filled
+     三件套（输入框为排序徽章和 ✕ 互相让位的派生逻辑）整块删除，
+     现在右边只住一个 ✕，一个固定值就够，不需要状态类。 */
+  min-height: 44px;
+  padding: var(--space-2) 44px var(--space-2) var(--space-4);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface);
@@ -202,20 +217,15 @@
   box-sizing: border-box;
 }
 
-/* ✕ 出现时（有内容）再把它那 44px 也让出来，两段留白都从同一组变量推导 */
-.works-search--filled .works-search-input {
-  padding-right: calc(var(--space-1) * 2 + var(--works-sort-w) + 44px + var(--space-1));
-}
-
 .works-search-input:focus {
   outline: none;
   border-color: var(--color-accent);
 }
 
 /* WebKit（iOS Safari）会给 type="search" 画一个自带的清除叉，位置就在输入框
-   的右内边距处 —— 而右边现在住着排序徽章。关掉它：清除功能本来就由带
-   aria-label 的 .works-search-clear 提供，这个自带的既没有可访问名，也没法靠
-   CSS 挪位置。 */
+   的右内边距处 —— 而那 44px 现在住着 .works-search-clear。留着：它会挨着
+   我们的 ✕ 再画一个叉，等于同一个动作出现两次，而且自带的那个既没有可访问名
+   （aria-label 是空的），也没法靠 CSS 挪位置。 */
 .works-search-input::-webkit-search-cancel-button,
 .works-search-input::-webkit-search-decoration {
   -webkit-appearance: none;
@@ -224,10 +234,8 @@
 
 .works-search-clear {
   position: absolute;
-  /* 44px 触摸区（spec §5.4 的移动端下限），比输入框矮（52px），所以居中；
-     居中不靠 flex 对绝对定位子项的对齐行为，显式 translate 更稳。
-     right 从 --works-sort-w 推导：排序永远在它右边，两者不重叠。 */
-  right: calc(var(--space-1) * 2 + var(--works-sort-w));
+  /* 44px 触摸区（spec §5.4），与输入框同高，靠 padding-right 预留的位置落位。 */
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 44px;
@@ -242,46 +250,75 @@
 
 .works-search-clear:hover { background: var(--color-surface-alt); }
 
-/* 排序徽章：输入框右侧的后缀控件，嵌在边框之内（上下左右各内缩 4px）。 */
+/* 排序：两个纯图标按钮，挂在「共 N 件」那一行右端。
+   两个都是 flex:0 0 auto —— 文案再长（「找到 N 件与「xxx」相关的作品」）
+   也不能把 44px 的点击区挤扁，挤不下就让文案换行。 */
 .works-sort {
-  position: absolute;
-  right: var(--space-1);
-  top: var(--space-1);
-  width: var(--works-sort-w);
-  /* 44px 触摸区一分没减：输入框 52px 高，这里嵌 44px，上下刚好各剩 4px。
-     徽章自身 padding 必须是 0 —— 留 2px 的话 border-box 下内容区只剩 40px，
-     而按钮的 min-height:44px 会撑破容器 2px，选中的色块就溢到轨道外面。 */
-  height: 44px;
   display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  /* 2px：两个 44px 点击区之间不留缝（那点缝点不中），
+     但视觉间距由图标本体（20px）自己提供 —— 中心距 46px、图标间净空 26px，
+     看起来是「两个独立图标」，不是「一个被切成两半的按钮」。 */
   gap: 2px;
-  padding: 0;
-  border-radius: calc(var(--radius-md) - var(--space-2));
-  background: var(--color-surface-alt);
-  flex-shrink: 0;
 }
 
+/* 命中区 44px（spec §5.4），视觉只有 20px 的图标。
+   padding 全给 0，靠 width/height 撑命中区，不让图标本体去撑。 */
 .works-sort-btn {
-  /* 宽度由 .works-sort 的固定宽度均分，字号从 --text-sm 收到 --text-xs、
-     内边距归零 —— 「收窄」只发生在横向和字号上，高度（=44px 触摸区）不动。 */
-  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
   min-height: 44px;
   padding: 0;
   border: none;
-  border-radius: calc(var(--radius-md) - var(--space-2));
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-muted);
-  /* 12px → 11px：徽章要塞进 80px 的固定宽度里，两项各分到 ~37px，
-     字号不动的话「最新」两个汉字已经贴边了。对比度沿用 --text-xs 的其它用法。 */
-  font-size: var(--text-xs);
   cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.18s ease, background 0.18s ease;
+  /* 只有颜色在变：切换时是「颜色淡入」而不是「色块弹入」。
+     填充色和边框一律不加 —— 这是这块控件视觉压力的来源。 */
+  transition: color 0.18s ease;
 }
 
+/* hover 只加深受影响的「未选中」态。
+   :not() 不是洁癖 —— .works-sort-btn:hover 与 .works-sort-btn--on 同为
+   (0,1,0)，而 hover 写在后面，于是「选中 + 鼠标恰好停在这一项上」会把
+   color 从 --color-accent 覆盖成 --color-text（近黑），选中态当场消失。
+   实测抓到过：点完「最热」手不挪，橙色图标立刻变黑。 */
+.works-sort-btn:hover:not(.works-sort-btn--on) {
+  color: var(--color-text);
+}
+
+/* 选中态：主色色相 + 描边加粗（1.6 → 2.1）。
+   两者都不加背景、不加边框，所以「选中」是全页最轻的一个橙色焦点 ——
+   排序是三级控件，它本就不该和 H1 后的导航橙色药丸抢注意力。 */
 .works-sort-btn--on {
-  background: var(--color-accent);
-  color: #fff;
-  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.works-sort-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -3px;
+}
+
+/* 描边粗细写在 CSS 而非 SVG 属性上：stroke-width 只是 presentation
+   attribute，同权重的 CSS 规则能覆盖它，选中态加粗不必在两处各写一份。
+   1.6 在 24 viewBox 缩到 20px 时实得 1.33px —— 细线、无视觉压力；
+   选中态 2.1（实得 1.75px）刚好能一眼看出「换了个模式」。 */
+.works-sort-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.6;
+  transition: stroke-width 0.18s ease;
+}
+
+.works-sort-btn--on .works-sort-icon {
+  stroke-width: 2.1;
 }
 
 .works-like-error {

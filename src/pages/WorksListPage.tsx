@@ -12,6 +12,60 @@ import './WorksListPage.css';
  */
 const PAGE_SIZE = 10;
 
+/*
+ * 排序图标：内联 SVG。
+ *
+ * 不用 emoji 字符 —— emoji 在各系统的字形/基线/颜色都不可控，20px 下会糊成
+ * 一团彩色噪点，正好毁掉「轻图标」这件事；也不为此新增图标库依赖（项目目前
+ * 没有，两个图标不值得）。
+ *
+ * 统一规格：viewBox 0 0 24 24、fill=none、stroke=currentColor（跟着主题色走）、
+ * stroke-width 1.6、strokeLinecap/Linejoin=round（和这个站点柔和圆角的语言
+ * 一致），页面内实际 20px。
+ * 描边粗细写在 CSS 里（.works-sort-icon / --on 状态）：stroke-width 只是
+ * presentation attribute，同权重的 CSS 规则能覆盖它，选中态加粗才不必两处各写一份。
+ * aria-hidden：可访问名一律由外层 <button> 的 aria-label 提供。
+ */
+const SORT_ICONS = {
+  // 最新 → 时钟：时间 / 最新添加
+  latest: (
+    <svg
+      className="works-sort-icon"
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.2V12l3.2 2" />
+    </svg>
+  ),
+  // 最热 → 火焰：本站的热度就是点赞数，图标与数据同构，比任何文字标签都直观
+  hot: (
+    <svg
+      className="works-sort-icon"
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M12 21c3.6 0 6.5-2.7 6.5-6.2 0-4.6-4.3-6.4-4.3-10.8-2.4 1.6-3.7 3.6-3.7 5.6 0 1.3.5 2 .5 2.9 0 .9-.7 1.6-1.5 1.6-.9 0-1.6-.7-1.7-1.6-1 1.2-1.3 2.4-1.3 2.6C5.5 18.3 8.4 21 12 21z" />
+    </svg>
+  ),
+} as const;
+
 export function WorksListPage() {
   usePageView();
   const {
@@ -62,11 +116,11 @@ export function WorksListPage() {
       <SiteNav current="/works" />
 
       <div className="works-controls">
-        {/* 排序收进搜索框内部（作为输入框右侧的后缀控件），不再另占一行或一列宽度。
-            ✕ 只在有内容时挂载，所以它与排序的避让交给 CSS：
-            works-search--filled 才把 ✕ 要的那 44px 加进输入框的 padding-right，
-            两者的横向位置都从同一个 --works-sort-w 推导，不可能互相压住。 */}
-        <div className={query ? 'works-search works-search--filled' : 'works-search'}>
+        {/* 搜索框回归单一职责：只管输入。排序已经移到「共 N 件」那一行，
+            这里不再有任何为了给排序腾位置的派生宽度（--works-sort-w /
+            --works-search-right / works-search--filled 全部已删）。
+            ✕ 只在有内容时挂载，输入框右侧固定留出的 44px 就是它的位置。 */}
+        <div className="works-search">
           <input
             type="search"
             className="works-search-input"
@@ -85,21 +139,6 @@ export function WorksListPage() {
               ✕
             </button>
           )}
-
-          <div className="works-sort" role="group" aria-label="排序方式">
-            <button
-              type="button"
-              aria-pressed={sort === 'latest'}
-              className={sort === 'latest' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
-              onClick={() => setSort('latest')}
-            >最新</button>
-            <button
-              type="button"
-              aria-pressed={sort === 'hot'}
-              className={sort === 'hot' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
-              onClick={() => setSort('hot')}
-            >最热</button>
-          </div>
         </div>
       </div>
 
@@ -114,6 +153,47 @@ export function WorksListPage() {
           <div className="works-state works-state--error">
             <p>加载失败：{error.message}</p>
             <button type="button" className="works-btn" onClick={reload}>重试</button>
+          </div>
+        )}
+
+        {/* 「共 N 件 + 排序」这一行：只要这一屏请求成功（无 error）就渲染，空结果也渲染。
+            两条理由：
+            1) 排序跟着这一行走。如果把这一行关进 items.length > 0 里，空库 / 搜不到
+               东西时排序控件会整块消失 —— 而那恰恰是最需要它的场景（搜错了，换成
+               「最热」也许能翻出东西；空库时也该让人看清当前排序口径）。
+            2) 它必须排在所有状态块「之前」。它回答的是「我在看什么」，是列表区的抬头；
+               放到状态块之后，空库时这一行会掉到「还没有上传作品」下面，同一个控件
+               在有无结果时出现在两个不同的高度上，看起来像出了 bug。
+            文案沿用原有的两句话，N=0 时读作「共 0 件」/「找到 0 件与「x」相关的作品」，
+            没有新增任何面向用户的措辞。 */}
+        {!loading && !error && (
+          <div className="works-count">
+            <span className="works-count-text">
+              {trimmed
+                ? <>找到 {total} 件与「{trimmed}」相关的作品</>
+                : <>共 {total} 件</>}
+            </span>
+            {/* 保持两个可见按钮而不是单个循环切换：两个模式同时可见，
+                用户才知道「切过去会是什么」，不存在假可供性。
+                文字标签搬到了 aria-label / title 上。 */}
+            <div className="works-sort" role="group" aria-label="排序方式">
+              <button
+                type="button"
+                aria-pressed={sort === 'latest'}
+                aria-label="按最新排序"
+                title="最新"
+                className={sort === 'latest' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
+                onClick={() => setSort('latest')}
+              >{SORT_ICONS.latest}</button>
+              <button
+                type="button"
+                aria-pressed={sort === 'hot'}
+                aria-label="按最热排序"
+                title="最热"
+                className={sort === 'hot' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
+                onClick={() => setSort('hot')}
+              >{SORT_ICONS.hot}</button>
+            </div>
           </div>
         )}
 
@@ -137,11 +217,6 @@ export function WorksListPage() {
 
         {!loading && !error && items.length > 0 && (
           <>
-            <p className="works-count">
-              {trimmed
-                ? <>找到 {total} 件与「{trimmed}」相关的作品</>
-                : <>共 {total} 件</>}
-            </p>
             <ul className="works-grid">
               {items.map(w => (
                 <li key={w.id} className="works-card">
