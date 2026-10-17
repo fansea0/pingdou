@@ -38,6 +38,29 @@ export const DEFAULT_COMPOSITE_OPTIONS: CompositeOptions = {
 /** 图纸很小时（比如 3×3 试跑），版式宽度至少给到这么多 */
 const MIN_CONTENT_WIDTH = 300;
 
+/**
+ * 水印的落位：页眉右侧，绝不遮挡底部内容。
+ *
+ * 底部内容在两条渲染路径上不是同一块 —— 导出路径（pipeline.ts）是色卡，
+ * 投稿路径（submission.ts）是 qrBandPx 预留出来的二维码白带。所以「离底部
+ * 远到绝不遮挡」这条不变量在投稿路径上更紧，不是更松：投稿图底部要放码，
+ * 水印一旦漂到页眉以外就会压到用户用来认领作品的码。
+ *
+ * **两条路径必须共用这一份定义。** 写死两份的话，只改其中一处的 anchor 或
+ * inset，另一条路径会静默偏移；而断言画布尺寸 / 白带干净的用例全都测不出来
+ * （水印画在哪儿不影响那些断言），漂移会一路带到线上。
+ *
+ * 住在这里而不是 watermark.ts，是因为 insetY 用到的 padding / headerHeight
+ * 是版式常量、归本文件所有，而本文件已经单向 import 了 watermark.ts —— 放进
+ * watermark.ts 就得反向 import 本文件，绕成 import 环。
+ */
+export function watermarkPlacement(): { anchor: 'header-right'; insetY: number } {
+  return {
+    anchor: 'header-right',
+    insetY: DEFAULT_COMPOSITE_OPTIONS.padding + DEFAULT_COMPOSITE_OPTIONS.headerHeight / 2,
+  };
+}
+
 /** 顶部页眉字号：成品尺寸 / 色数 / 总颗数，是全图第一眼要读到的信息 */
 const HEADER_FONT_PX = 22;
 /** 预估工时是次要信息：小一号灰字，挂在主信息右边，不抢页眉的层级 */

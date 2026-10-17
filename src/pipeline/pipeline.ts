@@ -5,6 +5,7 @@ import {
   renderComposite,
   renderCompositeFromBoard,
   DEFAULT_COMPOSITE_OPTIONS,
+  watermarkPlacement,
 } from './composite';
 import { renderBeadBoard, padToSquareGrid } from './board';
 import { cropGridToContent, DEFAULT_CROP_PADDING } from './crop';
@@ -47,14 +48,6 @@ function budgetStats(
     budgetTargetColorCount: budget.targetColorCount,
     budgetSatisfied: level === 'off' || budget.colorCount <= budget.targetColorCount,
     budgetFidelityLimited: budget.fidelityLimited,
-  };
-}
-
-/** 水印落在页眉右侧，绝不遮挡底部色卡 */
-function watermarkPlacement(): { anchor: 'header-right'; insetY: number } {
-  return {
-    anchor: 'header-right',
-    insetY: DEFAULT_COMPOSITE_OPTIONS.padding + DEFAULT_COMPOSITE_OPTIONS.headerHeight / 2,
   };
 }
 

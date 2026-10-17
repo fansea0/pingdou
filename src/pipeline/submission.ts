@@ -1,5 +1,5 @@
 import { renderBeadBoard } from './board';
-import { renderCompositeFromBoard, DEFAULT_COMPOSITE_OPTIONS } from './composite';
+import { renderCompositeFromBoard, watermarkPlacement } from './composite';
 import { applyWatermark, ensureWatermarkIcon } from './watermark';
 import { SUBMISSION_QR_PX } from './qr';
 import type { Palette, PipelineResult } from '@/types';
@@ -45,13 +45,9 @@ export async function renderSubmissionComposite(
     { qrBandPx: SUBMISSION_QR_PX },
   );
   // 与 pipeline.ts 里那个私有 drawWatermark 等价的两步：图标是异步资源，
-  // 不先 await 就位的话第一张投稿图只会画文字。锚点同样是页眉右侧，而码在
-  // 底部白带 —— 二者相隔整张图纸 + 色卡，比导出路径里「页眉 vs 色卡」隔得更远，
-  // 「水印绝不遮挡底部内容」的前提照样成立。
+  // 不先 await 就位的话第一张投稿图只会画文字。落位走共享的 watermarkPlacement，
+  // 导出路径与投稿路径的水印因此不可能各偏各的（理由见 composite.ts 里的注释）。
   await ensureWatermarkIcon();
-  applyWatermark(composite, {
-    anchor: 'header-right',
-    insetY: DEFAULT_COMPOSITE_OPTIONS.padding + DEFAULT_COMPOSITE_OPTIONS.headerHeight / 2,
-  });
+  applyWatermark(composite, watermarkPlacement());
   return composite;
 }
