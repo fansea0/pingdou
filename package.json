@@ -28,6 +28,7 @@
     "express": "^5.2.1",
     "ip2region": "^2.3.0",
     "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sql.js": "^1.14.1"
@@ -40,6 +41,7 @@
     "@types/dotenv": "^6.1.1",
     "@types/express": "^5.0.0",
     "@types/multer": "^1.4.13",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/sql.js": "^1.4.11",
@@ -49,7 +51,6 @@
     "concurrently": "^9.1.0",
     "fake-indexeddb": "^6.0.0",
     "jsdom": "^25.0.0",
-    "qrcode": "^1.5.4",
     "supertest": "^7.2.2",
     "tsx": "^4.19.2",
     "typescript": "^5.5.3",
