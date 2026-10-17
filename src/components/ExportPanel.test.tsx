@@ -52,4 +52,34 @@ describe('ExportPanel', () => {
     const text = btn?.textContent ?? '';
     expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
+
+  // 「投稿和下载在同一个位置」是这条插槽存在的全部理由。位置一旦被拆回两块，
+  // 这组断言会直接变红 —— 而 DOM 里只查「按钮还在」是查不出来的。
+  it('把次级动作与下载按钮放进同一个并排容器', () => {
+    const { container } = render(
+      <ExportPanel onExport={() => {}} disabled={false}>
+        <button type="button">投稿到作品库</button>
+      </ExportPanel>
+    );
+    const row = container.querySelector('.export-actions');
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('button.primary')?.textContent).toMatch(/下载/);
+    expect(row?.textContent).toMatch(/投稿到作品库/);
+  });
+
+  it('次级动作在下载按钮之后 —— 主次顺序不能反', () => {
+    const { container } = render(
+      <ExportPanel onExport={() => {}} disabled={false}>
+        <button type="button">投稿到作品库</button>
+      </ExportPanel>
+    );
+    const buttons = Array.from(container.querySelectorAll('.export-actions button'));
+    expect(buttons.map((b) => b.textContent)).toEqual(['下载', '投稿到作品库']);
+  });
+
+  it('没有次级动作时导出面板照常渲染（插槽是可选的）', () => {
+    const { container } = render(<ExportPanel onExport={() => {}} disabled={false} />);
+    expect(container.querySelectorAll('.export-actions button')).toHaveLength(1);
+    expect(container.querySelector('.hint')?.textContent).toMatch(/32px/);
+  });
 });

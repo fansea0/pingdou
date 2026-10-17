@@ -185,25 +185,27 @@ export function App() {
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
-          {/* 投稿按钮放在参数面板之下、导出之上：两者都是「拿这张图纸去做点什么」，
-              而参数是它们共同的前置输入。移动端 layout-3col 变单列堆叠后，
-              它自然落在参数面板下方、预览区上方，不进 MobileActionBar ——
-              那里已经有上传和导出，再塞第三个操作会让底部条拥挤。 */}
-          <SubmitWorkButton
-            palette={palette}
-            result={result}
-            beanCount={beanCount}
-            colorCount={legend.length}
-            estimateLabel={estimateLabel}
-            estimateMinutes={estimateMinutes}
-            disabled={status === 'idle' || status === 'loading'}
-          />
+          {/* 投稿入口作为次级动作并进导出面板，和「下载」并排：两者都是
+              「拿这张图纸去做点什么」，参数是它们共同的前置输入，摆在同一个
+              决策点上比拆成两块更准。层级如实反映权重 —— 下载实心（默认动作），
+              投稿描边（公开且要过审）。也不进 MobileActionBar：那里已经有上传
+              和导出，再塞第三个操作会让底部条拥挤。 */}
           <ExportPanel
             disabled={!result || exporting}
             onExport={handleExport}
             exporting={exporting}
             flash={exportFlash}
-          />
+          >
+            <SubmitWorkButton
+              palette={palette}
+              result={result}
+              beanCount={beanCount}
+              colorCount={legend.length}
+              estimateLabel={estimateLabel}
+              estimateMinutes={estimateMinutes}
+              disabled={status === 'idle' || status === 'loading'}
+            />
+          </ExportPanel>
         </aside>
 
         <section className="middle">

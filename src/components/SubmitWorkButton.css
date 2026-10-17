@@ -1,7 +1,4 @@
-.submit-work { margin-top: var(--space-3); }
-
 .submit-work-btn {
-  width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: 10px;
@@ -19,9 +16,12 @@
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
-  /* 必须 ≥ 200：≤900px 视口下 .mobile-action-bar 常驻底部（z-index 100），
-     层级低于它的话遮罩压不住底部条，弹窗开着时上传/下载仍然点得动。 */
-  z-index: 200;
+  /* 必须高于两处：≤900px 视口下常驻底部的 .mobile-action-bar（z-index 100），
+     层级低于它的话遮罩压不住底部条，弹窗开着时上传/下载仍然点得动；
+     以及 App.tsx 里渲染在更靠后 DOM 位置的 .export-toast（同样是 200）——
+     同 z-index 时后出现的赢，下载成功的提示会浮在遮罩上面、压在弹窗上。
+     两者都是「常驻的东西不该盖住模态」，所以这里取 210 而不是刚好压过 100。 */
+  z-index: 210;
   padding: var(--space-4);
 }
 
@@ -65,7 +65,7 @@
 .submit-work-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .submit-work-toast {
-  margin: var(--space-2) 0 0;
+  margin: 0;
   font-size: var(--text-xs);
   color: #1a7f37;
 }

@@ -2,10 +2,39 @@
   margin-top: var(--space-3);
 }
 
+/*
+ * 用 grid 而不是 flex：次级动作（投稿）自带的成功提示和错误提示是它的兄弟
+ * 节点，不是它的兄弟按钮。flex 里没法只让那两个提示换行落下，grid 的
+ * grid-column: 1 / -1 才能把它们横跨整行、排在按钮下方。
+ */
+.export-actions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  /* stretch 而不是 center：两个按钮的 padding 不同，实测自然高度差 3px
+     （下载 36 / 投稿 39）。居中会让它们错开一条边、并排看着像没对齐；
+     拉伸则让两者都取行高，底边和顶边自动齐平。 */
+  align-items: stretch;
+}
+
 .export-btn {
   position: relative;
   overflow: hidden;
   transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+/*
+ * .submit-work 只是个布局壳，上面没有 role / aria-*，摊平（display: contents）
+ * 不丢任何语义，却能让它的按钮真正并排进上面那一格 —— 否则壳会占掉整个
+ * auto 列、把下载挤到只剩一个「auto」宽。壳的按钮按文案自然宽度排布。
+ */
+.export-actions > .submit-work { display: contents; }
+
+.export-actions .submit-work-btn { white-space: nowrap; }
+
+.export-actions > .submit-work-toast,
+.export-actions > .submit-work-error {
+  grid-column: 1 / -1;
 }
 
 .export-btn:not(:disabled):hover {
