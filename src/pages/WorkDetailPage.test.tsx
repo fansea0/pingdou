@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { WorkDetail } from '@/api/works';
-import { WorkDetailPage, formatBytes } from './WorkDetailPage';
+import { WorkDetailPage, formatBytes, REDIRECT_DELAY_MS } from './WorkDetailPage';
 
 const fetchWork = vi.fn();
 const likeWork = vi.fn();
@@ -497,9 +497,29 @@ describe('投稿参数展示', () => {
 });
 
 describe('拿不到作品时自动跳回列表', () => {
-  /** 900ms > 组件里的 800ms 延迟，留 100ms 余量 */
-  const AFTER_REDIRECT = 900;
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  /**
+   * 「断言不跳转」这类用例必须真的等一段时间，而等多久取决于产品的延迟。
+   * 早先这里写死 900ms（= 800 + 100），改 REDIRECT_DELAY_MS 之后它就成了跟产品
+   * 无关的魔数：调小立刻偶发红。跟着常量走就不会漂。
+   *
+   * 正向断言（断言跳了）不用这个，而是 waitFor —— 条件一成立就返回，
+   * 既不慢也不受机器负载影响。
+   */
+  const SETTLE = REDIRECT_DELAY_MS + 200;
+
+  /**
+   * 「跳转至少要隔这么久」的**独立下限**，刻意不写成 REDIRECT_DELAY_MS。
+   *
+   * 写成 REDIRECT_DELAY_MS 就是同义反复：把常量改成 0，断言自动变成 >= 0，永远为真，
+   * 于是「延迟被改成 0」这件事就彻底没人守了（评审实测过这个缺口）。
+   * 这个 300 是产品决定的下限：低于它，提示还没渲染完页面就跳走了，访客只会觉得
+   * 「点了没反应」—— 那是明确被否决的取值。真要改产品决定时，这里也该一起改。
+   *
+   * 它只是下限不是等式，所以把 REDIRECT_DELAY_MS 调大（850、2000…）不会红。
+   */
+  const MIN_REDIRECT_DELAY_MS = 300;
 
   function stubLocation() {
     const replace = vi.fn();
@@ -509,17 +529,23 @@ describe('拿不到作品时自动跳回列表', () => {
     return replace;
   }
 
-  it('fetchWork 失败时先显示提示，800ms 后 replace 到 /works', async () => {
+  it('fetchWork 失败时先显示提示，REDIRECT_DELAY_MS 之后 replace 到 /works', async () => {
     const replace = stubLocation();
     fetchWork.mockRejectedValue(new Error('404'));
+    const mountedAt = Date.now();
     render(<WorkDetailPage id={999} />);
 
-    await screen.findByText(/不存在或已下架/);
-    // 800ms 的停顿是为了让人读完这句提示；断言「此刻还没跳」把停顿本身钉住，
-    // 否则把 setTimeout 的延迟改成 0 也没有任何一条用例会红。
-    expect(replace).not.toHaveBeenCalled();
-    await wait(AFTER_REDIRECT);
-    expect(replace).toHaveBeenCalledWith('/works');
+    // 精确匹配整句，而不是子串正则：「，正在返回作品库…」这半句是给访客看的
+    // 承诺（页面会自己跳走），文案一改却没有用例会红，子串匹配全都照过。
+    expect(await screen.findByText('作品不存在或已下架，正在返回作品库…')).toBeTruthy();
+
+    // 停顿的时长用「挂载后过了多久」来量，而不是「findByText 回来后还没跳」。
+    // 后者是墙钟竞态：机器慢时 findByText 自己就可能耗掉 800ms 以上，
+    // 实现完全正确也会红。这里量到的是「跳转真的发生了」的那一刻，
+    // 定时器不可能早于 REDIRECT_DELAY_MS 触发，所以这个下限永远不会假红；
+    // 上限交给 waitFor 的 timeout，条件一成立就返回，正常情况下不拖时间。
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/works'), { timeout: 5000 });
+    expect(Date.now() - mountedAt).toBeGreaterThanOrEqual(MIN_REDIRECT_DELAY_MS);
   });
 
   it('fetchWork 返回 null 走同一条导航', async () => {
@@ -529,8 +555,7 @@ describe('拿不到作品时自动跳回列表', () => {
     fetchWork.mockResolvedValue(null as never);
     render(<WorkDetailPage id={999} />);
     await screen.findByText(/不存在或已下架/);
-    await wait(AFTER_REDIRECT);
-    expect(replace).toHaveBeenCalledWith('/works');
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/works'), { timeout: 5000 });
   });
 
   it('用 replace 而不是赋值 location.href（无效详情页不该堆进历史）', async () => {
@@ -538,12 +563,12 @@ describe('拿不到作品时自动跳回列表', () => {
     fetchWork.mockResolvedValue(null as never);
     render(<WorkDetailPage id={999} />);
     await screen.findByText(/不存在或已下架/);
-    await wait(AFTER_REDIRECT);
-    // 桩是一个普通对象（不是 jsdom 的 Location），改成赋值 location.href 时
-    // 浏览器语义被桩吞掉、不会报错，但 replace 一次都不会被调用 ——
-    // 所以下面这条断言本身就是「用 replace 而不是写 href」的判别器。
-    expect(replace).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(replace).toHaveBeenCalledTimes(1), { timeout: 5000 });
     expect(replace).toHaveBeenCalledWith('/works');
+    // 桩是一个普通对象（不是 jsdom 的 Location），改成赋值 location.href 时
+    // 浏览器语义被桩吞掉、不会报错（stub.href 就是一个普通属性），
+    // 但 replace 一次都不会被调用 —— 所以上面那条断言本身就是
+    // 「用 replace 而不是写 href」的判别器。
   });
 
   it('拿到作品时不跳转', async () => {
@@ -553,7 +578,7 @@ describe('拿不到作品时自动跳回列表', () => {
     fetchWork.mockResolvedValue(detail({}));
     render(<WorkDetailPage id={42} />);
     await screen.findByRole('heading', { name: '粉色小熊' });
-    await wait(AFTER_REDIRECT);
+    await wait(SETTLE);
     expect(replace).not.toHaveBeenCalled();
   });
 
@@ -565,7 +590,34 @@ describe('拿不到作品时自动跳回列表', () => {
     fetchWork.mockReturnValue(new Promise(() => {}));
     render(<WorkDetailPage id={42} />);
     expect(screen.getByText(/加载中/)).toBeTruthy();
-    await wait(AFTER_REDIRECT);
+    await wait(SETTLE);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('从缺失详情换到有效作品时，已经排好的跳转被取消', async () => {
+    // 守的是定时器 cleanup。这条路径真实可达：访客停在 /works/999（无效），
+    // 点进 /works/43（有效），同一个组件实例只换 id、不重新挂载。少了 cleanup，
+    // 缺失阶段排下的那个定时器照样会在 REDIRECT_DELAY_MS 之后开火 ——
+    // 访客正在看的那张有效作品图被自己的导航抢走。
+    //
+    // 这是评审实测出来的覆盖缺口：删掉 return () => clearTimeout(t) 时，
+    // 原有 40 条用例全绿，因为「无效页会跳」的三条都停在缺失状态就结束了，
+    // 从没让状态翻回「不跳」。
+    const replace = stubLocation();
+    fetchWork.mockImplementation((id: number) =>
+      id === 999
+        ? Promise.reject(new Error('404'))
+        : Promise.resolve(detail({ id: 43, title: '作品二' }))
+    );
+    const { rerender } = render(<WorkDetailPage id={999} />);
+    await screen.findByText(/不存在或已下架/);
+
+    rerender(<WorkDetailPage id={43} />);
+    // 同步点用标题而不是「heading 已存在」：换 id 时组件先保留上一次的 work
+    // 再拉新数据，所以旧标题一直在，不能拿它当「新数据到了」的证据。
+    await screen.findByRole('heading', { name: '作品二' });
+
+    await wait(SETTLE);
     expect(replace).not.toHaveBeenCalled();
   });
 });

@@ -91,6 +91,31 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * 拿不到作品后、真正跳走之前的停顿毫秒数。
+ *
+ * 导出给测试用（本文件已有 formatBytes 先例）：用例里如果写死一个「800 + 100」
+ * 的等待时间，改动这个值之后那条等待就变成了跟产品无关的魔数 —— 改小会偶发红，
+ * 改大会变成慢测试。让用例跟着这个常量算，两边不会漂。
+ *
+ * 这个值本身是产品决定：0ms 的话提示还没渲染就跳走，访客只觉得「点了没反应」。
+ */
+export const REDIRECT_DELAY_MS = 800;
+
+/**
+ * 拿不到作品时自动跳回列表页。
+ *
+ * 用 location.replace 而不是赋值 location.href：无效详情页不该留在浏览器
+ * 历史里，否则访客按「后退」会被反复弹回这一页，历史记录越按越乱。
+ *
+ * 延迟见 REDIRECT_DELAY_MS：为了让提示先渲染出来、来得及被读完。
+ * 延迟期间组件仍然显示提示，不做空白。
+ *
+ * 依赖只写 [missing]，而定时器的 cleanup 是承重的：作品到位后 missing 翻 false，
+ * cleanup 必须把还没触发的定时器清掉。少了它，访客从无效详情页点进一张有效作品
+ * （同一个组件实例换 id，不重新挂载）就会在 REDIRECT_DELAY_MS 之后被弹回列表 ——
+ * 正在看的东西被自己的导航抢走，且症状是「偶发」，现场几乎抓不到。
+ */
 export function WorkDetailPage({ id }: WorkDetailPageProps) {
   usePageView();
   const [work, setWork] = useState<WorkDetail | null>(null);
@@ -132,15 +157,17 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
    * 用 location.replace 而不是赋值 location.href：无效详情页不该留在浏览器
    * 历史里，否则访客按「后退」会被反复弹回这一页，历史记录越按越乱。
    *
-   * 延迟 800ms 是为了让人读完提示：0 延迟的话提示根本来不及渲染，直接闪回列表，
-   * 访客只会觉得「点了没反应」。延迟期间组件仍然显示提示，不做空白。
+   * 延迟见 REDIRECT_DELAY_MS：为了让提示先渲染出来、来得及被读完。
+   * 延迟期间组件仍然显示提示，不做空白。
    *
-   * 依赖只写 [missing]：作品到位后 missing 翻 false，cleanup 会把还没触发的
-   * 定时器清掉，不会出现「已经跳走了却还在跑定时器」的尾巴。
+   * 依赖只写 [missing]，而定时器的 cleanup 是承重的：作品到位后 missing 翻 false，
+   * cleanup 必须把还没触发的定时器清掉。少了它，访客从无效详情页点进一张有效作品
+   * （同一个组件实例换 id，不重新挂载）就会在 REDIRECT_DELAY_MS 之后被弹回列表 ——
+   * 正在看的东西被自己的导航抢走，且症状是「偶发」，现场几乎抓不到。
    */
   useEffect(() => {
     if (!missing) return;
-    const t = window.setTimeout(() => window.location.replace('/works'), 800);
+    const t = window.setTimeout(() => window.location.replace('/works'), REDIRECT_DELAY_MS);
     return () => window.clearTimeout(t);
   }, [missing]);
 
