@@ -25,6 +25,9 @@ import {
   createWork, updateWorkMeta, replaceWorkImage, deleteWork,
   normalizePublished,
   addLike, likeStateOf, likeFingerprint,
+  createSubmission, attachSubmissionImage,
+  approveWork, rejectWork,
+  SubmissionInputError, SubmissionQuotaError,
   type UpdateWorkMeta,
 } from './works.js';
 
@@ -527,6 +530,91 @@ app.get('/api/public/works/:id', (req, res) => {
   }
 });
 
+/** 投稿成品图 + 浏览器生成的缩略图。缩略图的文件名必须以 .webp 结尾，
+ *  服务端按扩展名校验 mime。
+ *
+ *  声明在投稿路由之前而不是跟 WORK_IMAGE_FIELDS 放一起：const 走 TDZ，
+ *  被上面那组 app.post 求值到时会直接 ReferenceError（首次跑用例实测）。
+ */
+const SUBMISSION_IMAGE_FIELDS = [
+  { name: 'image', maxCount: 1 },
+  { name: 'thumb', maxCount: 1 },
+];
+
+/**
+ * 投稿第一步：占一个 id。
+ *
+ * 配额闸不是「先于一切」的：createSubmission 内部自己按「校验 → 占配额 → 插入」
+ * 的顺序走（理由见 server/works.ts 的注释）。这里只负责把它的两个错误类型翻译
+ * 成状态码。
+ */
+app.post('/api/public/works', (req, res) => {
+  try {
+    const created = createSubmission(req.body, {
+      ip: (req as any).clientIp as string,
+      userAgent: String(req.headers['user-agent'] ?? ''),
+    });
+    return res.status(201).json(created);
+  } catch (err) {
+    if (err instanceof SubmissionQuotaError) return res.status(429).json({ error: err.message });
+    if (err instanceof SubmissionInputError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+});
+
+/**
+ * extFor 抛的是**裸 Error**（`unsupported image mime type`），不是
+ * SubmissionInputError，attachSubmissionImage 里其余拒绝都是 400 类，唯独这条会在
+ * 路由层落进「既不是配额也不是输入错」的分支 → 500。对内网后台路径（createWork /
+ * replaceWorkImage）500 只是一次运维噪音，但投稿是**匿名公网入口**，让用户传错格式
+ * 换来一个 500 既误导又掩盖真实原因。
+ *
+ * 不去改 extFor 的错误类型：它是 createWork / replaceWorkImage 共用的，动它会波及
+ * 内网路径（那两条的 catch 本来就把一切当 400，改类型无收益）。所以在公网入口按消息
+ * 特征兜一层，翻译范围严格限制在「不支持的 mime」这一种，不做「未知错误一律 400」
+ * —— 那样会把真的存储故障也报成 400，等于把故障藏起来。
+ */
+export function isUnsupportedMimeError(err: unknown): boolean {
+  return err instanceof Error && /unsupported (?:image|thumb) mime type/.test(err.message);
+}
+
+/**
+ * 投稿第二步：把带二维码的成品图挂上去。
+ *
+ * 必须带 uploadToken —— id 是可猜的自增整数，只靠 id 的话任何人都能把图挂到
+ * 别人的待审记录上（见 attachSubmissionImage 的注释）。
+ */
+app.post('/api/public/works/:id/image', handleUploadFields(SUBMISSION_IMAGE_FIELDS), async (req, res) => {
+  const files = (req.files ?? {}) as Record<string, Express.Multer.File[]>;
+  const image = files.image?.[0];
+  if (!image) return res.status(400).json({ error: '缺少图片文件' });
+  const token = typeof req.body?.uploadToken === 'string' ? req.body.uploadToken : '';
+  const id = Number(req.params.id);
+  try {
+    const detail = await attachSubmissionImage(id, token, {
+      image: { body: image.buffer, mime: image.mimetype },
+      thumb: files.thumb?.[0]
+        ? { body: files.thumb[0].buffer, mime: files.thumb[0].mimetype }
+        : undefined,
+      width: req.body?.width,
+      height: req.body?.height,
+    });
+    return res.json({ ok: true, id: detail.id });
+  } catch (err) {
+    if (err instanceof SubmissionInputError) {
+      // 「投稿不存在」是 404，其余（令牌错 / 已传过 / 已处理）是 400。
+      // 区分开不是为了泄露信息 —— 攻击者本来就能用 id 探测存在性，
+      // 而拿到一个明确 404 能帮正常用户立刻发现「链接过期了，重新投稿」。
+      const isMissing = err.message === '投稿不存在';
+      return res.status(isMissing ? 404 : 400).json({ error: err.message });
+    }
+    if (isUnsupportedMimeError(err)) {
+      return res.status(400).json({ error: (err as Error).message });
+    }
+    throw err;
+  }
+});
+
 /**
  * 点赞状态查询。公开、无需登录 —— 与公开列表同一性质。
  * liked 需要回传 IP 才能判断，所以 POST 与 GET 共用同一个 likeStateOf。
@@ -630,9 +718,13 @@ function workImageFrom(req: express.Request, field: 'file' | 'thumb') {
 
 // 后台列表走 toAdminDetail：比公开 detail 多一个 published 布尔字段，
 // 后台靠它显示上下架开关。公开接口 /api/public/* 刻意不带该字段。
-app.get('/api/admin/works', requireAuth, requireAdmin, (_req, res) => {
+app.get('/api/admin/works', requireAuth, requireAdmin, (req, res) => {
   try {
-    return res.json(listAllWorks());
+    const raw = String(req.query.status ?? '').trim();
+    // 白名单：非法值回落「全部」。不因为手改一个 query 就整页报错。
+    const status =
+      raw === 'pending' || raw === 'approved' || raw === 'rejected' ? raw : undefined;
+    return res.json(listAllWorks(status ? { status } : undefined));
   } catch (e) {
     console.error('[admin/works]', e);
     return res.status(500).json({ error: 'query failed' });
@@ -688,6 +780,22 @@ app.delete('/api/admin/works/:id', requireAuth, requireAdmin, async (req, res) =
     return res.json({ ok: true });
   } catch (e: any) {
     return res.status(404).json({ error: e.message ?? 'delete failed' });
+  }
+});
+
+app.post('/api/admin/works/:id/approve', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    res.json(approveWork(Number(req.params.id)));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.post('/api/admin/works/:id/reject', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    res.json(await rejectWork(Number(req.params.id)));
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
   }
 });
 

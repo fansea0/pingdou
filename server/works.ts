@@ -366,11 +366,20 @@ export function getPublishedWork(id: number): WorkDetail | null {
 }
 
 /** 后台管理用：含草稿。likes 同公开列表一样直读 works.likes 列。 */
-export function listAllWorks(): AdminWorkDetail[] {
+/**
+ * 后台管理用：默认全部，含 pending。
+ *
+ * `status` 不传就是全量 —— 与改动前行为完全一致，调用方不传参数时行为不变。
+ */
+export function listAllWorks(filter?: { status?: WorkStatus }): AdminWorkDetail[] {
+  const where = filter?.status ? `WHERE w.status = ?` : '';
+  const params = filter?.status ? [filter.status] : [];
   return queryAll<WorkRow>(
     `SELECT w.*
        FROM works w
-      ORDER BY w.created_at DESC, w.id DESC`
+       ${where}
+      ORDER BY w.created_at DESC, w.id DESC`,
+    params
   ).map(toAdminDetail);
 }
 
