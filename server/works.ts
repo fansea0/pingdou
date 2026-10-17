@@ -122,12 +122,15 @@ const MAX_IMAGE_DIM = 20_000;
 /**
  * 投稿数字字段的严格校验。
  *
- * 刻意要求 `typeof raw === 'number'` 而不是 `Number(raw)`：JSON body 里出现
- * `true` / `null` / `"87"` 时，Number() 会把它们分别变成 1 / 0 / 87，其中
- * `boardW: true` 会被放行成 1 格宽的图纸 —— 静默、且没有任何报错。
+ * **关键防线是 `Number.isInteger`，不是上面那半句 `typeof`。** 实测：把
+ * `typeof raw !== 'number'` 整句删掉，`true` / `null` / `NaN` / `'87'` 依然全被拒
+ * （`Number.isInteger` 对它们一律返回 false），所以那句 typeof 是把意图写在明面上的
+ * 冗余，删掉不改变行为 —— 别把它当成「挡住 true 的那道防线」，也别因此以为可以
+ * 顺手换成 `Number(raw)`：换成 Number() 之后 `true` 变 1（1 格宽的图纸）、`null`
+ * 变 0（0 颗豆子），全部静默通过、不报任何错。
  *
- * 这四个数字会原样出现在审核队列和作品详情页上，被静默转成 0 会让站主以为这是
- * 张空图、让访客以为「0 颗豆子」，所以一律拒。
+ * 为什么宁可拒也不能静默兜底：这四个数字会原样出现在审核队列和作品详情页上，
+ * 被静默转成 0 会让站主以为这是张空图、让访客以为「0 颗豆子」。
  */
 function requireCount(raw: unknown, field: string, min: number, max: number): number {
   if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < min || raw > max) {
@@ -156,7 +159,8 @@ function requireTitle(raw: unknown): string {
 
 export interface CreatedSubmission {
   id: number;
-  /** 32 位 hex，只在这一次响应里出现。id 是可猜的自增整数，令牌是第二道闸。 */
+  /** 32 个 hex 字符（randomBytes(16)，即 128 位随机）。只在这一次响应里出现。
+   *  id 是可猜的自增整数，令牌是第二道闸。 */
   uploadToken: string;
 }
 

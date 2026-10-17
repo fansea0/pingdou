@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { failThumbPut } from '../../helpers/failThumbPut.js';
 
 let tmp = '';
 
@@ -468,6 +469,102 @@ describe('attachSubmissionImage', () => {
     await expect(works.attachSubmissionImage(created.id, created.uploadToken, {
       image: { body: PNG, mime: 'image/png' },
     })).rejects.toThrow(works.SubmissionInputError);
+    expect(works.listAllWorks()[0].imageUrl).not.toMatch(/\/media\/works\//);
+  });
+
+  /**
+   * 令牌校验将来的**唯一兜底**：image_key 非空守卫。
+   *
+   * 为什么这条值得单独立：在正常路径上它与「令牌已清空」完全等价 —— 挂图成功时
+   * upload_token 已经被置空，所以即使把 `if (row.image_key)` 整行删掉，上面那条
+   * 「令牌用完即失效」的断言照样成立（实测：删掉后 27 条全绿）。
+   *
+   * 但它不是冗余：一旦有人给「管理员补发上传令牌」这类路径开口子，令牌就重新可用了，
+   * 此时这条守卫是「不许把已经挂好图的投稿换成另一张」的唯一防线，而那时候依然
+   * 不会有任何测试变红。所以用 SQL 把令牌补回去，单独把它的职责钉住。
+   *
+   * 用 SQL 直接改 upload_token 而不是走某个补发接口：那个接口还不存在，
+   * 本文件不该依赖后续任务。
+   */
+  it('已挂过图的投稿，令牌被补发回来也不许再挂（image_key 守卫是唯一兜底）', async () => {
+    const { works, db, paths } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    const first = await works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG, mime: 'image/png' },
+    });
+
+    // 模拟「补发上传令牌」：令牌重新可用，但图已经在行里了
+    db.runStmt(`UPDATE works SET upload_token = ? WHERE id = ?`, ['regranted', created.id]);
+
+    await expect(works.attachSubmissionImage(created.id, 'regranted', {
+      image: { body: WEBP, mime: 'image/webp' },
+    })).rejects.toThrow(works.SubmissionInputError);
+
+    // 原图没被换掉，磁盘上也没多出第二张（守卫失效时这里会变成 2 个文件）
+    expect(works.listAllWorks()[0].imageUrl).toBe(first.imageUrl);
+    expect(readdirSync(join(paths.PATHS.mediaDir, 'works'))).toEqual([first.imageUrl.split('/').pop()!]);
+  });
+
+  /**
+   * 缩略图写盘失败 → 降级为无缩略图，且 DB 不记那个从未落盘的 key。
+   *
+   * 与 createWork / replaceWorkImage 的同名用例同款（共用 failThumbPut 助手），
+   * 因为投稿路径的这段代码是独立复制的，不是共用实现，所以也得独立钉一次。
+   *
+   * 护栏在这一步：把 `thumbKey = candidate` 提到 try 之前（写失败也照记）不会让任何
+   * 抛错发生，但会让 DB 声称一个不存在的文件存在 —— /media/...-t.webp 永久 404、
+   * 前台破图，而后台「无缩略图」的标记判据恰好是 thumbUrl === imageUrl，永远标不出
+   * 这种故障。所以除了降级本身，还要断言磁盘上没有 -t.webp。
+   */
+  it('缩略图写盘失败时降级为无缩略图，且 DB 不记不存在的 key', async () => {
+    const { works, paths } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    const restore = await failThumbPut();
+    try {
+      const detail = await works.attachSubmissionImage(created.id, created.uploadToken, {
+        image: { body: PNG, mime: 'image/png' },
+        thumb: { body: WEBP, mime: 'image/webp' },
+      });
+      expect(detail.thumbUrl).toBe(detail.imageUrl);
+      const files = readdirSync(join(paths.PATHS.mediaDir, 'works'));
+      expect(files.filter(f => f.endsWith('-t.webp'))).toEqual([]);
+      expect(files).toEqual([detail.imageUrl.split('/').pop()!]);
+      // 重启后从 DB 读出来同样是「无缩略图」，不是启动时侥幸
+      expect(works.listAllWorks()[0].thumbUrl).toBe(detail.imageUrl);
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * DB 更新失败 → 把已经落盘的文件回收掉，不留孤儿。
+   *
+   * 孤儿文件的代价是可观测的：它没有记录、也没有主键可追溯，只能靠人肉扫盘清理；
+   * 而且它占着 media/works/ 下的真实文件名，日后谁扫到都可能当成正常文件留着。
+   *
+   * 怎么逼出这条分支：给 works 表挂一个 `BEFORE UPDATE` 触发器，当目标行还没图时
+   * 直接 RAISE(ABORT)。UPDATE 抛错 → attachSubmissionImage 进入 catch 回收分支。
+   * 触发器只认「旧 image_key 为空」，所以只挡第一步那一次 UPDATE，不会波及本文件
+   * 其它用例的正常挂图（每个用例都是全新的库）。
+   */
+  it('DB 更新失败时回收已落盘的文件，不留孤儿', async () => {
+    const { works, paths, db } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    db.runStmt(
+      `CREATE TRIGGER block_pending_image BEFORE UPDATE ON works
+         WHEN OLD.image_key = ''
+       BEGIN SELECT RAISE(ABORT, 'simulated DB failure'); END`,
+      []
+    );
+
+    await expect(works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG, mime: 'image/png' },
+      thumb: { body: WEBP, mime: 'image/webp' },
+    })).rejects.toThrow(/simulated DB failure/);
+
+    // 原图与缩略图都该被回收：目录里空无一物（回收代码被删时会残留两个文件）
+    expect(readdirSync(join(paths.PATHS.mediaDir, 'works'))).toEqual([]);
+    // DB 也没写进去 —— 触发器拦下的 UPDATE 不该留下半截状态
     expect(works.listAllWorks()[0].imageUrl).not.toMatch(/\/media\/works\//);
   });
 });

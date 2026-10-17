@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { failThumbPut } from '../../helpers/failThumbPut.js';
 
 let tmp = '';
 
@@ -21,28 +22,6 @@ async function freshWorks(): Promise<{ works: WorksModule; paths: PathsModule }>
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 const WEBP = Buffer.from([0x52, 0x49, 0x46, 0x46]);
-
-type StorageModule = typeof import('../../../server/storage/index.js');
-
-/**
- * 把缩略图的 put 换成失败（模拟磁盘满 / 权限问题），原图的 put 仍走真实实现。
- *
- * 只 spy storage 实例上的方法，不 mock 模块：works.test.ts 其它用例要的是真实落盘，
- * mock 整个 storage/index.js 会把它们一起废掉。works.ts 与这里是同一个 storage
- * 对象引用（同一个模块注册表实例），所以 spy 对 works.ts 可见。
- */
-async function failThumbPut(): Promise<() => void> {
-  const { storage } = (await import('../../../server/storage/index.js')) as StorageModule;
-  const real = storage.put.bind(storage);
-  const spy = vi
-    .spyOn(storage, 'put')
-    .mockImplementation((key: string, body: Buffer, contentType: string) =>
-      key.endsWith('-t.webp')
-        ? Promise.reject(new Error('disk full (simulated)'))
-        : real(key, body, contentType)
-    );
-  return () => spy.mockRestore();
-}
 
 beforeEach(() => {
   delete process.env.PINGDOU_DATA_DIR;
