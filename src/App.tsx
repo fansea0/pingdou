@@ -8,6 +8,7 @@ import { ParamPanel } from '@/components/ParamPanel';
 import { PreviewCanvas } from '@/components/PreviewCanvas';
 import { ColorLegend } from '@/components/ColorLegend';
 import { ExportPanel } from '@/components/ExportPanel';
+import { SubmitWorkButton } from '@/components/SubmitWorkButton';
 import { MobileActionBar } from '@/components/MobileActionBar';
 import { SiteStats } from '@/components/SiteStats';
 import { ProductShowcase } from '@/components/ProductShowcase';
@@ -76,6 +77,13 @@ export function App() {
   const totalCells = result ? result.outW * result.outH : 0;
   const estimateLabel = useMemo(
     () => formatAssemblyHours(estimateAssemblyHours(beanCount)),
+    [beanCount]
+  );
+  // 投稿要入库的是「分钟数」，而 estimateAssemblyHours 返回的是**小时**（且在
+  // 豆子数为 0 时回 null）。少了 ×60 会把 6.4 小时写成 6 分钟，详情页直接显示
+  // 给用户；少了 ?? 0 则 beanCount 为 0 时把 null 喂给 Math.round。
+  const estimateMinutes = useMemo(
+    () => Math.round((estimateAssemblyHours(beanCount) ?? 0) * 60),
     [beanCount]
   );
 
@@ -175,6 +183,19 @@ export function App() {
               setColorBudget(level);
               reprocess(currentParams({ colorBudget: level }));
             }}
+            disabled={status === 'idle' || status === 'loading'}
+          />
+          {/* 投稿按钮放在参数面板之下、导出之上：两者都是「拿这张图纸去做点什么」，
+              而参数是它们共同的前置输入。移动端 layout-3col 变单列堆叠后，
+              它自然落在参数面板下方、预览区上方，不进 MobileActionBar ——
+              那里已经有上传和导出，再塞第三个操作会让底部条拥挤。 */}
+          <SubmitWorkButton
+            palette={palette}
+            result={result}
+            beanCount={beanCount}
+            colorCount={legend.length}
+            estimateLabel={estimateLabel}
+            estimateMinutes={estimateMinutes}
             disabled={status === 'idle' || status === 'loading'}
           />
           <ExportPanel

@@ -1,0 +1,69 @@
+.submit-work { margin-top: var(--space-3); }
+
+.submit-work-btn {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border, #d9d9e0);
+  border-radius: 10px;
+  background: #fff;
+  color: inherit;
+  font-size: var(--text-sm, 14px);
+  cursor: pointer;
+}
+.submit-work-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.submit-work-backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 60;
+  padding: var(--space-4);
+}
+
+.submit-work-dialog {
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.submit-work-title { margin: 0; font-size: var(--text-base, 15px); }
+
+.submit-work-label { display: flex; flex-direction: column; gap: 4px; font-size: var(--text-xs, 13px); }
+.submit-work-label input {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border, #d9d9e0);
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.submit-work-summary { margin: 0; display: grid; gap: 6px; font-size: var(--text-xs, 13px); }
+.submit-work-summary > div { display: flex; justify-content: space-between; }
+.submit-work-summary dt { color: #666; margin: 0; }
+.submit-work-summary dd { margin: 0; }
+
+.submit-work-hint { margin: 0; font-size: var(--text-xs, 13px); color: #666; }
+.submit-work-error { margin: 0; font-size: var(--text-xs, 13px); color: #b3261e; }
+
+.submit-work-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.submit-work-cancel, .submit-work-confirm {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, #d9d9e0);
+  background: #fff;
+  cursor: pointer;
+}
+.submit-work-confirm { background: #111; color: #fff; border-color: #111; }
+.submit-work-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.submit-work-toast {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs, 13px);
+  color: #1a7f37;
+}
