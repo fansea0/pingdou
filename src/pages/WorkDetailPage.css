@@ -94,3 +94,17 @@
 .works-detail-btn:hover {
   background: var(--color-accent-hover);
 }
+
+/* 点赞区：在元信息下方居中，视觉权重低于图片本身 */
+.works-detail-like {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
+.works-detail-like-error {
+  margin: var(--space-2) 0 0;
+  color: var(--color-error-fg);
+  font-size: var(--text-sm);
+  text-align: center;
+}

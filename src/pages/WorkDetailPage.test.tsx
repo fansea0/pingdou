@@ -1,17 +1,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { WorkDetail } from '@/api/works';
 import { WorkDetailPage, formatBytes } from './WorkDetailPage';
 
 const fetchWork = vi.fn();
+const likeWork = vi.fn();
+const fetchLikeState = vi.fn();
 
 vi.mock('@/api/works', async () => {
   const actual = await vi.importActual<typeof import('@/api/works')>('@/api/works');
-  return { ...actual, fetchWork: (...a: unknown[]) => fetchWork(...a) };
+  return {
+    ...actual,
+    fetchWork: (...a: unknown[]) => fetchWork(...a),
+    likeWork: (...a: unknown[]) => likeWork(...a),
+    fetchLikeState: (...a: unknown[]) => fetchLikeState(...a),
+  };
 });
 
 beforeEach(() => {
   fetchWork.mockReset();
+  likeWork.mockReset().mockResolvedValue({ ok: true, likes: 9, alreadyLiked: true });
+  fetchLikeState.mockReset().mockResolvedValue({ likes: 8, liked: false });
 });
 
 // vitest.config.ts 是 globals:false，RTL 的自动 cleanup 不注册。
@@ -251,5 +260,93 @@ describe('formatBytes', () => {
   it('MB 分支保留一位小数', () => {
     expect(formatBytes(2_621_440)).toBe('2.5 MB');
     expect(formatBytes(10 * 1024 * 1024)).toBe('10.0 MB');
+  });
+});
+
+describe('详情页点赞', () => {
+  it('展示点赞次数与按钮，赞数来自详情接口的真实 likes', async () => {
+    // 判别力来源：WorkDetail.likes 是 Task 3 起接口带回的真实计数。详情页必须用它，
+    // 不能写死 0 或从别处凑一个数。
+    fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    render(<WorkDetailPage id={42} />);
+    expect(await screen.findByRole('button', { name: /8 次点赞/ })).toBeTruthy();
+  });
+
+  it('点一下点赞并更新数字', async () => {
+    fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    render(<WorkDetailPage id={42} />);
+    fireEvent.click(await screen.findByRole('button', { name: /8 次点赞/ }));
+
+    await waitFor(() => expect(likeWork).toHaveBeenCalledWith(42));
+    expect(await screen.findByRole('button', { name: /已赞，9 次点赞/ })).toBeTruthy();
+  });
+
+  it('我今天赞过则按钮为已赞且禁用，不能取消点赞', async () => {
+    fetchWork.mockResolvedValue(detail({ likes: 9 }));
+    fetchLikeState.mockResolvedValue({ likes: 9, liked: true });
+    render(<WorkDetailPage id={42} />);
+    const btn = await screen.findByRole('button', { name: /已赞/ });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+
+    // 产品决定：点赞不可取消。再点不能再发请求。
+    fireEvent.click(btn);
+    expect(likeWork).not.toHaveBeenCalled();
+  });
+
+  it('点赞失败时给出提示且数字回滚', async () => {
+    fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    likeWork.mockRejectedValue(new Error('网络炸了'));
+    render(<WorkDetailPage id={42} />);
+    fireEvent.click(await screen.findByRole('button', { name: /8 次点赞/ }));
+
+    expect(await screen.findByText(/操作失败：网络炸了/)).toBeTruthy();
+    const btn = screen.getByRole('button', { name: /8 次点赞/ }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('被限流（429）时给出能看懂的中文提示，不静默失败也不崩', async () => {
+    // 判别力来源：后端 429 回的是英文 'too many likes, try again later'。
+    // 不翻译的话详情页会把英文甩给中文用户（静默失败的一种）。
+    fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    likeWork.mockRejectedValue(new Error('too many likes, try again later'));
+    render(<WorkDetailPage id={42} />);
+    fireEvent.click(await screen.findByRole('button', { name: /8 次点赞/ }));
+
+    expect(await screen.findByText(/点得太快/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /8 次点赞/ })).toBeTruthy();
+  });
+
+  it('点赞按钮没有把大图包进链接（长按存相册的路不能被破坏）', async () => {
+    fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    const { container } = render(<WorkDetailPage id={42} />);
+    await screen.findByRole('button', { name: /8 次点赞/ });
+    const img = screen.getByRole('img', { name: '粉色小熊' });
+
+    // <img> 的父链上不允许出现 <a>：包进去会让部分浏览器走下载而不是内联渲染，
+    // 微信内置浏览器的「长按存相册」就失效了。
+    let node: HTMLElement | null = img.parentElement;
+    while (node) {
+      expect(node.tagName).not.toBe('A');
+      node = node.parentElement;
+    }
+    // <a download> 只应有一个，且指向原图，不是大图
+    const links = Array.from(container.querySelectorAll('a[download]'));
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe('/media/works/000000000000002a.png');
+  });
+
+  it('详情页不监听 popstate（本项目全页跳转，加了也不会触发）', async () => {
+    // 设计文档 §5.2 明确「实现时不要加这个监听器」。这里从 addEventListener 反查，
+    // 钉住「没有」比钉住「有」难，但正是评审要求防的那条回归。
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      fetchWork.mockResolvedValue(detail({ likes: 8 }));
+      render(<WorkDetailPage id={42} />);
+      await screen.findByRole('button', { name: /8 次点赞/ });
+      const types = addSpy.mock.calls.map(c => c[0]);
+      expect(types).not.toContain('popstate');
+    } finally {
+      addSpy.mockRestore();
+    }
   });
 });

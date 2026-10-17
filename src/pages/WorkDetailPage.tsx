@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { SiteNav } from '@/components/SiteNav';
+import { LikeButton } from '@/components/LikeButton';
 import { fetchWork, type WorkDetail } from '@/api/works';
 import { usePageView } from '@/hooks/useTracking';
 import './WorkDetailPage.css';
@@ -61,6 +62,9 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
   const [work, setWork] = useState<WorkDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // 点赞失败提示。LikeButton 负责乐观更新与回滚，只把「给人看的文案」交上来，
+  // 错误由这一层渲染 —— 与列表页 WorksListPage 的 likeError 同一形状。
+  const [likeError, setLikeError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +155,18 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
               <dd>{formatBytes(work.bytes)}</dd>
             </div>
           </dl>
+
+          {/*
+            赞数初值来自 fetchWork 带回来的 WorkDetail.likes（Task 3 起列表/详情接口
+            一次 SQL 带回真实计数），挂载后 LikeButton 自己再查一次「我今天赞过没」。
+            图与「下载原图」链接都在这个 section 之外，点赞不会碰到长按存图那条路径。
+          */}
+          <div className="works-detail-like">
+            <LikeButton work={work} onError={setLikeError} />
+          </div>
+          {likeError && (
+            <p className="works-detail-like-error" role="status">操作失败：{likeError}</p>
+          )}
 
           {/*
             同一个 URL 承担两种用途，这是刻意设计：
