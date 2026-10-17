@@ -24,7 +24,7 @@ import {
   listPublishedWorks, getPublishedWork, listAllWorks,
   createWork, updateWorkMeta, replaceWorkImage, deleteWork,
   normalizePublished,
-  addLike, likeStateOf, ipHashOf,
+  addLike, likeStateOf, likeFingerprint,
   type UpdateWorkMeta,
 } from './works.js';
 
@@ -540,7 +540,11 @@ app.get('/api/public/works/:id/like', (req, res) => {
     const id = Number(req.params.id);
     if (!getPublishedWork(id)) return res.status(404).json({ error: 'not found' });
     const ip = (req as any).clientIp ?? 'unknown';
-    return res.json(likeStateOf(id, ipHashOf(ip)));
+    // UA 是指纹的必需输入之一：少了它，同 IP 换浏览器会被算成同一个人，
+    // 而多人共用一个出口 IP（公司/学校/运营商 NAT）时只有第一个能赞。详见
+    // works.ts 的 likeFingerprint 注释。两条 like 路由都必须传，口径才一致。
+    const ua = String(req.headers['user-agent'] ?? '');
+    return res.json(likeStateOf(id, likeFingerprint(ip, ua, id)));
   } catch (e) {
     console.error('[public/works/:id/like]', e);
     return res.status(500).json({ error: 'query failed' });
@@ -578,8 +582,9 @@ app.post('/api/public/works/:id/like', (req, res) => {
     const id = Number(req.params.id);
     if (!getPublishedWork(id)) return res.status(404).json({ error: 'not found' });
 
-    // addLike 幂等：重复点赞 liked=false 且计数不变
-    const next = addLike(id, ipHashOf(ip));
+    // addLike 幂等：同一 fingerprint（IP+UA+作品+日期）当天重复点赞 alreadyLiked=false 且计数不变
+    const ua = String(req.headers['user-agent'] ?? '');
+    const next = addLike(id, likeFingerprint(ip, ua, id));
     return res.json({ ok: true, likes: next.likes, alreadyLiked: next.liked });
   } catch (e) {
     console.error('[public/works/:id/like POST]', e);

@@ -124,24 +124,6 @@ export async function initDb(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_works_published_created
       ON works(published, created_at DESC);
-    -- hot 排序走这个索引。没有它的话 ORDER BY likes DESC 会退化成扫表 + 临时排序，
-    -- 而这次改造的全部意义就是让列表查询变便宜，不能在这一步把收益吐回去。
-    CREATE INDEX IF NOT EXISTS idx_works_published_likes
-      ON works(published, likes DESC, created_at DESC, id DESC);
-
-    -- 点赞：每 IP 对每张图每天限一次（用户已确认不支持取消）
-    -- 复合主键即幂等保证，不需要「先查后插」；跨天是新 key，
-    -- 因此不需要定时任务清理，也不需要 active 列。
-    -- 注意 ip_hash 与 events.ip_hash / sessions.ip_hash **同名不同义**：
-    -- 那两列实际存的是明文 IP（统计模块既有口径），这里存真 sha256。
-    -- 计数是「次数」不是「人数」：同一 IP 次日可再点赞，计数会累加。
-    CREATE TABLE IF NOT EXISTS work_likes (
-      work_id    INTEGER NOT NULL,
-      day        TEXT    NOT NULL,
-      ip_hash    TEXT    NOT NULL,
-      created_at INTEGER NOT NULL,
-      PRIMARY KEY (work_id, day, ip_hash)
-    );
 
     CREATE TABLE IF NOT EXISTS auth_tokens (
       token_hash TEXT PRIMARY KEY,
@@ -170,9 +152,19 @@ export async function initDb(): Promise<void> {
   ensureColumn('sessions', 'is_self', 'INTEGER NOT NULL DEFAULT 0');
   ensureIndex('idx_events_province', 'events(province, created_at)');
 
-  // 老库没有 likes 列，纯追加升级，老行新列取默认 0（= 0 赞，正确）。
-  // 这一步是纯增量的：work_likes 还在、还在照旧读写，回填与删表是下一步单独的事。
+  // 点赞模型迁移：work_likes 表 → works.likes 计数列。**顺序不可颠倒。**
+  //
+  // 加列 → 回填 → 删表。回填必须在删表之前：work_likes 一旦 DROP，历史赞数就再也
+  // 拿不回来了，而老库的 likes 列此刻全是默认 0 —— 表现就是「升级后所有历史赞数归零」，
+  // 且没有任何报错。这类静默的数据丢失比迁移失败可怕得多。
   ensureColumn('works', 'likes', 'INTEGER NOT NULL DEFAULT 0');
+  // hot 排序走这个索引。没有它 ORDER BY likes DESC 会退化成扫表 + 临时排序，
+  // 而这次改造的全部意义就是让列表查询变便宜，不能在这一步把收益吐回去。
+  //
+  // **必须排在 ensureColumn 之后**：老库的 works 表还没有 likes 列，
+  // 提前建索引会抛 "no such column: likes" 直接让 initDb 起不来。
+  ensureIndex('idx_works_published_likes', 'works(published, likes DESC, created_at DESC, id DESC)');
+  migrateWorkLikesToCountColumn();
 
   runStmt(
     `INSERT OR IGNORE INTO settings(key, value, updated_at, updated_by) VALUES(?, ?, ?, ?)`,
@@ -216,6 +208,40 @@ function ensureColumn(table: string, column: string, type: string): void {
 /** 幂等建索引 */
 function ensureIndex(name: string, target: string): void {
   requireDb().exec(`CREATE INDEX IF NOT EXISTS ${name} ON ${target}`);
+}
+
+function tableExists(table: string): boolean {
+  return queryAll<{ n: number }>(
+    `SELECT 1 AS n FROM sqlite_master WHERE type = 'table' AND name = ?`,
+    [table]
+  ).length > 0;
+}
+
+/**
+ * work_likes 表 → works.likes 计数列。**幂等**：表没了就直接返回，
+ * 所以新库、老库、以及已迁移过的库走同一条路径。
+ *
+ * 回填用「累加」而不是「赋值」：ensureColumn 刚把老行的 likes 补成默认 0，
+ * 累加与赋值结果相同，但累加语义正确 —— 万一将来有别的路径先写过 likes，
+ * 赋值会把那些值抹掉。
+ *
+ * 关联条件是 `work_likes.work_id = works.id`：没有外键约束（works 表本身也没有外键），
+ * 真有孤儿行时 COUNT 为 0，不影响任何真实作品。works.id 是 AUTOINCREMENT，
+ * 行号永不复用，孤儿行也不会串号到后来的作品上。
+ */
+function migrateWorkLikesToCountColumn(): void {
+  if (!tableExists('work_likes')) return;
+  const database = requireDb();
+  database.exec(
+    `UPDATE works
+        SET likes = likes + (SELECT COUNT(*) FROM work_likes WHERE work_id = works.id)`
+  );
+  database.exec(`DROP TABLE work_likes`);
+  // exec() 不标脏。迁移完不显式标脏的话，这次改写只会留在内存里，重启即回滚成
+  // 「有 work_likes 表、works.likes 全 0」的半迁移状态 —— 而下次启动因为表还在
+  // 又会重新回填一遍，看起来「有时生效有时不生效」，极难排查。
+  markDirty();
+  console.log('[db] 迁移：work_likes 赞数已累加进 works.likes，该表已删除');
 }
 
 function markDirty(): void {

@@ -13,7 +13,7 @@ export interface WorkSummary {
   width: number;
   height: number;
   createdAt: number;
-  /** 总点赞数。列表经 LEFT JOIN 带出；单条读取（getPublishedWork 等）无 join 时为 0。 */
+  /** 总点赞数。直接读 works.likes 列 —— 列表查询不做任何聚合。 */
   likes: number;
 }
 
@@ -69,6 +69,7 @@ interface WorkRow {
   published: number;
   created_at: number;
   updated_at: number;
+  likes: number;
 }
 
 const MAX_DESCRIPTION = 2000;
@@ -113,21 +114,21 @@ export function normalizePublished(raw: unknown, fallback: boolean): boolean {
 }
 
 /**
- * 一次 LEFT JOIN 把点赞数带出来，避免每条作品查一次（N+1）。
+ * likes 直接从 works.likes 列读，**没有 JOIN、没有子查询、没有聚合**。
  *
- * 列表、详情、后台列表共用它：`WorkSummary.likes` 的注释承诺的是「总点赞数」，
- * 只有真正 JOIN 过的路径才能兑现这个承诺，取默认 0 就是在对调用方说谎。
+ * 这正是本次改造的全部意义：原来这里是
+ * `LEFT JOIN (SELECT work_id, COUNT(*) FROM work_likes GROUP BY work_id)`，
+ * 每发一次列表请求就要对整张赞数表扫一遍做分组 —— 页面访问量直接乘在 DB 的
+ * 全表聚合上，且赞数表只增不减、永远不回收，表越大越慢。
+ *
+ * 反过来也要盯着：**别再把任何 JOIN 加回这里**。若将来赞数又需要「按天统计 /
+ * 找出点赞明细」，那是另一个表、另一个查询，别把它挂回列表路径。
+ *
+ * likes 之所以还写 `?? 0`：行类型上它是必填，但 SQL 层的 NULL 兜底成本是零，
+ * 而一旦某天有人手写 SQL 改库写进 NULL，这里会静默变成 undefined 让前端拿到
+ * `NaN` 渲染。取 0 是明确的安全退路。
  */
-const LIKES_JOIN = `
-  LEFT JOIN (
-    SELECT work_id, COUNT(*) AS c FROM work_likes GROUP BY work_id
-  ) l ON l.work_id = w.id`;
-
-/**
- * likes 走参数而不是从 row 上读：row 有没有 JOIN 过是调用路径的偶然，
- * 把「有没有」显式传进来，才不至于让某条路径静默退回默认 0。
- */
-function toSummary(row: WorkRow, likes = 0): WorkSummary {
+function toSummary(row: WorkRow): WorkSummary {
   return {
     id: row.id,
     title: row.title,
@@ -135,19 +136,18 @@ function toSummary(row: WorkRow, likes = 0): WorkSummary {
     width: row.width,
     height: row.height,
     createdAt: row.created_at,
-    likes,
+    likes: row.likes ?? 0,
   };
 }
 
 /**
  * likes 从 row 上读：detail 的调用方（getPublishedWork / listAllWorks /
- * updateWorkMeta / replaceWorkImage）全部经 rowById 或 JOIN 查询拿到行，
- * 都会带上真值。唯一的例外是 createWork 插入后回读（此刻必然 0 赞），
- * 那里落到 ?? 0 是正确的。
+ * updateWorkMeta / replaceWorkImage）全部经 rowById 或列表查询拿到行，
+ * 都会带上真值。createWork 插入后回读时 likes 必然是刚写入的默认值 0。
  */
-function toDetail(row: WorkRow & { likes?: number | null }): WorkDetail {
+function toDetail(row: WorkRow): WorkDetail {
   return {
-    ...toSummary(row, row.likes ?? 0),
+    ...toSummary(row),
     description: row.description,
     imageUrl: storage.publicUrl(row.image_key),
     bytes: row.bytes,
@@ -156,25 +156,19 @@ function toDetail(row: WorkRow & { likes?: number | null }): WorkDetail {
 }
 
 /** DB 里 published 是 0/1，JSON 侧统一成 boolean，避免前端去猜 0 和 '0' 的区别 */
-function toAdminDetail(row: WorkRow & { likes?: number | null }): AdminWorkDetail {
+function toAdminDetail(row: WorkRow): AdminWorkDetail {
   return { ...toDetail(row), published: row.published === 1 };
 }
 
 /**
- * 带点赞数回读单行。必须走 LIKES_JOIN —— 详情接口对外承诺 likes 是总赞数，
- * 漏了 JOIN 会让公开详情在作品有赞时返回 0。
+ * 带点赞数回读单行。SELECT w.* 已包含 likes 列，不需要任何额外 join。
  */
-function rowById(id: number): (WorkRow & { likes?: number | null }) | null {
-  const rows = queryAll<WorkRow & { likes?: number | null }>(
-    `SELECT w.*, l.c AS likes
-       FROM works w ${LIKES_JOIN}
-      WHERE w.id = ?`,
-    [id]
-  );
+function rowById(id: number): WorkRow | null {
+  const rows = queryAll<WorkRow>(`SELECT * FROM works WHERE id = ?`, [id]);
   return rows[0] ?? null;
 }
 
-function requireRow(id: number): WorkRow & { likes?: number | null } {
+function requireRow(id: number): WorkRow {
   const row = rowById(id);
   if (!row) throw new Error('work not found');
   return row;
@@ -225,17 +219,18 @@ export function listPublishedWorks(opts: {
 
   // 排序必须完全确定，否则每次请求顺序抖动会导致 React 重复 key、滚动跳变。
   // hot 的兜底链是 created_at 再 id —— 同赞数时先看谁更晚传，再按 id 定死。
+  // likes 直接读列（idx_works_published_likes 覆盖这条 ORDER BY），无聚合。
   //
   // 已知取舍（用户已接受，非 bug）：hot 排序下每次点赞都会改变排名，
   // offset 分页因此可能跳过被挤下去的条目。Task 7 的 id 去重只能挡重复、挡不住跳过。
-  // 根治要游标分页 WHERE (c, created_at, id) < (?, ?, ?)，当前作品量级不值得。
+  // 根治要游标分页 WHERE (likes, created_at, id) < (?, ?, ?)，当前作品量级不值得。
   const orderBy = sort === 'hot'
-    ? `ORDER BY COALESCE(l.c, 0) DESC, w.created_at DESC, w.id DESC`
+    ? `ORDER BY w.likes DESC, w.created_at DESC, w.id DESC`
     : `ORDER BY w.created_at DESC, w.id DESC`;
 
-  const rows = queryAll<WorkRow & { likes: number | null }>(
-    `SELECT w.*, l.c AS likes
-       FROM works w ${LIKES_JOIN}
+  const rows = queryAll<WorkRow>(
+    `SELECT w.*
+       FROM works w
        ${where}
        ${orderBy}
        LIMIT ? OFFSET ?`,
@@ -248,7 +243,7 @@ export function listPublishedWorks(opts: {
   );
 
   return {
-    items: rows.map(r => ({ ...toSummary(r), likes: r.likes ?? 0 })),
+    items: rows.map(toSummary),
     total: totalRows[0]?.total ?? 0,
   };
 }
@@ -261,11 +256,11 @@ export function getPublishedWork(id: number): WorkDetail | null {
   return toDetail(row);
 }
 
-/** 后台管理用：含草稿。同样走 LIKES_JOIN —— 后台要显示赞数，不能只有列表有。 */
+/** 后台管理用：含草稿。likes 同公开列表一样直读 works.likes 列。 */
 export function listAllWorks(): AdminWorkDetail[] {
-  return queryAll<WorkRow & { likes: number | null }>(
-    `SELECT w.*, l.c AS likes
-       FROM works w ${LIKES_JOIN}
+  return queryAll<WorkRow>(
+    `SELECT w.*
+       FROM works w
       ORDER BY w.created_at DESC, w.id DESC`
   ).map(toAdminDetail);
 }
@@ -339,9 +334,9 @@ export async function createWork(input: CreateWorkInput): Promise<AdminWorkDetai
 
 export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise<AdminWorkDetail> {
   const row = requireRow(id);
-  // next 连 likes 一起带过去：rowById 已经 JOIN 出真值，而本函数不碰 work_likes，
+  // next 连 likes 一起带过去：rowById 已经读到真值，而本函数不碰 likes，
   // 所以「函数开头读到的赞数」到 return 时仍然成立 —— 不需要为 likes 再查一次库。
-  const next: WorkRow & { likes?: number | null } = { ...row };
+  const next: WorkRow = { ...row };
   if (typeof patch.title === 'string') next.title = normalizeTitle(patch.title);
   if (typeof patch.description === 'string') next.description = normalizeDescription(patch.description);
   if (typeof patch.published === 'boolean') next.published = patch.published ? 1 : 0;
@@ -383,8 +378,8 @@ export async function replaceWorkImage(
     }
   }
 
-  // 同上：likes 由 requireRow 的 JOIN 带出，本函数不改赞数，直接透传。
-  const next: WorkRow & { likes?: number | null } = {
+  // 同上：likes 由 requireRow 带出，本函数不改赞数，直接透传。
+  const next: WorkRow = {
     ...row,
     image_key: imageKey,
     thumb_key: thumbKey,
@@ -411,16 +406,8 @@ export async function deleteWork(id: number): Promise<void> {
   // 文件删失败只 warn 不阻断 —— 记录必须删掉，否则前台会一直显示点开 404 的卡片。
   await removeQuietly(row.image_key);
   await removeQuietly(row.thumb_key);
-  // work_likes 没有外键也没有级联（works 表本身也没有外键），删作品必须自己清。
-  //
-  // 危害要说准，别夸大：works.id 是 AUTOINCREMENT，SQLite 保证行号永不复用，所以
-  // 这些孤儿行不会被后来的作品「串号」，也不会让任何真实作品多算赞数。真正的问题是
-  // 它们成了永远无法归属的垃圾 —— 表无界增长、永不回收，行里还留着 ip_hash，
-  // 想清理只能全表扫一遍比对 works。
-  //
-  // addLike 里的 SELECT 校验只能挡「写入时 id 非法」，挡不住「写入之后作品被删」，
-  // 所以删除侧必须显式兜住。WHERE work_id = ? 是「只删这一件」的保证。
-  runStmt(`DELETE FROM work_likes WHERE work_id = ?`, [id]);
+  // 不需要再清 work_likes：赞数已经并进 works.likes 这一列，删作品即删赞数，
+  // 上一轮为那张表补的 DELETE 一并删掉了 —— 表没了，就没有孤儿行可清。
   runStmt(`DELETE FROM works WHERE id = ?`, [id]);
   flushNow();
 }
@@ -435,24 +422,84 @@ async function removeQuietly(key: string): Promise<void> {
 }
 
 /**
- * 点赞用的 IP hash —— 与 events.ip_hash / sessions.ip_hash **同名不同义**。
+ * 点赞指纹用的盐。与 events.ip_hash / sessions.ip_hash **同名不同义**。
  *
  * 那两列字段名带 hash，但实际存的是明文 IP（server/index.ts 的 trackEvent 直接把
  * req.clientIp 传进去），那是统计模块的既有口径，本项目不去动它。
- * 点赞表是新表，且没有任何回溯真实 IP 的需求，所以这里存真 hash。
+ * 点赞的去重指纹只活在进程内存里、根本不落库，但仍然加盐：
+ * 万一哪天被人 dump 进程内存，明文 IP 也不该直接躺在那儿。
  *
- * 关于盐的防护力，别高估它：它挡的是「明文落库」和「拿已知 IP 直接比对查表」，
- * **挡不住暴力枚举** —— IPv4 空间只有 2^32 ≈ 43 亿，有 GPU 时全空间跑完是小时级，
- * 截断到 64 bit 更是随便撞。点赞数据的敏感性本来就低（拿不到地理位置之外的更多信息，
- * 且不提供取消），所以不上 HMAC；盐只当「别让明文 IP 直接躺在表里」的最低成本措施。
+ * 关于盐的防护力，别高估它：它挡的是「明文可见」和「拿已知 IP 直接比对」，
+ * **挡不住暴力枚举** —— IPv4 空间只有 2^32 ≈ 43 亿。点赞数据的敏感性本来就低，
+ * 所以不上 HMAC；盐只当「别让明文 IP 直接可见」的最低成本措施。
  */
 const WORKS_IP_SALT = 'https://www.xn--muu023g.xyz/';
 
-export function ipHashOf(ip: string): string {
+/**
+ * 点赞指纹：hash(IP + User-Agent + 作品ID + 日期)。
+ *
+ * **为什么去重要带 User-Agent**：同一 IP 换浏览器、或多个人共用一个出口 IP（公司、
+ * 学校、运营商 NAT）时，只按 IP 去重会把他们算成一个人 —— 后一种情况下，真实的
+ * 多名访客里只有第一个能点赞，其余人看到的都是「已赞、点不动」。用户明确要求
+ * 把 UA 纳入指纹，换取「同一 IP 换浏览器算两个人、多人共用一个 IP 也能各自赞」。
+ *
+ * **这是一次有意为之的去重放宽**：同 IP 换 UA 可以再赞一次，计数会多加一次。
+ * 代价是有人拿脚本轮换 UA 就能刷赞 —— 那正是令牌桶（server/index.ts 的 allowLike）
+ * 要挡的东西，不是这里要挡的。计数口径本就是「次数」不是「人数」，前端文案必须
+ * 写「N 次点赞」而不是「N 人喜欢」。
+ *
+ * 日期用 db.isoDay()：**UTC**，与 events / sessions 全仓统一口径，不在这里引入
+ * 第二套时区算法。可感知后果是东八区用户本地 00:00–08:00 的赞算作前一天 ——
+ * 这是全仓统一口径的既定代价。
+ *
+ * 分隔符用 \u0000：UA 和 IP 都是外部输入，理论上能构造出互相「借位」的组合
+ * （A 的 UA 拼上 B 的 IP 得到同一个串）。NUL 在 HTTP 头里不可能出现，是最省事的
+ * 无歧义分隔。
+ */
+export function likeFingerprint(
+  ip: string,
+  userAgent: string,
+  workId: number,
+  now: number = Date.now(),
+): string {
   return createHash('sha256')
-    .update(`${ip}:${WORKS_IP_SALT}`)
+    .update(`${ip}\u0000${userAgent}\u0000${workId}\u0000${isoDay(now)}:${WORKS_IP_SALT}`)
     .digest('hex')
     .slice(0, 16);
+}
+
+/**
+ * 进程内「今天已赞过」的指纹集合。**每天一个 Set，第二天自动换新**。
+ *
+ * 为什么从 work_likes 表挪到内存（用户拍板）：
+ * - 表里每行只增不减、永不回收，列表查询每次都要对全表 GROUP BY 一次 —— 那才是
+ *   「存库查询压力大」的真正来源。现在去重完全不碰 DB，列表也只读 works.likes 一列。
+ * - **代价一（已接受）：重启后当天可以再赞。** 去重集合不在磁盘上，进程一起来就是空的。
+ * - **代价二：多进程部署时各算各的。** 与令牌桶同样的前提（systemd 单进程），
+ *   横向扩展需换 Redis，届时两处一起换。
+ *
+ * 上限 LIKES_FINGERPRINT_MAX 必须存在：指纹里的 IP 和 UA 都由客户端控制，
+ * 「伪造 UA × 伪造 XFF」能让 Set 无限增长 —— 内存被撑爆比 DB 慢严重得多。
+ * 触顶时的选择是**整份丢弃**（fail-open）：去重失效、用户可以重复赞，但进程活着。
+ * 反过来 fail-closed（拒绝所有新赞）会把一次异常流量变成当天全站不可点赞。
+ * 20_000 条/天对个人站是天文数字，真触顶了也说明站点已经不属于「个人站」，
+ * 那时更该处理的是入口而不是去重。
+ */
+export const LIKES_FINGERPRINT_MAX = 20_000;
+
+let seenDay = '';
+let seenFingerprints = new Set<string>();
+
+/**
+ * 跨天轮转。day 沿用 isoDay（UTC），与全仓其它地方同一口径。
+ * 每次读写都调，所以不存在「没人访问时不轮转、第二天第一次访问读到昨天残留」的问题。
+ */
+function rotateDayIfNeeded(now: number): void {
+  const day = isoDay(now);
+  if (day !== seenDay) {
+    seenDay = day;
+    seenFingerprints = new Set();
+  }
 }
 
 export interface LikeState {
@@ -460,61 +507,65 @@ export interface LikeState {
   liked: boolean;
 }
 
+/** 该作品的累计赞数（直读 works.likes 列，无聚合）。不存在返回 0。 */
+function likesOf(workId: number): number {
+  const rows = queryAll<{ likes: number }>(`SELECT likes FROM works WHERE id = ?`, [workId]);
+  return rows[0]?.likes ?? 0;
+}
+
 /**
- * 该作品的总赞数（累计所有天）。
+ * 点赞。**同步**执行 —— 不是偷懒，是这版存储模型下异步化没有任何收益：
  *
- * WHERE work_id = ? 是「赞数按作品隔离」的唯一保证，去掉它会让每张作品都返回
- * 全表计数。tests 里「赞数按作品隔离，不串号」那条用例就是钉这里的。
+ * 早期设计里用户提过「后端异步入库」，那时写入是一条 INSERT 进 work_likes 表，
+ * 值得考虑排队。这次改成计数列之后，写入是
+ * `UPDATE works SET likes = likes + 1 WHERE id = ? RETURNING likes`
+ * —— **单条、走主键、无聚合、无索引写放大**，而 sql.js 是纯内存库（真正的落盘
+ * 由 flushNow 批量做），成本本来就接近零。异步化反而要付出：丢掉准确的返回计数
+ * （前端只能显示自己编的数字）、引入「已返回成功但其实没写进去」的窗口、
+ * 以及一个必须自己维护的串行队列。收益为零、风险为正，所以按同步做。
+ *
+ * 幂等由内存 Set 保证：**同一 fingerprint 当天第二次点赞 liked=false 且计数不变**。
+ *
+ * 写入顺序值得说明：先 UPDATE、成功之后才登记指纹。反过来的话，给一个不存在的
+ * 作品点赞也会往 Set 里塞一条垃圾指纹（永远命中不了任何真实请求），而且当
+ * addLike 因为别的原因失败时，去重已经记下了「赞过了」而计数没加 —— 按钮显示已赞
+ * 却点不动，是最难排查的一类状态不一致。
+ *
+ * 注意语义：同一 fingerprint 次日可以再给同一张图点赞，计数会累加 —— 这是「热度」
+ * 而非「人数」，前端文案必须是「N 次点赞」而不是「N 人喜欢」。
  */
-function countLikes(workId: number): number {
-  const rows = queryAll<{ c: number }>(
-    `SELECT COUNT(*) AS c FROM work_likes WHERE work_id = ?`,
+export function addLike(workId: number, fingerprint: string, now: number = Date.now()): LikeState {
+  rotateDayIfNeeded(now);
+  if (seenFingerprints.has(fingerprint)) {
+    return { likes: likesOf(workId), liked: false };
+  }
+
+  const rows = execReturning<{ likes: number }>(
+    `UPDATE works SET likes = likes + 1 WHERE id = ? RETURNING likes`,
     [workId]
   );
-  return rows[0]?.c ?? 0;
+  // 0 行 = 作品不存在（草稿 / 越界 id）。不登记指纹、不返回虚假赞数，天然无副作用。
+  if (rows.length === 0) return { likes: 0, liked: false };
+
+  if (seenFingerprints.size >= LIKES_FINGERPRINT_MAX) seenFingerprints = new Set();
+  seenFingerprints.add(fingerprint);
+  return { likes: rows[0]?.likes ?? 0, liked: true };
 }
 
 /**
- * 点赞。幂等由复合主键保证。
+ * 只读不改。GET 与 POST 共用它，保证两条路由的口径一致 ——
+ * especially 跨天：两边都调 rotateDayIfNeeded，所以不会出现「GET 说已赞、
+ * POST 却当新赞」或反过来的口径打架。
  *
- * **并发安全的真正来源**是「同步函数 + Node 单线程 + 复合主键唯一」这三个条件凑在一起，
- * 不是 `RETURNING` 单语句本身：整个 insert→判断→返回之间没有 await，两个并发 HTTP
- * 请求根本不会交错执行。即便真交错，主键唯一性也会让第二个请求的插入被 OR IGNORE
- * 吃掉。`RETURNING` 的作用只是把「这次是不是新赞」直接读出来，省掉一次 SELECT。
- * 选 execReturning 而不是裸 queryAll，是为了让这一行真的落盘（queryAll 不标脏）。
- *
- * **校验作品存在性**靠 `INSERT ... SELECT ... FROM works WHERE id = ?`：work_likes 没有
- * 外键（works 表本身也没有外键），如果直接 VALUES 一个来路不明的 workId，会给不存在的
- * 作品写进一行垃圾，并让 countLikes 对任意 id 都返回虚假的正数。改成 SELECT 之后，
- * 作品不存在 → 0 行 → liked:false、计数 0，天然无副作用，也不用抛异常（签名保持不变）。
- *
- * 注意语义：同一 IP 次日可以再给同一张图点赞，计数会累加 —— 这是「热度」而非「人数」，
- * 前端文案必须是「N 次点赞」而不是「N 人喜欢」。
- */
-export function addLike(workId: number, ipHash: string, now: number = Date.now()): LikeState {
-  const inserted = execReturning(
-    `INSERT OR IGNORE INTO work_likes (work_id, day, ip_hash, created_at)
-     SELECT id, ?, ?, ? FROM works WHERE id = ? RETURNING work_id`,
-    [isoDay(now), ipHash, now, workId]
-  ).length > 0;
-  return { likes: countLikes(workId), liked: inserted };
-}
-
-/**
- * 只读不改。GET 与 POST 共用它，保证两条路由的口径一致。
- *
- * `AND day = ?` 是「按天限流」的全部实现，去掉它就会让昨天点过的用户今天仍显示已赞，
- * 而 addLike 却拒收 —— 两边口径打架，前端按钮状态还会跟计数对不上。
- * 那条「昨天点过赞，今天 liked 仍为 false」的用例钉的就是它。
- *
- * 可感知后果：`day` 走 db.isoDay()，**是 UTC**（与 events / sessions 全仓统一口径）。
+ * 可感知后果：day 走 db.isoDay()，**是 UTC**（与 events / sessions 全仓统一口径）。
  * 东八区用户本地 00:00–08:00 的点赞会被算作前一天，所以早上 8 点前他再点一次会被拒，
  * 按钮显示「未点赞」但点不动。这是全仓统一口径的既定代价，不是这里引入的。
  */
-export function likeStateOf(workId: number, ipHash: string, now: number = Date.now()): LikeState {
-  const rows = queryAll(
-    `SELECT 1 AS ok FROM work_likes WHERE work_id = ? AND day = ? AND ip_hash = ?`,
-    [workId, isoDay(now), ipHash]
-  );
-  return { likes: countLikes(workId), liked: rows.length > 0 };
+export function likeStateOf(
+  workId: number,
+  fingerprint: string,
+  now: number = Date.now(),
+): LikeState {
+  rotateDayIfNeeded(now);
+  return { likes: likesOf(workId), liked: seenFingerprints.has(fingerprint) };
 }

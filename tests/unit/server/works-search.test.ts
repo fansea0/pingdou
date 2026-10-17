@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 let tmp = '';
 let works: typeof import('../../../server/works.js');
@@ -37,6 +37,16 @@ async function seed(title: string, published = true) {
 
 const list = (o: Partial<Parameters<typeof works.listPublishedWorks>[0]> = {}) =>
   works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest', ...o });
+
+const UA = 'Mozilla/5.0 (test) Chrome/1';
+
+/**
+ * 给作品点赞。指纹 = IP + UA + 作品 + 日期，所以每次调用换一个 IP 就是「一个新人」。
+ * 签名刻意保持与旧的 ipHashOf 用法一一对应（`h('1')`、`h('2')`），
+ * 让这些用例的**意图**（谁赞了几次）不被签名变化淹没。
+ */
+const h = (ip: string) => (workId: number, now?: number) =>
+  works.likeFingerprint(ip, UA, workId, now);
 
 describe('escapeLike', () => {
   it('转义 % _ 和反斜杠', () => {
@@ -124,18 +134,16 @@ describe('排序', () => {
 
   it('hot 按点赞数倒序', async () => {
     const a = await seed('A'); const b = await seed('B'); const c = await seed('C');
-    const h = works.ipHashOf;
-    works.addLike(a, h('1')); works.addLike(a, h('2')); works.addLike(a, h('3'));
-    works.addLike(b, h('1')); works.addLike(b, h('2'));
-    works.addLike(c, h('1'));
+    works.addLike(a, h('1')(a)); works.addLike(a, h('2')(a)); works.addLike(a, h('3')(a));
+    works.addLike(b, h('1')(b)); works.addLike(b, h('2')(b));
+    works.addLike(c, h('1')(c));
     const r = await list({ sort: 'hot' });
     expect(r.items.map(i => i.title)).toEqual(['A', 'B', 'C']);
   });
 
   it('hot 下同赞数按创建时间倒序（确定性兜底）', async () => {
     const a = await seed('先'); const b = await seed('后');
-    const h = works.ipHashOf;
-    works.addLike(a, h('1')); works.addLike(b, h('2'));
+    works.addLike(a, h('1')(a)); works.addLike(b, h('2')(b));
     const r = await list({ sort: 'hot' });
     expect(r.items.map(i => i.title)).toEqual(['后', '先']);
   });
@@ -155,7 +163,7 @@ describe('排序', () => {
     const a = await seed('AAA'); const b = await seed('BBB');
     db.runStmt(`UPDATE works SET created_at = 2000 WHERE id = ?`, [a]);
     db.runStmt(`UPDATE works SET created_at = 1000 WHERE id = ?`, [b]);
-    works.addLike(a, works.ipHashOf('x')); works.addLike(b, works.ipHashOf('y'));
+    works.addLike(a, h('x')(a)); works.addLike(b, h('y')(b));
     const r = await list({ sort: 'hot' });
     expect(r.items.map(i => i.title)).toEqual(['AAA', 'BBB']);
   });
@@ -164,32 +172,30 @@ describe('排序', () => {
     const a = await seed('AAA'); const b = await seed('BBB');
     db.runStmt(`UPDATE works SET created_at = 1000 WHERE id = ?`, [a]);
     db.runStmt(`UPDATE works SET created_at = 1000 WHERE id = ?`, [b]);
-    works.addLike(a, works.ipHashOf('x')); works.addLike(b, works.ipHashOf('y'));
+    works.addLike(a, h('x')(a)); works.addLike(b, h('y')(b));
     const r = await list({ sort: 'hot' });
     expect(r.items.map(i => i.title)).toEqual(['BBB', 'AAA']);
   });
 
   it('点赞后重新排序，热图上浮', async () => {
     const a = await seed('A'); const b = await seed('B');
-    const h = works.ipHashOf;
-    works.addLike(a, h('1'));
+    works.addLike(a, h('1')(a));
     expect((await list({ sort: 'hot' })).items[0]?.title).toBe('A');
-    works.addLike(b, h('1')); works.addLike(b, h('2'));
+    works.addLike(b, h('1')(b)); works.addLike(b, h('2')(b));
     expect((await list({ sort: 'hot' })).items[0]?.title).toBe('B');
   });
 
   it('每条 summary 都带 likes 字段', async () => {
     const a = await seed('A');
-    works.addLike(a, works.ipHashOf('1'));
+    works.addLike(a, h('1')(a));
     const r = await list();
     expect(r.items[0]?.likes).toBe(1);
   });
 
   it('搜索 + 排序可组合', async () => {
     const a = await seed('小熊A'); const b = await seed('小猪B');
-    const h = works.ipHashOf;
-    works.addLike(a, h('1'));
-    works.addLike(b, h('1')); works.addLike(b, h('2'));
+    works.addLike(a, h('1')(a));
+    works.addLike(b, h('1')(b)); works.addLike(b, h('2')(b));
     const r = await list({ q: '小', sort: 'hot' });
     expect(r.items.map(i => i.title)).toEqual(['小猪B', '小熊A']);
   });
@@ -197,22 +203,23 @@ describe('排序', () => {
 
 describe('详情 / 后台的 likes 口径', () => {
   /**
-   * I-1：`WorkSummary.likes` 对外承诺是「总点赞数」，那所有返回 WorkDetail 的
-   * 路径就必须给真值。只有列表 JOIN 了 work_likes，详情/后台原本拿 toSummary 的
-   * 默认 0 —— 一个有 2 个赞的作品，公开详情接口在撒谎。
+   * `WorkSummary.likes` 对外承诺是「总点赞数」，所有返回 WorkDetail 的路径都必须给真值。
+   * 改成 works.likes 列之后这条变得**天然成立**（所有路径都是 SELECT w.*），
+   * 但用例必须留着 —— 一旦某条路径写成 `SELECT id, title ...` 漏掉 likes 列，
+   * 公开详情就会在作品有赞时静默返回 0，而这正是当初 I-1 发现的 bug。
    */
   it('getPublishedWork 返回真实赞数，不是默认 0', async () => {
     const id = await seed('甲');
     expect(works.getPublishedWork(id)?.likes).toBe(0);   // 还没人点赞
-    works.addLike(id, works.ipHashOf('1'));
-    works.addLike(id, works.ipHashOf('2'));
+    works.addLike(id, h('1')(id));
+    works.addLike(id, h('2')(id));
     expect(works.getPublishedWork(id)?.likes).toBe(2);
   });
 
   it('listAllWorks（后台）同样返回真实赞数', async () => {
     const id = await seed('甲');
-    works.addLike(id, works.ipHashOf('1'));
-    works.addLike(id, works.ipHashOf('2'));
+    works.addLike(id, h('1')(id));
+    works.addLike(id, h('2')(id));
     expect(works.listAllWorks().find(w => w.id === id)?.likes).toBe(2);
   });
 
@@ -226,8 +233,8 @@ describe('详情 / 后台的 likes 口径', () => {
 
   it('updateWorkMeta / replaceWorkImage 返回的赞数不会被抹成 0', async () => {
     const id = await seed('甲');
-    works.addLike(id, works.ipHashOf('1'));
-    works.addLike(id, works.ipHashOf('2'));
+    works.addLike(id, h('1')(id));
+    works.addLike(id, h('2')(id));
     const updated = await works.updateWorkMeta(id, { title: '乙' });
     expect(updated.likes).toBe(2);
     const replaced = await works.replaceWorkImage(
@@ -255,5 +262,78 @@ describe('分页', () => {
     // 已知局限（用户已接受）：hot 排序下点赞会改变排名，offset 分页可能漏图。
     // 这里只验证 latest（静态排序）下分页正确。
     expect(new Set([...p1.items, ...p2.items].map(i => i.id)).size).toBe(4);
+  });
+});
+
+describe('赞数直读 works.likes，列表不再做聚合 ★', () => {
+  /**
+   * 本次改造的核心承诺：列表查询的赞数**来自 works.likes 这一列**。
+   *
+   * 钉法是「绕过 addLike 直接改列」：如果列表还在走
+   * `LEFT JOIN (SELECT ... FROM work_likes GROUP BY work_id)` 聚合，
+   * 直接 UPDATE works.likes 根本不会影响列表返回值（聚合读的是另一张表），
+   * 断言立刻变红。而正常路径下这两者数值相同，所以这条能杀掉聚合实现、又不误伤正确实现。
+   */
+  it('列表返回的 likes 就是列里的值（绕过 addLike 直接改列）', async () => {
+    const a = await seed('A');
+    works.addLike(a, h('1')(a));
+    expect((await list()).items[0]?.likes).toBe(1);
+
+    db.runStmt(`UPDATE works SET likes = 7 WHERE id = ?`, [a]);
+    expect((await list()).items[0]?.likes).toBe(7);
+    // 详情与后台走的是同一列，口径一致
+    expect(works.getPublishedWork(a)?.likes).toBe(7);
+    expect(works.listAllWorks().find(w => w.id === a)?.likes).toBe(7);
+  });
+
+  it('hot 排序读的也是这一列（直接改列能改变排名）', async () => {
+    const a = await seed('A'); await seed('B');   // B 后建，latest/hot 同赞数下 B 在前
+    expect((await list({ sort: 'hot' })).items[0]?.title).toBe('B');
+    db.runStmt(`UPDATE works SET likes = 5 WHERE id = ?`, [a]);
+    expect((await list({ sort: 'hot' })).items[0]?.title).toBe('A');
+  });
+
+  it('work_likes 表已不存在（没有可聚合的来源）', async () => {
+    const tables = db.queryAll<{ name: string }>(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'work_likes'`
+    );
+    expect(tables).toEqual([]);
+  });
+
+  /**
+   * 把「不再聚合」钉死在 SQL 文本上：发一次列表请求，把它真正 prepare 出去的
+   * 每条 SQL 都抓下来，断言没有一条提到 work_likes、没有一条带 GROUP BY。
+   *
+   * 上面三条都是**结果**断言 —— 如果有人把聚合换成一个写法不同但同样贵的 SQL
+   * （比如 COUNT 子查询、相关子查询），它们照样绿。这条不管怎么换写法都会红。
+   * 计数点选在 Database.prototype.prepare：initDb 的建表走 exec、不经过它，
+   * 所以不会污染（与 works-likes-routes.test.ts 里数 SQL 条数是同一个手法）。
+   */
+  it('列表查询发出去的 SQL 里没有 work_likes、没有 GROUP BY', async () => {
+    const initSqlJs = (await import('sql.js')).default;
+    const wasmDir = resolve(process.cwd(), 'node_modules/sql.js/dist');
+    const SQL = await initSqlJs({ locateFile: (f: string) => resolve(wasmDir, f) });
+    const proto = SQL.Database.prototype;
+    const original = proto.prepare;
+    const seen: string[] = [];
+    const spy = vi.spyOn(proto, 'prepare').mockImplementation(function (
+      this: import('sql.js').Database,
+      ...args: Parameters<typeof original>
+    ) {
+      seen.push(String(args[0]));
+      return original.apply(this, args);
+    });
+    try {
+      await seed('A');
+      works.addLike(1, h('1')(1));
+      seen.length = 0;
+      await list();
+      await list({ sort: 'hot', q: 'A' });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.filter(sql => /work_likes/i.test(sql))).toEqual([]);
+    expect(seen.filter(sql => /group\s+by/i.test(sql))).toEqual([]);
   });
 });
