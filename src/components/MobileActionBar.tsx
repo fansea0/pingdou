@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './MobileActionBar.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
 import { ColorBudgetPicker } from './ColorBudgetPicker';
-import { useSecondaryToggle, type SecondaryAction } from '@/hooks/useSecondaryToggle';
+import { useActionMenu, type ActionChoice } from '@/hooks/useActionMenu';
 import type { ColorBudgetLevel } from '@/types';
 
 const GRID_PRESETS = [20, 30, 50, 75, 100, 150, 200, 300] as const;
@@ -51,9 +51,9 @@ interface Props {
    * 投稿入口。桌面端它挂在导出面板上，而导出面板在 ≤900px 是整块隐藏的
    * （global.css 的 `.param-panel, .export-panel, .upload-zone { display:none }`），
    * 所以手机端必须在这里另开一个口 —— 否则手机上根本没有投稿入口。
-   * 手感与导出面板完全一致：主按钮两态，旁边的窄切换位只改状态。
+   * 手感与导出面板完全一致：主按钮显示当前动作，旁边的小箭头开下拉菜单。
    */
-  secondary?: SecondaryAction;
+  alternatives?: ActionChoice[];
 }
 
 export function MobileActionBar({
@@ -72,11 +72,10 @@ export function MobileActionBar({
   canExport,
   exporting,
   flash,
-  secondary,
+  alternatives,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState(0);
-  const { onSecondary: onSecondaryMode, toggle } = useSecondaryToggle(secondary);
   const rafRef = useRef<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -151,15 +150,11 @@ export function MobileActionBar({
     document.addEventListener('pointerup', handleUp);
   }, [setValueFromPointer]);
 
-  // 收成一个值，省得后面到处写 secondary! —— onSecondaryMode 为真才可能有它
-  const active = secondary && onSecondaryMode ? secondary : null;
-  const exportLabel = active
-    ? active.label
-    : exporting
-    ? '生成中…'
-    : flash === 'done'
-    ? '已下载 ✓'
-    : '下载';
+  const menu = useActionMenu(
+    { label: exporting ? '生成中…' : flash === 'done' ? '已下载 ✓' : '下载', onSelect: onExport },
+    alternatives,
+  );
+  const onDownload = menu.current.onSelect === onExport;
 
   return (
     <>
@@ -230,70 +225,79 @@ export function MobileActionBar({
           </svg>
         </button>
 
-        <div className="mobile-primary-group">
-          <button
-            className={`primary mobile-action-button mobile-btn-primary${exporting && !active ? ' is-loading' : ''}${flash === 'done' && !active ? ' is-done' : ''}`}
-            disabled={!canExport || exporting}
-            onClick={() => (active ? active.onSelect() : onExport())}
-            /* 语音控制读的是 aria-label 而不是可见文案，两态下它必须跟着变，
-               否则会念「下载图片」然后真的去下载。 */
-            aria-label={active ? '投稿到作品库' : '下载图片'}
-          >
-            {!active && progress > 0 && progress < 1 && (
-              <span
-                className="export-progress"
-                style={{ width: `${Math.round(progress * 100)}%` }}
-                aria-hidden
-              />
-            )}
-            <span className="export-label">
-              {active ? (
-                <svg
-                  className="mobile-btn-icon"
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  aria-hidden="true"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 19V5" />
-                  <path d="m5 12 7-7 7 7" />
-                </svg>
-              ) : (
-                <svg
-                  className="mobile-btn-icon"
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  aria-hidden="true"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 4v12" />
-                  <path d="m7 11 5 5 5-5" />
-                  <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-                </svg>
-              )}
-              {exportLabel}
-            </span>
-          </button>
-          {secondary && (
+        <div className="mobile-primary-group" ref={menu.ref}>
+          <div className="mobile-split">
             <button
-              type="button"
-              className="mobile-swap"
-              aria-pressed={onSecondaryMode}
-              aria-label={onSecondaryMode ? '切回下载' : '切换到投稿'}
-              onClick={toggle}
+              className={`primary mobile-action-button mobile-btn-primary${exporting && onDownload ? ' is-loading' : ''}${flash === 'done' && onDownload ? ' is-done' : ''}`}
+              disabled={!canExport || exporting}
+              onClick={menu.current.onSelect}
+              /* 语音控制读的是 aria-label 而不是可见文案，切到投稿后必须跟着变，
+                 否则会念「下载图片」然后真的去下载。 */
+              aria-label={onDownload ? '下载图片' : '投稿到作品库'}
             >
-              {onSecondaryMode ? secondary.backLabel ?? '下载' : secondary.label}
+              {onDownload && progress > 0 && progress < 1 && (
+                <span
+                  className="export-progress"
+                  style={{ width: `${Math.round(progress * 100)}%` }}
+                  aria-hidden
+                />
+              )}
+              <span className="export-label">
+                {onDownload ? (
+                  <svg className="mobile-btn-icon" viewBox="0 0 24 24" width="16" height="16"
+                    aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 4v12" />
+                    <path d="m7 11 5 5 5-5" />
+                    <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+                  </svg>
+                ) : (
+                  <svg className="mobile-btn-icon" viewBox="0 0 24 24" width="16" height="16"
+                    aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 19V5" />
+                    <path d="m5 12 7-7 7 7" />
+                  </svg>
+                )}
+                {menu.current.label}
+              </span>
             </button>
+            {alternatives && alternatives.length > 0 && (
+              <>
+                <span className="mobile-split-divider" aria-hidden />
+                <button
+                  type="button"
+                  className="mobile-caret"
+                  aria-haspopup="menu"
+                  aria-expanded={menu.open}
+                  aria-label="更多操作"
+                  disabled={!canExport || exporting}
+                  onClick={menu.toggleMenu}
+                >
+                  <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"
+                    fill="none" stroke="currentColor" strokeWidth="2.5"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+              </>
+            )}
+          </div>
+
+          {menu.open && (
+            <div className="action-menu" role="menu">
+              {menu.items.map((item, i) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  role="menuitem"
+                  className={`action-menu-item${item.onSelect === menu.current.onSelect ? ' is-active' : ''}`}
+                  onClick={() => menu.pick(i)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </div>

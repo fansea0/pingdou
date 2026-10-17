@@ -195,7 +195,7 @@ export function App() {
             onExport={handleExport}
             exporting={exporting}
             flash={exportFlash}
-            secondary={{ label: '投稿', onSelect: () => setSubmitOpen(true) }}
+            alternatives={[{ label: '投稿', onSelect: () => setSubmitOpen(true) }]}
           />
           <SubmitWorkButton
             palette={palette}
@@ -252,8 +252,8 @@ export function App() {
 
       <MobileActionBar
         /* 导出面板在 ≤900px 是整块隐藏的，所以手机端的投稿入口只能开在这里。
-           与桌面同一份 secondary 契约、同一套手感：主按钮两态，窄切换位只改状态。 */
-        secondary={{ label: '投稿', onSelect: () => setSubmitOpen(true) }}
+           与桌面同一份契约、同一套手感：主按钮显示当前动作，小箭头开下拉菜单。 */
+        alternatives={[{ label: '投稿', onSelect: () => setSubmitOpen(true) }]}
         gridSize={gridSize}
         removeBackground={removeBackground}
         simplifyColors={simplifyColors}

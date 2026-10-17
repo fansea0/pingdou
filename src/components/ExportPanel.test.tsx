@@ -1,6 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { cleanup, render, fireEvent, screen } from '@testing-library/react';
 import { ExportPanel } from '@/components/ExportPanel';
+
+// vitest.config.ts 是 globals:false，RTL 的自动 cleanup 不注册。少了这行，
+// 上一条用例展开的菜单会留在 DOM 里，getByRole 直接命中两个。
+afterEach(cleanup);
 
 describe('ExportPanel', () => {
   it('renders the export button labeled "下载"', () => {
@@ -53,75 +57,72 @@ describe('ExportPanel', () => {
     expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
 
-  // 「投稿和下载在一个位置、可以来回切」是这条 secondary 契约存在的全部理由。
-  // 形态退回到两个并排按钮时，下面三条会直接变红 —— 而只查「按钮还在」查不出来。
-  describe('可切换的次级动作', () => {
-    const secondary = { label: '投稿', onSelect: vi.fn() };
+  // 「投稿和下载在一个位置、可以来回换」是 alternatives 这条契约存在的全部理由。
+  // 形态退回到两个并排按钮时，下面几条会直接变红 —— 而只查「按钮还在」查不出来。
+  describe('下拉菜单式的动作切换', () => {
+    const alternatives = [{ label: '投稿', onSelect: vi.fn() }];
 
-    it('默认显示「下载」，切换位显示要切过去的「投稿」', () => {
+    it('默认是「下载」，旁边只有一个小箭头', () => {
       const { container } = render(
-        <ExportPanel onExport={() => {}} disabled={false} secondary={secondary} />
+        <ExportPanel onExport={() => {}} disabled={false} alternatives={alternatives} />
       );
       expect(container.querySelector('button.primary')?.textContent).toBe('下载');
-      expect(container.querySelector('.export-swap')?.textContent).toBe('投稿');
+      expect(container.querySelector('.export-caret')).toBeTruthy();
+      // 菜单默认不展开：菜单里才有的动作不该平铺在主按钮旁边
+      expect(container.querySelector('.action-menu')).toBeNull();
     });
 
-    it('点切换位只改状态、不执行任何动作', () => {
+    it('点箭头只开菜单、不执行任何动作', () => {
       const onExport = vi.fn();
       const onSelect = vi.fn();
       const { container } = render(
-        <ExportPanel
-          onExport={onExport}
-          disabled={false}
-          secondary={{ label: '投稿', onSelect }}
-        />
+        <ExportPanel onExport={onExport} disabled={false}
+          alternatives={[{ label: '投稿', onSelect }]} />
       );
-      fireEvent.click(container.querySelector('.export-swap')!);
-      // 判别力：把切换位也接上 onSelect 时，本条会红。切和做混在一次点击里，
+      fireEvent.click(container.querySelector('.export-caret')!);
+      // 判别力：箭头顺带调 onSelect 时本条会红。把「换」和「做」混在一次点击里，
       // 用户永远不知道自己刚才那下到底干了什么。
       expect(onSelect).not.toHaveBeenCalled();
       expect(onExport).not.toHaveBeenCalled();
-      expect(container.querySelector('button.primary')?.textContent).toBe('投稿');
+      expect(container.querySelector('.action-menu')?.textContent).toContain('投稿');
     });
 
-    it('切到投稿后点主按钮走投稿，再切回来点主按钮走下载', () => {
+    it('菜单里选中投稿后主按钮变成投稿，再选回下载', () => {
       const onExport = vi.fn();
       const onSelect = vi.fn();
       const { container } = render(
-        <ExportPanel
-          onExport={onExport}
-          disabled={false}
-          secondary={{ label: '投稿', onSelect }}
-        />
+        <ExportPanel onExport={onExport} disabled={false}
+          alternatives={[{ label: '投稿', onSelect }]} />
       );
-      const swap = () => fireEvent.click(container.querySelector('.export-swap')!);
-      const main = () => fireEvent.click(container.querySelector('button.primary')!);
+      fireEvent.click(container.querySelector('.export-caret')!);
+      fireEvent.click(screen.getByRole('menuitem', { name: '投稿' }));
 
-      swap();
-      main();
+      // 选中即关：选完还挂着菜单，用户会以为没点上
+      expect(container.querySelector('.action-menu')).toBeNull();
+      expect(container.querySelector('button.primary')?.textContent).toBe('投稿');
+
+      fireEvent.click(container.querySelector('button.primary')!);
       expect(onSelect).toHaveBeenCalledTimes(1);
       expect(onExport).not.toHaveBeenCalled();
 
-      swap();
+      fireEvent.click(container.querySelector('.export-caret')!);
+      fireEvent.click(screen.getByRole('menuitem', { name: '下载' }));
       expect(container.querySelector('button.primary')?.textContent).toBe('下载');
-      main();
+      fireEvent.click(container.querySelector('button.primary')!);
       expect(onExport).toHaveBeenCalledTimes(1);
-      expect(onSelect).toHaveBeenCalledTimes(1);
     });
 
-    it('切换位标出当前所处的状态', () => {
+    it('菜单项标出当前选中的那个', () => {
       const { container } = render(
-        <ExportPanel onExport={() => {}} disabled={false} secondary={secondary} />
+        <ExportPanel onExport={() => {}} disabled={false} alternatives={alternatives} />
       );
-      const swap = container.querySelector('.export-swap')!;
-      expect(swap.getAttribute('aria-pressed')).toBe('false');
-      fireEvent.click(swap);
-      expect(container.querySelector('.export-swap')!.getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(container.querySelector('.export-caret')!);
+      expect(container.querySelector('.action-menu-item.is-active')?.textContent).toBe('下载');
     });
 
-    it('没有次级动作时退化成单个满宽按钮，不留切换位', () => {
+    it('没有其它动作时退化成单个满宽按钮，不留箭头', () => {
       const { container } = render(<ExportPanel onExport={() => {}} disabled={false} />);
-      expect(container.querySelector('.export-swap')).toBeNull();
+      expect(container.querySelector('.export-caret')).toBeNull();
       expect(container.querySelectorAll('.export-actions button')).toHaveLength(1);
     });
   });

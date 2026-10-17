@@ -7,6 +7,7 @@
  * （在 App.tsx 里作为 ExportPanel 的兄弟节点渲染），grid-column 才能做到。
  */
 .export-actions {
+  position: relative;          /* 下拉菜单的定位上下文 */
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
@@ -19,28 +20,45 @@
   transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
-/*
- * 切换位：窄、无填充、字小、灰。它只负责「换一件事做」，不执行动作 ——
- * 做成跟主按钮一样的视觉重量，会让人以为这里也是第二个动作按钮，
- * 于是那一行就退回成两个按钮并排、宽度又被切一半。
- */
-.export-swap {
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: #fff;
-  color: #666;
-  font-size: var(--text-xs);
-  white-space: nowrap;
+/* 下拉箭头并进按钮自己的框里：主按钮是 accent 填充，箭头跟着同一块填充，
+   只用一道半透明竖线分隔 —— 读起来仍然是一个按钮，而不是旁边贴了个控件。
+   两个都是 <button>，不用嵌套（button 里套 button 是非法 HTML）。 */
+.export-split {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.export-split .export-btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 10px 0 0 10px;
+}
+
+.export-split-divider {
+  width: 1px;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.export-caret {
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0 10px 10px 0;
+  background: var(--color-accent);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
+  transition: background 0.2s ease;
 }
 
-.export-swap:hover { border-color: var(--color-mint); color: var(--color-text); }
+.export-caret:hover:not(:disabled) { background: var(--color-accent-hover); }
+.export-caret:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.export-swap[aria-pressed='true'] {
-  border-color: var(--color-mint);
-  color: var(--color-text);
-}
+/* 没有 alternatives 时箭头不存在，主按钮要自己把圆角补回去 */
+.export-actions > .export-btn { border-radius: 10px; }
 
 .export-btn:not(:disabled):hover {
   transform: translateY(-1px);
@@ -128,3 +146,36 @@
     bottom: var(--space-5);
   }
 }
+
+/* === 下拉菜单（主按钮右侧的小箭头点开） === */
+/* 挂在 .export-actions / .mobile-primary-group 里，两处共用同一份外观。
+   position 相对这两个容器，所以它们必须是定位上下文。 */
+.action-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 100%;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.action-menu-item {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.action-menu-item:hover { background: var(--color-surface-alt); }
+.action-menu-item.is-active { color: var(--color-accent); font-weight: 600; }
