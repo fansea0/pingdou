@@ -8,43 +8,9 @@
   font-size: var(--text-lg);
 }
 
-.works-admin-upload {
-  display: grid;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.works-admin-upload h3 {
-  margin: 0;
-  font-size: var(--text-base);
-}
-
-.works-admin-label {
-  display: grid;
-  gap: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--color-text-muted);
-}
-
-.works-admin-label input[type='text'],
-.works-admin-label textarea {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: var(--text-sm);
-}
-
-.works-admin-check {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-}
+/* 上传区块（.works-admin-upload / .works-admin-label / .works-admin-check）
+   已随 WorksTab 的上传表单一起删除：进货渠道换成用户投稿，后台不再有直传入口，
+   留着这些规则只会让人以为界面还能上传。 */
 
 .works-admin-btn {
   justify-self: start;
@@ -137,4 +103,27 @@
   display: grid;
   gap: var(--space-2);
   justify-items: end;
+}
+
+/* 三个分区（待审核 / 作品集 / 已拒绝）是审核队列的骨架，
+   分区间距要比区块内的行距大一档，否则「换区了」这件事看不出来。 */
+.works-admin-section {
+  margin-bottom: var(--space-4);
+}
+
+.works-admin-section-title {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* 图纸参数横排一行：审核时要一眼扫过「多大、多少颗、多少色、多久」，
+   竖着排四行会把缩略图挤到首屏之外。 */
+.works-admin-params {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }

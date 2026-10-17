@@ -191,42 +191,6 @@ export interface WorkMetaPatch {
   published?: boolean;
 }
 
-/**
- * ⚠️ 死代码，Task 12 连同唯一调用方一起删。
- *
- * 服务端的 `POST /api/admin/works` 已随 Task 7 拆掉，所以这个函数现在真被调到
- * 只会 404。它之所以还留着：唯一调用方是 WorksTab 的上传区块，而那块代码由
- * Task 12 整文件重写 —— 那边删上传区块时必须把本导出一起删掉，否则就留下一个
- * 永远没人调的导出，看起来后台还能直传作品。
- *
- * 下方函数体保持原样、注释里的「服务端不装 sharp」仍然成立；只有原先那句
- * 「缩略图文件名必须叫 thumb.webp」不再成立（服务端改成按 part 的 mime 判类型，
- * 不看 originalname），故不再随函数体一并恢复。
- */
-export async function adminCreateWork(
-  file: File,
-  opts: {
-    thumb?: Blob | null;
-    title?: string;
-    description?: string;
-    published?: boolean;
-    width?: number;
-    height?: number;
-  } = {}
-): Promise<AdminWorkDetail> {
-  const fd = new FormData();
-  fd.append('file', file);
-  if (opts.thumb) fd.append('thumb', opts.thumb, 'thumb.webp');
-  fd.append('title', opts.title ?? '');
-  fd.append('description', opts.description ?? '');
-  // 空串 / '0' / 'false' 都算「明确的关」，所以这里必须显式送 0/1，不能省字段
-  fd.append('published', opts.published === false ? '0' : '1');
-  if (opts.width != null) fd.append('width', String(opts.width));
-  if (opts.height != null) fd.append('height', String(opts.height));
-  const res = await fetch(`${BASE}/admin/works`, { method: 'POST', body: fd, credentials: 'include' });
-  return jsonOrThrow<AdminWorkDetail>(res);
-}
-
 /** 后台作品列表。status 不传就是全部（与改动前行为一致）。 */
 export async function adminListWorks(
   status?: WorkStatus,
