@@ -453,6 +453,11 @@ export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise
   const next: WorkRow = { ...row };
   if (typeof patch.title === 'string') next.title = normalizeTitle(patch.title);
   if (typeof patch.description === 'string') next.description = normalizeDescription(patch.description);
+  // 不变量①：published=1 必须伴随 status='approved'。
+  // 让「未过审的东西上了架」在接口层就不可能发生，而不是指望前端 UI 不给这个选项。
+  if (patch.published === true && row.status !== 'approved') {
+    throw new Error('只有审核通过的作品才能上架');
+  }
   if (typeof patch.published === 'boolean') next.published = patch.published ? 1 : 0;
   next.updated_at = Date.now();
 
@@ -462,6 +467,54 @@ export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise
   );
   flushNow();
   return toAdminDetail(next);
+}
+
+/**
+ * 审核通过：pending → approved，并自动上架。
+ *
+ * 已经 approved 时**原样返回当前状态**（真幂等），而不是重新上架 ——
+ * 否则站主点过一次「通过」、再点「下架」、又误点一次「通过」，作品就自己回到
+ * 前台了。UI 上「通过」按钮只对 pending 行显示，这条路径实际走不到，
+ * 但 API 层的幂等必须是无副作用的。
+ */
+export function approveWork(id: number): AdminWorkDetail {
+  const row = requireRow(id);
+  if (row.status === 'rejected') {
+    throw new Error('已拒绝的投稿不能通过');
+  }
+  if (row.status === 'approved') return toAdminDetail(row);
+  const now = Date.now();
+  runStmt(
+    `UPDATE works SET status='approved', published=1, updated_at=? WHERE id=?`,
+    [now, id],
+  );
+  flushNow();
+  return toAdminDetail({ ...row, status: 'approved', published: 1, updated_at: now });
+}
+
+/**
+ * 审核拒绝：标记 rejected、下架、并物理删除源文件。
+ *
+ * 删文件是「减少空间占有」的落点。image_key 字符串**保留在库里**（spec §11.4）：
+ * image_key 是 NOT NULL，改它要放宽约束或存 ''（而 publicUrl('') 会得到一个指向
+ * 目录的畸形 URL）；留着这个值则是审计线索 —— 站主日后能看出这件作品的文件曾经
+ * 叫什么。代价是后台渲染 rejected 行时不能画 <img>，那条规则写在 WorksTab 里。
+ */
+export async function rejectWork(id: number): Promise<AdminWorkDetail> {
+  const row = requireRow(id);
+  if (row.status === 'rejected') return toAdminDetail(row);
+  // 先删文件再改记录：反过来会在「记录已改、文件删失败」时留下永远无人引用的
+  // 孤儿文件，而孤儿文件没有主键可追溯。删失败只 warn 不阻断（removeQuietly），
+  // 否则一次磁盘抖动就把这条投稿永远卡在 pending。
+  await removeQuietly(row.image_key);
+  await removeQuietly(row.thumb_key);
+  const now = Date.now();
+  runStmt(
+    `UPDATE works SET status='rejected', published=0, updated_at=? WHERE id=?`,
+    [now, id],
+  );
+  flushNow();
+  return toAdminDetail({ ...row, status: 'rejected', published: 0, updated_at: now });
 }
 
 export async function replaceWorkImage(
