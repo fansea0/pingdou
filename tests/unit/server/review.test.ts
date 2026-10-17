@@ -73,6 +73,11 @@ describe('approveWork', () => {
     const again = works.approveWork(id);
     expect(again.published).toBe(false);
     expect(again.status).toBe('approved');
+    // 无副作用是**持久态**的性质，光看返回值不够：approveWork 完全可以在
+    // return 之前补一句 UPDATE published=1，返回值照样是 false，而作品已经
+    // 偷偷回到前台了（评审实测过这个变异）。所以这里必须回库查、并且查公开接口。
+    expect(works.listAllWorks()[0].published).toBe(false);
+    expect(works.getPublishedWork(id)).toBeNull();
   });
 
   it('已拒绝的投稿不能通过（终态不可回退）', async () => {
@@ -184,7 +189,12 @@ describe('rejectWork', () => {
     expect(before).toBeNull();
     const row = works.listAllWorks().find(r => r.id === id)!;
     await works.rejectWork(id);
-    expect(row.imageUrl).toMatch(/^\/media\/works\//);
+    // 必须在 reject **之后**重读一行：拿 reject 前的快照去断言，等于什么都没验
+    // ——reject 的 UPDATE 顺手把 image_key 抹成 '' 时，这个断言照样绿（评审实测过
+    // 这个变异），而那正是 spec §11.4 明令不许做的事。
+    const after = works.listAllWorks().find(r => r.id === id)!;
+    expect(after.imageUrl).toMatch(/^\/media\/works\/.+\.png$/);
+    expect(after.imageUrl).toBe(row.imageUrl);
     expect(works.getPublishedWork(id)).toBeNull();
   });
 });

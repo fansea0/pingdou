@@ -498,7 +498,8 @@ export function approveWork(id: number): AdminWorkDetail {
  * 删文件是「减少空间占有」的落点。image_key 字符串**保留在库里**（spec §11.4）：
  * image_key 是 NOT NULL，改它要放宽约束或存 ''（而 publicUrl('') 会得到一个指向
  * 目录的畸形 URL）；留着这个值则是审计线索 —— 站主日后能看出这件作品的文件曾经
- * 叫什么。代价是后台渲染 rejected 行时不能画 <img>，那条规则写在 WorksTab 里。
+ * 叫什么。代价是后台列表会用 imageUrl 渲染出一个已不存在的文件（裂图），
+ * 该降级由 WorksTab 负责，将在本计划的 WorksTab 改造任务里落地 —— 目前尚未实现。
  */
 export async function rejectWork(id: number): Promise<AdminWorkDetail> {
   const row = requireRow(id);
