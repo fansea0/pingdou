@@ -369,6 +369,19 @@ export function listAllWorks(filter?: { status?: WorkStatus }): AdminWorkDetail[
   ).map(toAdminDetail);
 }
 
+/**
+ * 作品当前的状态不允许这次改动。由 HTTP 层映射成 400。
+ *
+ * 为什么要类型化而不是抛裸 Error：这条路由以前把 `updateWorkMeta` 的**所有**异常
+ * 一律映射成 404，于是「这件作品存在，但你不能给它上架」被报成「这件作品不存在」。
+ * 站主看到这个 404 会以为作品被删了，去数据库里找、去找备份，方向整个是错的。
+ * 设计文档（测试矩阵 §上传未过审作品）要的也是 400。
+ *
+ * 与 `SubmissionInputError` 同一套思路：**按「错在哪」决定状态码，而不是一律 404**。
+ * 注意它**不是**「作品不存在」—— 那个仍然是 404，别把两者混成同一个码。
+ */
+export class WorkStateError extends Error {}
+
 export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise<AdminWorkDetail> {
   const row = requireRow(id);
   // next 连 likes 一起带过去：rowById 已经读到真值，而本函数不碰 likes，
@@ -379,7 +392,7 @@ export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise
   // 不变量①：published=1 必须伴随 status='approved'。
   // 让「未过审的东西上了架」在接口层就不可能发生，而不是指望前端 UI 不给这个选项。
   if (patch.published === true && row.status !== 'approved') {
-    throw new Error('只有审核通过的作品才能上架');
+    throw new WorkStateError('只有审核通过的作品才能上架');
   }
   if (typeof patch.published === 'boolean') next.published = patch.published ? 1 : 0;
   next.updated_at = Date.now();

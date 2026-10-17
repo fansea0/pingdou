@@ -28,6 +28,7 @@ import {
   createSubmission, attachSubmissionImage,
   approveWork, rejectWork,
   SubmissionInputError, SubmissionQuotaError,
+  WorkStateError,
   type UpdateWorkMeta,
 } from './works.js';
 
@@ -739,6 +740,11 @@ app.put('/api/admin/works/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     return res.json(await updateWorkMeta(Number(req.params.id), patch));
   } catch (e: any) {
+    // 「这件作品存在，但当前状态不允许这次改动」是 400，「找不到这件作品」才是 404。
+    // 以前这里一律 404，站主拿到 404 会以为作品被删了，排查方向整个是错的。
+    // 其余异常（找不到 / id 非法）**维持 404 不变** —— 别把语义搅浑：
+    // 404 在这条路由上仍然只表示「没有这件作品」。
+    if (e instanceof WorkStateError) return res.status(400).json({ error: e.message ?? 'update failed' });
     return res.status(404).json({ error: e.message ?? 'update failed' });
   }
 });

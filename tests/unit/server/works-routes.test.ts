@@ -7,6 +7,9 @@ import { makeApprovedWork } from '../../helpers/works.js';
 
 let tmp = '';
 
+// PNG magic bytes：storage 按 mime 认图片，光头就够，不必是一张真 PNG
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'works-routes-'));
   process.env.PINGDOU_DATA_DIR = tmp;
@@ -271,6 +274,45 @@ describe('admin 作品接口', () => {
     const { app } = await bootApp();
     const cookie = await loginAdmin(app);
     expect((await request(app).delete('/api/admin/works/99999').set('Cookie', cookie)).status).toBe(404);
+  });
+
+  // 状态码语义（2026-10-17 修正）：以前这条路由把 updateWorkMeta 的所有异常一律
+  // 映射成 404，于是「这件作品存在，但你不能给它上架」被报成「这件作品不存在」，
+  // 站主会去数据库里找、去翻备份，方向整个是错的。设计文档要的是 400。
+  // 但 404 在这条路由上仍然只表示「没有这件作品」—— 这条用例就是防止
+  // 修 400 时顺手把「找不到」也一起改成 400。
+  it('PUT 上架未过审的作品返回 400（而不是 404）', async () => {
+    const { app, works } = await bootApp();
+    const cookie = await loginAdmin(app);
+    // 走真实投稿路径造一件 pending：捷径 INSERT 会绕开 status / upload_token，
+    // 那样测的就不是「用户投稿 → 站主想直接上架」这个真实场景了。
+    const created = works.createSubmission({
+      title: '未过审就想上架', boardW: 87, boardH: 62, beanCount: 3814, colorCount: 42, estimateMinutes: 190,
+    }, { ip: '9.9.9.9', userAgent: 'vitest-pending' });
+    await works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG_BYTES, mime: 'image/png' },
+      width: 1500, height: 2200,
+    });
+
+    const put = await request(app)
+      .put(`/api/admin/works/${created.id}`)
+      .set('Cookie', cookie)
+      .send({ published: true });
+
+    expect(put.status).toBe(400);
+    expect(put.body.error).toMatch(/审核/);
+    // 400 是「请求不合法」，作品行必须一个字节都没改
+    expect(works.listAllWorks()[0].published).toBe(false);
+  });
+
+  it('PUT 不存在的 id 仍然是 404', async () => {
+    const { app } = await bootApp();
+    const cookie = await loginAdmin(app);
+    const put = await request(app)
+      .put('/api/admin/works/99999')
+      .set('Cookie', cookie)
+      .send({ published: true });
+    expect(put.status).toBe(404);
   });
 
   // fail-closed：客户端显式传 null 是「我明确要改这个字段，只是值非法」，

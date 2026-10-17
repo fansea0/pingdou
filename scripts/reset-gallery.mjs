@@ -21,7 +21,8 @@
  * 而且**这种情况连备份也救不回来**：回滚 stats.db 之后，运行中的服务下一次 flush
  * 又会用它内存里那份旧库把 5 行 works 再写回去。
  * 所以：先 systemctl stop（或 whatever your supervisor is），确认进程退出，再跑本脚本。
- * 脚本里有两道兜底检查（见下面的「两道兜底」），但它们只负责**发现**，不负责替代停服。
+ * 脚本里有三道兜底检查（见下面的「三道兜底」），但它们只负责**发现**，
+ * 不负责替代停服。
  *
  * ### 第二条前提：备份只覆盖数据库，不覆盖图片
  * 备份**只覆盖 stats.db，不覆盖 media 下的图片**。所以「先备份再删」并不等于
@@ -30,11 +31,15 @@
  * ### 把风险压住的是执行顺序
  * 落盘成功之前，一个字节的图片都不会被删：
  *
- *   备份 stats.db → 开库/统计/DELETE（全部只在内存里）→ db.export() → 落盘
- *   （先写临时文件再 rename）→ **重新打开落盘的库，确认 works 确实是 0 行**
- *   → 兜底 1a：写回前确认 stats.db 没被外部进程改过
+ *   备份 stats.db → 开库/统计/DELETE（全部只在内存里）→ db.export()
+ *   → 兜底 1a：**写回之前**确认 stats.db 还是「我读进来的那一份」
+ *   → 落盘（先写临时文件再 rename）→ **重新打开落盘的库，确认 works 确实是 0 行**
  *   → 兜底 1b：删文件前再确认一次 → 才删 media/works/ 下的文件
- *   → 兜底 2：删完再复核一次 works 行数
+ *   → 兜底 2a：删完立刻复核 works 行数 → 等 600ms（> SAVE_DEBOUNCE_MS）
+ *     → 兜底 2b：再复核一次 → 全部通过才打印「完成」
+ *
+ * 注意兜底 1a 在**落盘之前**：它问的是「我读进来之后有没有人动过这个库」，
+ * 真被动过还往下走的话，这次 rename 会把对方的写入悄悄吃掉。
  *
  * 任何一步抛错，脚本都在「库还是满的、图片还在」的原始状态退出（除落盘那一步
  * 之后：那时库里已经空了，但图片全都还在，只是多了几个没人引用的孤儿文件 ——
@@ -48,9 +53,12 @@
  *   1b. 删文件**之前**重新 stat stats.db，比对 inode / size / mtime 与脚本自己刚
  *       写下的那份是否一致；不一致 = 有别的进程在写库 → 中止并提示先停服。
  *       放在删文件之前是因为那时还来得及：文件一张都没删。
- *   2. 删完文件后再复核 works 行数；不为 0 说明库被外部写回了 → 大声告警。
- *      这时图片已经没了，它只能告诉你出了事，不能替你收拾。
- *   这两道都只是启发式检查（同一毫秒内、同样大小的写入理论上能骗过去），
+ *   2. 删完文件后再复核 works 行数，分两次：2a 删完立刻查（抓「删文件过程中撞上
+ *      写库」）；2b 等 600ms（> server/db.ts 的 SAVE_DEBOUNCE_MS=500）之后再查一次
+ *      —— 因为脚本端到端只有 ~190ms，必然赶在服务的防抖窗口关闭**之前**就退出，
+ *      服务那份 flush 落在脚本退出之后，2a 看不见。不为 0 就大声告警、退出码非 0，
+ *      而且**在打印「完成」之前**。这时图片已经没了，它只能告诉你出了事。
+ *   这三道都只是启发式检查（同一毫秒内、同样大小的写入理论上能骗过去），
  *   它们的价值是覆盖「运维压根没想起来停服」这个最常见的人为失误。
  *
  * ## 用法
@@ -58,6 +66,9 @@
  *   node scripts/reset-gallery.mjs
  *   PINGDOU_DATA_DIR=/var/lib/pingdou node scripts/reset-gallery.mjs
  *   systemctl start <服务名>
+ *
+ * 正常跑完会比「纯删除」多花约 0.6 秒（兜底 2b 要等一个防抖窗口）。
+ * 这是有意付的代价：省这 0.6 秒换来的就是服务没停时那份静悄悄的坏图库。
  *
  * ## 路径怎么来的（怕删错库，所以逐条说明）
  *   PINGDOU_DATA_DIR 未设置时默认 /var/lib/pingdou，stats.db 与 media/works/ 都从
@@ -288,28 +299,62 @@ if (existsSync(WORKS_DIR)) {
 
 console.log(`[reset-gallery] 已删除 ${files} 个文件，释放 ${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
-// 兜底 2：删完文件之后**再**复核一次 works 行数。
-// 为什么这时候还要查：兜底 1b 只能证明「动手之前那一瞬间没人写库」，挡不住
-// 服务在我们删文件的这几十毫秒里来一次 flushNow。那样最终状态就是
-// 「works 行又活了 + 图已经没了」——站点对外就会指向不存在的图片。
-// 这一步已经救不回任何东西（文件删了就是删了），它的价值是**把事故喊出来**：
-// 运维不会带着一个静悄悄的坏图库继续跑下去。
+// 兜底 2：删完文件之后再复核 works 行数，分两次查。
+//
+// 2a（删完立刻查）抓的是「服务恰好在我们删文件的这几十毫秒里 flush 了一次」。
+// 这一步已经救不回任何东西（文件删了就是删了），它的价值是把事故喊出来。
+//
+// 2b（再等一个防抖窗口后查）才是真正兜住常见误用的那一步。
+// 复审量出来的数：脚本端到端只有 189ms（3 个文件）/ 423ms（4000 个文件），
+// 而 server/db.ts:14 的 SAVE_DEBOUNCE_MS = 500 —— 也就是说在小库场景下，
+// 脚本**必然在防抖窗口关闭之前就退出了**，8/8 次都是 exit 0 + 打印「完成」，
+// 而服务那份 flush 落在脚本退出**之后**，2a 根本来不及看见。
+// 服务最典型的时序恰恰就是「脚本刚跑完就 flush」，所以这里多等一个防抖窗口，
+// 把「脚本退出前唯一还能观察到的最后机会」用掉。
+//
+// ⚠️ 这**不是**根治：它只是把风险窗口从「脚本退出前」推迟到「脚本退出那一刻」。
+//   服务持续 flush 时，脚本退出之后数据照样会复活。所以必须停服这一条没有变，
+//   兜底只是把最常见的结局从「静悄悄的坏图」变成「响亮的坏图」。
 let resurrectWarn = '';
+
+/** 从磁盘上重新打开 stats.db 数 works 行数 */
+function diskWorksCount() {
+  const conn = new SQL.Database(new Uint8Array(readFileSync(DB_PATH)));
+  const n = countRows(conn, 'works');
+  conn.close();
+  return n;
+}
+
+function warnAboutResurrection(n, which) {
+  return (
+    `[reset-gallery] 严重警告（${which}）：works 表又有 ${n} 行，说明有服务进程在运行，` +
+    '并且用它内存里的旧库把数据写了回来。**现在站点处于「有作品行、图片却不存在」的状态**。' +
+    '请立刻停服，然后从备份恢复数据库（注意：必须在停服之后恢复，否则运行中的服务' +
+    '会用它内存里的旧库把旧数据再盖回去）。备份路径见上方输出。'
+  );
+}
+
 try {
-  const recheck = new SQL.Database(new Uint8Array(readFileSync(DB_PATH)));
-  const n = countRows(recheck, 'works');
-  recheck.close();
-  if (n !== 0) {
-    resurrectWarn =
-      `[reset-gallery] 严重警告：删完文件后 works 表又有 ${n} 行，说明有服务进程在运行，` +
-      '并且用它内存里的旧库把数据写了回来。**现在站点处于「有作品行、图片却不存在」的状态**。' +
-      '请立刻停服，然后从备份恢复数据库（注意：必须在停服之后恢复，否则运行中的服务' +
-      '会用它内存里的旧库把旧数据再盖回去）。备份路径见上方输出。';
-  }
+  const n = diskWorksCount();
+  if (n !== 0) resurrectWarn = warnAboutResurrection(n, '兜底 2a');
 } catch (err) {
   resurrectWarn =
     `[reset-gallery] 严重警告：删完文件后连 stats.db 都读不开了（${err.message}）。` +
     '图片已经删除，无法恢复；请立刻停服并从备份恢复数据库。';
+}
+
+if (!resurrectWarn) {
+  // 等一个 SAVE_DEBOUNCE_MS(500ms) 之上：服务那边 markDirty 之后 500ms 就会 flush，
+  // 所以 600ms 才够覆盖一次完整的防抖窗口。
+  await new Promise((r) => setTimeout(r, 600));
+  try {
+    const n = diskWorksCount();
+    if (n !== 0) resurrectWarn = warnAboutResurrection(n, '兜底 2b');
+  } catch (err) {
+    resurrectWarn =
+      `[reset-gallery] 严重警告：等待防抖窗口后 stats.db 读不开了（${err.message}）。` +
+      '请立刻停服并从备份恢复数据库。';
+  }
 }
 
 if (failed.length > 0) {

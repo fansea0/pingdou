@@ -187,16 +187,18 @@ describe('reset-gallery.mjs 正常路径', () => {
 });
 
 describe('reset-gallery.mjs 失败时的状态', () => {
-  it('PINGDOU_DATA_DIR 指向文件系统根目录时直接拒绝，一个文件都不删', () => {
-    // 这是唯一一处「脚本会主动删东西之前」的最后一道类型检查：
+  it('PINGDOU_DATA_DIR 指向文件系统根目录时直接拒绝', () => {
     // 运维把 PINGDOU_DATA_DIR 写错成 "/" 时，宁可什么都不做。
-    const before = spawnSync(process.execPath, [SCRIPT], {
+    // 名字里只承诺「拒绝并给出可读原因」：这条没有任何文件快照可断言 ——
+    // 根目录不是本测试造出来的 fixture，去数它有几个文件既没意义也可能误报。
+    // 真正「一个文件都不删」的承诺由下面那条自带 fixture 的用例来守。
+    const r = spawnSync(process.execPath, [SCRIPT], {
       env: { ...process.env, PINGDOU_DATA_DIR: parse(process.cwd()).root },
       cwd: parse(process.cwd()).root,
       encoding: 'utf8',
     });
-    expect(before.status).toBe(1);
-    expect(before.stderr).toMatch(/拒绝在根目录上执行删除/);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/拒绝在根目录上执行删除/);
   });
 
   it('数据目录里没有 stats.db 时中止，一个文件都不删', async () => {
@@ -278,10 +280,16 @@ describe('reset-gallery.mjs 失败时的状态', () => {
    *   在源码里必须出现在删文件语句（rmSync(p, …）**之前**。
    */
   it('源码顺序：写回 stats.db 在删文件之前', () => {
-    const src = readFileSync(SCRIPT, 'utf8');
+    const raw = readFileSync(SCRIPT, 'utf8');
+    // ⚠️ 必须先剥掉注释再定位，否则这条断言有真实泄漏：
+    // 只要在文件头插一句含 `writeFileSync(tmpDbPath, exported)` 的**注释**，
+    // 再把真代码挪到 rmSync 之后，`indexOf` 命中的是那句注释的位置 → 断言照样绿。
+    // （评审实测过这个绕过。）所以先把块注释与行注释整段抹掉，只留真正的代码。
+    const src = raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
     const at = (needle: string) => src.indexOf(needle);
-    // 认真正写库的那几处：写临时文件 / rename 落盘。注释里出现的同名字样不算，
-    // 所以用带参数形态的完整调用串去定位。
+    // 认真正写库的那几处：写临时文件 / rename 落盘。
     const writeMarkers = [
       'renameSync(tmpDbPath, DB_PATH)',
       'writeFileSync(DB_PATH,',
