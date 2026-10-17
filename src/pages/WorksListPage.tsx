@@ -226,7 +226,9 @@ export function WorksListPage() {
                       2) <button> 不能嵌套在 <a> 里 —— 那是无效 HTML，
                          点它到底跳不跳详情页各家浏览器行为不一致。
                       3) 所以点赞按钮是 <a> 的兄弟，靠 position:absolute
-                         压在图片右下角（见 WorksListPage.css 的 .works-card-like）。
+                         钉在标题行的右端（见 WorksListPage.css 的 .works-card-like）。
+                         标题行本身就是 44px（--works-title-h），按钮的触摸区
+                         整个落在行内，不会压到图片上。
                       日期一并去掉：它曾独占卡片底部一整行，也是「作品太大了」
                       的一半原因。发布日期不是找图的必要信息。 */}
                   <a href={`/works/${w.id}`} className="works-card-link">

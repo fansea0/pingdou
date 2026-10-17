@@ -76,7 +76,7 @@
 }
 
 .works-card {
-  /* 浮层点赞按钮的定位上下文：它是 <a> 的兄弟，只能落在 <li> 里。 */
+  /* 点赞按钮的定位上下文：它是 <a> 的兄弟，只能落在 <li> 里。 */
   position: relative;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -84,11 +84,18 @@
   overflow: hidden;
   box-shadow: var(--shadow-sm);
   transition: transform 0.15s, box-shadow 0.15s;
-  /* 标题高度。点赞浮层要贴的是图片右下角，而图片下沿到卡片下沿正好是这段
-     标题 —— 浮层用 bottom: calc(标题高 + 间隙) 就能避开标题，不用知道图高。
+  /* 标题行的高度。点赞按钮贴在这一行的右端，它的 44px 触摸区要整个落在
+     行内 —— 行比 44px 矮时按钮会顶到图片上（那一版就是这么做的，视觉上
+     像一枚浮在图上的徽章，且命中区有一半压在图片上）。
      改 .works-card-title 的 padding / line-height 时这里要一起改，
      两处都用同一组 token 推导，不会各走各的。 */
-  --works-title-h: calc(var(--text-sm) * 1.5 + var(--space-2) * 2);
+  --works-title-h: 44px;
+  /* 点赞按钮的宽度上限，同时也是标题右侧要让开的位置。徽章按内容长
+     （心形 + gap + 数字），这个上限够放下四位数的赞数。
+     标题用 padding-right 让开「按钮上限 + 一个 --space-3」—— 留这一格是余量：
+     即使按钮顶到上限，标题的省略号也仍停在按钮左边，不会钻到它底下。
+     再多一位数（≥5 位）会被裁掉而不是压到标题上。 */
+  --works-like-w: 64px;
 }
 
 .works-card:hover {
@@ -115,21 +122,28 @@
 }
 
 .works-card-title {
+  /* 必须保持块级：flex 容器的匿名子项拿不到 text-overflow，长标题会直接
+     冲出卡片被 overflow:hidden 硬切（没有省略号）。垂直居中改用等高行盒。 */
   display: block;
   /* 单行截断。之前是 -webkit-line-clamp: 2 且预留了两行高度
      (min-height: 两行 × line-height + padding)，而绝大多数标题只有一行 ——
      于是每张卡片下面都空出一块，肉眼就是「作品之间很挤、卡片里很空」。
-     留白靠 padding 就够，两列时一行 + 省略号足够认图。 */
+     行高等于行高（--works-title-h）→ 文字在 44px 行盒里居中，
+     与右侧的点赞按钮同一个高度。 */
+  min-height: var(--works-title-h);
+  line-height: var(--works-title-h);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  padding: var(--space-2) var(--space-3);
+  padding: 0 var(--space-3);
+  /* 右端给点赞按钮让出位置。标题是块级、占满整行，多留的右边距只影响
+     截断点（省略号提前一点），不会在标题短时留下可见的空隙。 */
+  padding-right: calc(var(--space-3) + var(--works-like-w));
   font-size: var(--text-sm);
   font-weight: 600;
-  line-height: 1.5;
 }
 
-/* 点赞浮层：压在图片右下角的小徽章。
+/* 点赞：钉在标题行的右端（用户原话「点赞在标题右侧」）。
    用 `.works-card .works-card-like` 而不是单类 —— LikeButton.css 里
    .works-like 已经给了 min-height:44px / 灰字 / 透明底，两类选择器同权重时
    胜负取决于 CSS 注入顺序（详情页不加载 WorksListPage.css，顺序并不固定），
@@ -137,49 +151,34 @@
 .works-card .works-card-like {
   position: absolute;
   right: var(--space-2);
-  bottom: calc(var(--works-title-h) + var(--space-2));
-  /* 触摸区：宽度按内容长（数字多了才不挤），高度固定 44px（spec §5.4）。 */
+  /* 卡片下沿 = 标题行下沿（标题是最后一段），所以 bottom:0 就是「与标题同行」。 */
+  bottom: 0;
+  /* 触摸区：整块与标题行同高（44px，高度由 --works-title-h 统一推导）。
+     数字多了才不挤，所以按内容长、最小 44px。 */
   min-width: 44px;
-  height: 44px;
+  height: var(--works-title-h);
   min-height: 0;
   padding: 0 var(--space-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  /* 徽章本体只有 ~32px 高/宽（见 ::before），44px 是这块透明命中区。 */
-  z-index: 2;
+  gap: 3px;
+  /* 数字涨到五位时裁掉而不是压到标题上（--works-like-w 只留到四位）。 */
+  max-width: var(--works-like-w);
+  overflow: hidden;
   border: none;
   background: transparent;
-  color: #fff;
+  /* 不再压在图片上，所以不用反白，也不再需要 text-shadow 把它从图里捞出来。 */
+  color: var(--color-text-muted);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-  transition: none;
 }
 
-/* 徽章本体：深色半透明圆角块。视觉 32px 高（44 - 上下各 6px），
-   命中区仍是整块 44px —— 用户不必精确点到那个小圆上。 */
-.works-card .works-card-like::before {
-  content: '';
-  position: absolute;
-  inset: 6px 0;
-  z-index: -1;
-  border-radius: 999px;
-  background: rgba(29, 26, 22, 0.5);
-  backdrop-filter: blur(2px);
-  transition: background 0.15s;
-}
-
-.works-card .works-card-like:hover:not(:disabled)::before {
-  background: rgba(29, 26, 22, 0.68);
-}
-
-/* 已赞态：♥ 之外再把底色换成主题色，两态不靠颜色以外的东西区分
-   （心形本身已经不同，这里是让「我赞过」在一堆灰徽章里一眼可见）。
+/* 已赞态：心形由 LikeButton.css 换成实心（形状变了，不只是颜色），
+   这里只把数字与图标染成主色，让「我赞过」在一排灰数字里一眼可见。
    已赞的 class 是 LikeButton 自己加的 works-like--on，不是 works-card-like--on —— */
-.works-card .works-like--on::before {
-  background: rgba(224, 120, 86, 0.92);
+.works-card .works-like--on {
+  color: var(--color-accent);
 }
 
 /* 头部压缩：搜索独占一行（所有断点）。排序已经移到「共 N 件」那一行，
@@ -327,8 +326,8 @@
   font-size: var(--text-sm);
 }
 
-/* .works-card-body / .works-card-meta（日期 + 点赞那一整行）已随本次产品改动删除：
-   日期从卡片上移除、点赞浮到图片右下角，这一行本身不再存在。 */
+/* .works-card-body / .works-card-meta（日期 + 点赞那一整行）已随产品改动删除：
+   日期从卡片上移除、点赞收到标题行右端，这一行本身不再存在。 */
 
 /*
  * 头部压缩。

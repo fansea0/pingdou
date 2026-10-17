@@ -27,3 +27,33 @@
   color: var(--color-accent);
   font-weight: 600;
 }
+
+/*
+ * 心形图标（列表页卡片用的是默认这一份）。
+ *
+ * fill / stroke **不在 SVG 属性上**（见 LikeButton.tsx 的 LIKE_ICON 注释）：
+ * 它们是「未赞空心 / 已赞实心」这个形状开关，交给 CSS 才能切。
+ * 形状变了而不只是换颜色 —— 这是「我赞过没」能被一眼读出来的全部原因：
+ * 同一颗心只换颜色时，远看只能读出一个数字。
+ *
+ * hover **刻意不给**实心：鼠标停在按钮上时若也填实，鼠标不挪开点一下，
+ * 前后两帧长得一模一样，等于把这件要解决的事又还回去。所以三态互不相同：
+ *   未赞静置 = 空心 + 灰 / 未赞悬停 = 空心 + 主色 / 已赞 = 实心 + 主色
+ */
+.works-like-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.works-like-icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  transition: fill 0.18s ease, stroke 0.18s ease;
+}
+
+.works-like--on .works-like-icon path {
+  fill: currentColor;
+  stroke: none;
+}

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { WorksListPage } from './WorksListPage';
 import { useWorks } from '@/hooks/useWorks';
 
@@ -495,7 +497,8 @@ describe('点赞按钮', () => {
     render(<WorksListPage />);
     const link = await screen.findByRole('link', { name: 'A' });
     const btn = screen.getByRole('button', { name: /5 次点赞/ });
-    // 浮层形态下按钮是 <a> 的兄弟，压在图片右下角，而不是链接的后代
+    // 标题行形态下按钮仍然是 <a> 的兄弟（只是这次钉在标题右端，不是压在图上），
+    // 而不是链接的后代
     expect(link.contains(btn)).toBe(false);
     expect(btn.closest('a')).toBeNull();
   });
@@ -509,18 +512,105 @@ describe('点赞按钮', () => {
     expect(link.querySelector('.works-card-img')).toBeTruthy();
   });
 
-  it('日期那一行已从卡片上移除，浮层徽章挂在卡片而不是链接里', async () => {
+  it('日期那一行已从卡片上移除，点赞挂在卡片而不是链接里', async () => {
     listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
     fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
     const { container } = render(<WorksListPage />);
     await screen.findByText('A');
 
     // 产品决定：发布日期是设计移除的，不是漏了 —— 底部整行（日期 + 游离的
-    // 小爱心）被一张浮在图片右下角的徽章取代，卡片因此矮了一整行。
+    // 小爱心）被标题行右端的点赞取代。
     expect(container.querySelector('.works-card-body')).toBeNull();
     expect(container.querySelector('.works-card-meta')).toBeNull();
     const card = container.querySelector('.works-card') as HTMLElement;
     expect(card.querySelector('.works-card-like')).toBeTruthy();
+  });
+
+  it('点赞钉在标题行的右端，与标题同行（不是浮在图上的徽章）', async () => {
+    // 用户原话「点赞在标题那一行的右侧」。这条钉的是 CSS：
+    //   · 按钮 bottom:0 + 高度 = --works-title-h → 与标题行同一高度、贴卡片下沿
+    //   · 标题行 min-height 同样是 --works-title-h，且右端 padding 让开按钮
+    //   · 不再有压在图片上的深色浮层（::before 那块半透明底 + text-shadow）
+    // 判别力：只断言 DOM 结构的话，下面两条「按钮在卡片里」「不在链接里」
+    // 全都照样绿 —— 位置是纯 CSS 事实，只能查样式表源码。
+    // vitest 默认不注入样式表，getComputedStyle 在这里读不到值、断言会空跑，
+    // 所以直接读 CSS 源码（与 RegionStatsPanel.test.tsx 同一个理由）。
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+
+    const css = readFileSync(resolve(process.cwd(), 'src/pages/WorksListPage.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = css.slice(css.indexOf('.works-card .works-card-like'));
+    const body = rule.slice(0, rule.indexOf('}'));
+    expect(body).toMatch(/bottom:\s*0/);
+    expect(body).toMatch(/height:\s*var\(--works-title-h\)/);
+    // 触摸区 ≥44px：--works-title-h 定义在 .works-card 上
+    expect(css.slice(css.indexOf('--works-title-h:'))).toMatch(/--works-title-h:\s*44px/);
+    // 旧浮层形态的死东西必须已经删干净
+    expect(body).not.toMatch(/text-shadow/);
+    expect(css).not.toMatch(/\.works-card-like::before/);
+
+    // 标题行右端让出位置，长标题的省略号停在这条线之前
+    const titleRule = css.slice(css.indexOf('.works-card-title'));
+    expect(titleRule.slice(0, titleRule.indexOf('}')))
+      .toMatch(/padding-right:[^;]*--works-like-w/);
+    // 标题行必须是块级：flex 容器的匿名子项拿不到 text-overflow，
+    // 长标题会直接冲出卡片被 overflow:hidden 硬切（没有省略号）。
+    // 这一条是实测踩出来的 —— 只看截断属性齐全同样会绿。
+    expect(titleRule.slice(0, titleRule.indexOf('}'))).not.toMatch(/display:\s*flex/);
+  });
+
+  it('已赞态下心形换成实心填充，不只是换颜色', async () => {
+    // 用户原话「没有记录是否已经点赞，只是展示了点赞数量」。病根是未赞/已赞
+    // 是同一颗心、只换颜色 —— 远看只能读出一个数字。这条钉住形状开关：
+    //   未赞 path 无 fill/stroke 属性（由 CSS 控制）+ 默认态 CSS 是空心描边
+    //   已赞 CSS 那条规则是 fill:currentColor + stroke:none
+    // 只断言 class 名是不够的 —— class 一直在，改回「只换颜色」照样全绿。
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: true });
+    render(<WorksListPage />);
+    const btn = await screen.findByRole('button', { name: /已赞，5 次点赞/ });
+    expect(btn.className).toContain('works-like--on');
+
+    const svg = btn.querySelector('svg') as SVGSVGElement;
+    const path = btn.querySelector('svg path') as SVGPathElement;
+    expect(path).toBeTruthy();
+    // fill / stroke 必须是纯 CSS 控制：SVG 呈现属性一旦写在这里（svg 或 path 上都算），
+    // .works-like--on 那条规则就再也切不动形状了。
+    for (const el of [svg, path] as Element[]) {
+      expect(el.hasAttribute('fill')).toBe(false);
+      expect(el.hasAttribute('stroke')).toBe(false);
+    }
+    // 图形不进朗读，可访问名由 aria-label 给
+    expect(svg.getAttribute('aria-hidden')).toBe('true');
+
+    const css = readFileSync(resolve(process.cwd(), 'src/components/LikeButton.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    const offRule = css.slice(css.indexOf('.works-like-icon path'));
+    expect(offRule.slice(0, offRule.indexOf('}'))).toMatch(/fill:\s*none/);
+    const onRule = css.slice(css.indexOf('.works-like--on .works-like-icon path'));
+    const onBody = onRule.slice(0, onRule.indexOf('}'));
+    expect(onBody).toMatch(/fill:\s*currentColor/);
+    expect(onBody).toMatch(/stroke:\s*none/);
+    // 过渡也不能丢：否则切换是硬跳，两态的区别更读不出来
+    expect(css).toMatch(/transition:\s*fill 0\.18s[^;]*stroke 0\.18s/);
+  });
+
+  it('心形是几何对称 SVG，不是 ♡/♥ 字符', async () => {
+    // 字符心形挤在 12px 的行里就是一个小点（用户原话「爱心希望简洁好看些」），
+    // 而且它是字体字形，各设备渲染不一致。
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    render(<WorksListPage />);
+    const btn = await screen.findByRole('button', { name: /5 次点赞/ });
+
+    const svg = btn.querySelector('svg');
+    expect(svg).toBeTruthy();
+    expect(svg!.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(svg!.getAttribute('stroke-linecap')).toBe('round');
+    expect(btn.textContent).not.toMatch(/[♡♥]/);
   });
 
   it('点一下调 likeWork 并更新数字', async () => {

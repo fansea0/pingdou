@@ -3,6 +3,35 @@ import { fetchLikeState, likeWork, type WorkSummary } from '@/api/works';
 import './LikeButton.css';
 
 /**
+ * 默认心形图标：内联 SVG，几何对称版（两段圆弧严格镜像、无凹口）。
+ *
+ * 为什么 SVG 上**不写** fill / stroke：这两条正是「未赞 / 已赞」的形状开关
+ * （空心描边 ↔ 实心填充），写死成呈现属性就没法用 CSS 切换 —— 而「我赞过没」
+ * 恰恰要靠形状说，不是只靠颜色。CSS 规则的优先级高于呈现属性，所以两条都交给
+ * LikeButton.css 控制。
+ *
+ * 为什么从 ♡/♥ 字符换成 SVG：字符心形挤在 12px 的行里就是一个小点（用户原话
+ * 「爱心希望简洁好看些」），而且它是字体字形，各设备渲染不一致。
+ *
+ * aria-hidden：可访问名一律由 <button> 的 aria-label（「N 次点赞」/「已赞，N 次点赞」）
+ * 提供，图形不进朗读。
+ */
+const LIKE_ICON = (
+  <svg
+    className="works-like-icon"
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path d="M12 20.4 4.1 12.5a4.8 4.8 0 0 1 6.8-6.8L12 6.8l1.1-1.1a4.8 4.8 0 1 1 6.8 6.8Z" />
+  </svg>
+);
+
+/**
  * 单个作品的点赞按钮。列表页与详情页共用。
  *
  * 文案是「N 次点赞」而不是「N 人喜欢」：限流粒度是「每 IP 每图每天一次」、
@@ -17,15 +46,13 @@ export function LikeButton({
   work: WorkSummary;
   onError: (message: string) => void;
   /**
-   * 可选的图标插槽，替换默认的 ♥/♡ 字符。
+   * 可选的图标插槽，替换默认的 SVG 心形。
    *
-   * 为什么留这个口：列表页那个形态是压在图片角上的**小徽章**，一个 ♥ 字符
-   * 就是它的全部视觉重量；而详情页是页面主操作区的大按钮，字符心形在那里
-   * 「太小了」（用户原话）。两种形态对图标的诉求不同，但按钮只有一个、
-   * 业务逻辑（乐观更新、回滚、不可取消）也完全共用 —— 把心形画在哪一份
-   * JSX 里，就必然要动另一份。加插槽比复制一个按钮组件便宜。
+   * 为什么留这个口：详情页的按钮比列表页卡片大一号，它传自己的心形规格
+   * （18px、自己的 fill/stroke 规则）。业务逻辑（乐观更新、回滚、不可取消）
+   * 两边完全共用，把心形画在哪一份 JSX 里就必然要动另一份 —— 加插槽比复制
+   * 一个按钮组件便宜。
    *
-   * 不传就是原来的字符心形，DOM 与视觉逐字不变 —— 列表页不传。
    * 传入的节点自带 aria-hidden 由调用方负责（可访问名一律由按钮的 aria-label 给）。
    */
   icon?: ReactNode;
@@ -33,7 +60,7 @@ export function LikeButton({
    * 追加在 .works-like / .works-like--on 之后的额外 class，透传到根 <button>。
    *
    * 详情页传 works-detail-like（与 <a class="works-detail-btn"> 并排成同辈按钮）；
-   * 列表页传 works-card-like，把它改成压在图片右下角的小徽章。
+   * 列表页传 works-card-like，把它钉在卡片标题行的右侧。
    */
   className?: string;
 }) {
@@ -107,7 +134,7 @@ export function LikeButton({
       // 状态已经写在 aria-label 的「已赞，」里，朗读结果不丢信息。
       aria-label={liked ? `已赞，${likes} 次点赞` : `${likes} 次点赞`}
     >
-      {icon ?? <span aria-hidden="true">{liked ? '♥' : '♡'}</span>}
+      {icon ?? LIKE_ICON}
       {likes}
     </button>
   );
