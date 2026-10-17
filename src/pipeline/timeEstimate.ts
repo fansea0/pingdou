@@ -28,11 +28,14 @@ export function estimateAssemblyMinutes(beanCount: number): number {
  *
  * 方向与 estimateAssemblyMinutes 相反：那是「豆子数 → 存库」，这是「读库 → 显示」。
  * 两个方向各占一次 60/64 倍换算的一端，所以两端都得是函数、都得有用例。
- * 读这一端目前只有后台审核队列一个调用点，但「就一处」不是把 minutes / 60
- * 直接抄进 JSX 的理由：调用点一多，散着写迟早漏掉一个 60，而类型系统不会报。
+ * 读这一端现在有两个调用点：后台审核队列（src/pages/admin/WorksTab.tsx）与
+ * 作品详情页（src/pages/WorkDetailPage.tsx）—— 两处读的是同一列 works.estimate_minutes。
+ * 两处各写一遍 minutes / 60 的话，迟早有一处漏掉那个 60，而类型系统不会报：
+ * number 除以 number 永远合法，错的是数字不是类型。所以即使调用点只有两处，
+ * 换算也仍然必须收在这一层。
  *
  * 文案复用 formatAssemblyHours 而不是另写一句「约 X 小时」：投稿弹窗、
- * 导出图的图例、后台队列三处必须读起来是同一句话，改措辞才只需要改一处。
+ * 导出图的图例、后台队列、详情页四处必须读起来是同一句话，改措辞才只需要改一处。
  *
  * 算不出来返回 '—' 而不是「约 0.0 小时」：0 颗豆子不是「不用拼」，
  * 是「估算公式没有输入」。跟投稿弹窗里 formatAssemblyHours 为 null 时的处理一致。

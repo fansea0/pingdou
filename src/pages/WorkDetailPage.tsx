@@ -3,6 +3,7 @@ import { SiteNav } from '@/components/SiteNav';
 import { LikeButton } from '@/components/LikeButton';
 import { fetchWork, type WorkDetail } from '@/api/works';
 import { usePageView } from '@/hooks/useTracking';
+import { formatMinutes } from '@/pipeline/timeEstimate';
 import './WorkDetailPage.css';
 
 interface WorkDetailPageProps {
@@ -117,6 +118,32 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
     return () => { cancelled = true; };
   }, [id]);
 
+  /**
+   * 「这张图拿不到」——包括接口报错和接口成功但没有这条数据两种情况。
+   *
+   * !loading 不能省：请求悬空时 work 还是 null，去掉它就等于每次正常访问
+   * 在数据到达前先触发一次导航，症状是列表页莫名闪一下，极难归因。
+   */
+  const missing = error !== null || (!loading && work === null);
+
+  /**
+   * 拿不到作品时自动跳回列表页。
+   *
+   * 用 location.replace 而不是赋值 location.href：无效详情页不该留在浏览器
+   * 历史里，否则访客按「后退」会被反复弹回这一页，历史记录越按越乱。
+   *
+   * 延迟 800ms 是为了让人读完提示：0 延迟的话提示根本来不及渲染，直接闪回列表，
+   * 访客只会觉得「点了没反应」。延迟期间组件仍然显示提示，不做空白。
+   *
+   * 依赖只写 [missing]：作品到位后 missing 翻 false，cleanup 会把还没触发的
+   * 定时器清掉，不会出现「已经跳走了却还在跑定时器」的尾巴。
+   */
+  useEffect(() => {
+    if (!missing) return;
+    const t = window.setTimeout(() => window.location.replace('/works'), 800);
+    return () => window.clearTimeout(t);
+  }, [missing]);
+
   // 三个分支各自早返回，而不是把条件写成 !loading && !error && work && ...。
   // 后者每加一个状态就得改四处组合，漏一处就是「错误态盖掉已渲染内容」
   // 这类静默 bug（列表页就在这个形状上翻过车，见 task-7 报告 5.1/5.2）。
@@ -145,8 +172,7 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
           role="status"
           aria-live="polite"
         >
-          <p>作品不存在或已下架</p>
-          <a className="works-detail-btn" href="/works">返回作品库</a>
+          <p>作品不存在或已下架，正在返回作品库…</p>
         </div>
       </div>
     );
@@ -186,6 +212,35 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
             <div>
               <dt>文件体积</dt>
               <dd>{formatBytes(work.bytes)}</dd>
+            </div>
+            {/*
+              2026-10-17 投稿参数。四项都允许全 0：这几列是 ensureColumn 补进
+              works 表的，DEFAULT 0（server/db.ts:196-200），所以「这张图是投稿功能
+              上线前的老数据」在库里就是个合法状态，不是异常。
+              显示「—」而不是 0：「0 颗豆子」「0 × 0 格」会被访客当成一张空图或
+              一张坏图，而不是「这个我们没记」。
+              图纸比例按两项一起判：只判 boardW 会渲染出「87 × 0 格」，
+              那比不显示更糟 —— 它看起来像一张真实的窄条图纸。
+            */}
+            <div>
+              <dt>图纸比例</dt>
+              <dd>{work.boardW > 0 && work.boardH > 0 ? `${work.boardW} × ${work.boardH} 格` : '—'}</dd>
+            </div>
+            <div>
+              <dt>豆子数量</dt>
+              <dd>{work.beanCount > 0 ? `${work.beanCount.toLocaleString()} 颗` : '—'}</dd>
+            </div>
+            <div>
+              <dt>颜色数量</dt>
+              <dd>{work.colorCount > 0 ? `${work.colorCount} 种` : '—'}</dd>
+            </div>
+            <div>
+              <dt>预估时间</dt>
+              {/* 存的是分钟、显示要换回小时，所以必须走 formatMinutes（timeEstimate.ts），
+                  不能在这里写 estimateMinutes / 60：后台审核队列读同一列，
+                  两处各写一遍换算，早晚有一处漏掉那个 60，类型系统不会报。
+                  它对 <=0 与 NaN 自己就返回 '—'，组件不必再判一次。 */}
+              <dd>{formatMinutes(work.estimateMinutes)}</dd>
             </div>
           </dl>
 

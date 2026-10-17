@@ -30,6 +30,11 @@ afterEach(cleanup);
 
 afterEach(() => {
   vi.clearAllMocks();
+  // 导航用例靠 vi.stubGlobal('location', …) 换掉 window.location。写在用例体末尾
+  // 的话，中间任何一条断言失败就会跳过它，桩漏到后面的用例 —— 而 location 是
+  // 全局单例，漏掉的症状极隐蔽（后一条用例看到的是前一条的 replace）。
+  // 放进 afterEach 才能保证「无论怎么失败都还原」。
+  vi.unstubAllGlobals();
 });
 
 /**
@@ -55,14 +60,37 @@ function detail(overrides: Partial<WorkDetail> = {}): WorkDetail {
     // 五个图纸参数同样是必填（src/api/works.ts 的 WorkDetail）。取值不是随手编的：
     // 100 × 120 与 18 色跟上面 description 里那句「100×120 · 18 色」对齐，
     // 这样详情页把参数渲染出来时不会自相矛盾（Task 13 会真的把它们显示出来）。
-    // 3800 颗是 12000 格图纸里去掉背景格后的量级，190 分钟是 timeEstimate 的同一套口径。
+    // 3800 颗是 12000 格图纸里去掉背景格后的量级。
+    //
+    // estimateMinutes 必须等于 estimateAssemblyMinutes(3800)：3800/600 = 6.3 小时，
+    // ×60 = 378。原先这里写 190，正好是「190 分钟 ≈ 3.2 小时」这种看着合理、
+    // 实则与豆子数自相矛盾的值 —— 照着它推导换算公式就会把 64 倍 bug 带回来
+    // （后台 WorksTab.test.tsx 为此专门注释过同一件事）。
     boardW: 100,
     boardH: 120,
     beanCount: 3800,
     colorCount: 18,
-    estimateMinutes: 190,
+    estimateMinutes: 378,
     ...overrides,
   };
+}
+
+/**
+ * 把页面上的 `<dl>` 读成「术语 → 取值」的字面量映射。
+ *
+ * 为什么不用 `getByText('图纸比例').nextElementSibling`：那条写法把「dt 与 dd
+ * 在 DOM 里紧挨着」升级成了版式契约 —— 将来谁为了对齐在中间塞一个单位
+ * `<span>`，展示的值一个字没变，测试却红了。这里用 `<dt>`/`<dd>` 自带的隐式
+ * ARIA role（term / definition）按文档顺序配对，取值只依赖「描述列表里第 n 个
+ * 术语配第 n 个定义」这一定义，与嵌套层级、兄弟顺序、class 名都无关。
+ *
+ * 代价：一次要拿全部 dd，而不在场时 getAllByRole 抛错 —— 这正是我们要的失败方式
+ * （少一个参数行会立刻报「找不到 definition」，而不是静默取到 undefined）。
+ */
+function facts(): Record<string, string> {
+  const terms = screen.getAllByRole('term').map(t => t.textContent ?? '');
+  const defs = screen.getAllByRole('definition').map(d => d.textContent ?? '');
+  return Object.fromEntries(terms.map((t, i) => [t, defs[i]]));
 }
 
 describe('WorkDetailPage', () => {
@@ -133,8 +161,10 @@ describe('WorkDetailPage', () => {
     const { container } = render(<WorkDetailPage id={42} />);
     await screen.findByRole('heading', { name: '粉色小熊' });
     const facts = container.querySelector('.works-detail-facts') as HTMLElement;
+    // 六项参数：前两项是成品图元信息，后四项是 2026-10-17 起带的投稿参数。
+    // 逐项列全而不是抽查，是为了让「谁被删了/谁多了一项」都看得见。
     const values = Array.from(facts.querySelectorAll('dd')).map(dd => dd.textContent);
-    expect(values).toEqual(['未知', '未知']);
+    expect(values).toEqual(['未知', '未知', '100 × 120 格', '3,800 颗', '18 种', '约 6.3 小时']);
     expect(container.textContent).not.toMatch(/NaN/);
   });
 
@@ -149,12 +179,14 @@ describe('WorkDetailPage', () => {
     expect(img.getAttribute('height')).toBe('1560');
   });
 
-  it('404 / 下架给出提示和回列表入口', async () => {
+  it('404 / 下架给出提示，不再留「返回作品库」入口', async () => {
     fetchWork.mockRejectedValue(new Error('not found'));
     render(<WorkDetailPage id={42} />);
     // 404 与「已下架」刻意共用同一句：区分开等于告诉访客这个 id 曾经存在过
     expect(await screen.findByText(/不存在或已下架/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: '返回作品库' }).getAttribute('href')).toBe('/works');
+    // 原来这里还断言了「返回作品库」链接的 href。Task 13 起这一页改为自动跳回列表，
+    // 手动的返回入口被取代 —— 留着两个出口会让访客以为自己得选一个。
+    expect(screen.queryByRole('link', { name: '返回作品库' })).toBeNull();
   });
 
   it('加载中 / 出错 / 正常三种状态都保留导航栏', async () => {
@@ -404,5 +436,136 @@ describe('详情页点赞', () => {
     } finally {
       addSpy.mockRestore();
     }
+  });
+});
+
+describe('投稿参数展示', () => {
+  it('详情页展示图纸比例、豆子数、颜色数与预估工时', async () => {
+    // 3814 颗配 384 分钟不是随手编的：estimateAssemblyMinutes(3814) 恰好是 384
+    // （3814/600 = 6.4 小时 → ×60）。写成 190 那种「看着合理但与豆子数矛盾」的
+    // 值，正是把 64 倍换算 bug 重新引进来的入口 —— 后台 WorksTab.test.tsx 里
+    // 有同一件事的记录。
+    fetchWork.mockResolvedValue(detail({
+      boardW: 87, boardH: 62, beanCount: 3814, colorCount: 42, estimateMinutes: 384,
+    }));
+    render(<WorkDetailPage id={42} />);
+    await screen.findByRole('heading', { name: '粉色小熊' });
+
+    const f = facts();
+    expect(f['图纸比例']).toBe('87 × 62 格');
+    // toLocaleString 加千分位：3814 颗豆子写成 "3814 颗" 时读者要多读一位对齐
+    expect(f['豆子数量']).toBe('3,814 颗');
+    expect(f['颜色数量']).toBe('42 种');
+    // 384 分钟 → 「约 6.4 小时」。断言完整文案而不是只 toContain('小时')：
+    // 只查「小时」二字的话，把 minutes/60 抄错成 minutes/6 也能通过。
+    expect(f['预估时间']).toBe('约 6.4 小时');
+  });
+
+  it('参数全 0（旧数据没有这些列）时显示「—」而不是 0 或 NaN', async () => {
+    // 这五个列是 ensureColumn 加进 works 表的，DEFAULT 0（server/db.ts:196-200），
+    // 所以「作品是投稿功能上线前的老数据」在库里就是一个合法状态，不是异常。
+    // 显示「0 颗豆子」会被访客当成一张空图，显示 NaN 则是直接把 bug 抖到页面上。
+    fetchWork.mockResolvedValue(detail({
+      boardW: 0, boardH: 0, beanCount: 0, colorCount: 0, estimateMinutes: 0,
+    }));
+    render(<WorkDetailPage id={42} />);
+    await screen.findByRole('heading', { name: '粉色小熊' });
+
+    const f = facts();
+    expect(f['图纸比例']).toBe('—');
+    expect(f['豆子数量']).toBe('—');
+    expect(f['颜色数量']).toBe('—');
+    // 预估工时由 formatMinutes 自己兜底成 '—'（它对 <=0 与 NaN 都返回 '—'），
+    // 组件不再重复判一次 > 0 —— 同一个判断写两遍就得同步维护两遍。
+    expect(f['预估时间']).toBe('—');
+  });
+
+  it('只有一半图纸参数缺失时也按项兜底，不整块塌掉', async () => {
+    // boardH 缺失但 boardW 有值是最难看的组合：渲染出 "87 × 0 格" 比不显示更糟，
+    // 因为它看起来像一个真实的 87 格宽图纸。
+    fetchWork.mockResolvedValue(detail({
+      boardW: 87, boardH: 0, beanCount: 0, colorCount: 18, estimateMinutes: 384,
+    }));
+    render(<WorkDetailPage id={42} />);
+    await screen.findByRole('heading', { name: '粉色小熊' });
+
+    const f = facts();
+    expect(f['图纸比例']).toBe('—');
+    expect(f['颜色数量']).toBe('18 种');
+    expect(f['预估时间']).toBe('约 6.4 小时');
+  });
+});
+
+describe('拿不到作品时自动跳回列表', () => {
+  /** 900ms > 组件里的 800ms 延迟，留 100ms 余量 */
+  const AFTER_REDIRECT = 900;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  function stubLocation() {
+    const replace = vi.fn();
+    // 必须用 stubGlobal：实测 vi.spyOn(window.location, 'replace') 在本仓库的
+    // jsdom 下抛 "TypeError: Cannot redefine property: replace"。
+    vi.stubGlobal('location', { replace, pathname: '/works/999', search: '' });
+    return replace;
+  }
+
+  it('fetchWork 失败时先显示提示，800ms 后 replace 到 /works', async () => {
+    const replace = stubLocation();
+    fetchWork.mockRejectedValue(new Error('404'));
+    render(<WorkDetailPage id={999} />);
+
+    await screen.findByText(/不存在或已下架/);
+    // 800ms 的停顿是为了让人读完这句提示；断言「此刻还没跳」把停顿本身钉住，
+    // 否则把 setTimeout 的延迟改成 0 也没有任何一条用例会红。
+    expect(replace).not.toHaveBeenCalled();
+    await wait(AFTER_REDIRECT);
+    expect(replace).toHaveBeenCalledWith('/works');
+  });
+
+  it('fetchWork 返回 null 走同一条导航', async () => {
+    // 404（fetch reject）与「这条 id 存在但已被删」在接口层是两种返回：
+    // 前者走 catch，后者 resolve(null)。访客看到的是同一件事，两条路径都得跳。
+    const replace = stubLocation();
+    fetchWork.mockResolvedValue(null as never);
+    render(<WorkDetailPage id={999} />);
+    await screen.findByText(/不存在或已下架/);
+    await wait(AFTER_REDIRECT);
+    expect(replace).toHaveBeenCalledWith('/works');
+  });
+
+  it('用 replace 而不是赋值 location.href（无效详情页不该堆进历史）', async () => {
+    const replace = stubLocation();
+    fetchWork.mockResolvedValue(null as never);
+    render(<WorkDetailPage id={999} />);
+    await screen.findByText(/不存在或已下架/);
+    await wait(AFTER_REDIRECT);
+    // 桩是一个普通对象（不是 jsdom 的 Location），改成赋值 location.href 时
+    // 浏览器语义被桩吞掉、不会报错，但 replace 一次都不会被调用 ——
+    // 所以下面这条断言本身就是「用 replace 而不是写 href」的判别器。
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith('/works');
+  });
+
+  it('拿到作品时不跳转', async () => {
+    // 这条守的是「不乱跳」：无条件的导航 effect（漏了 missing 判空）在这里会红。
+    // 它对「组件干脆不跳了」没有判别力 —— 那种退化由上面三条红。
+    const replace = stubLocation();
+    fetchWork.mockResolvedValue(detail({}));
+    render(<WorkDetailPage id={42} />);
+    await screen.findByRole('heading', { name: '粉色小熊' });
+    await wait(AFTER_REDIRECT);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('加载中不跳转（数据还没回来就踢走，等于误伤每一次正常访问）', async () => {
+    // 承重的一条：missing 的判空必须带上 !loading。请求悬空时 work 仍是 null，
+    // 若判空写成 `error !== null || work === null`，正常访客在数据到达前就被
+    // 弹回列表页 —— 而且症状是「偶尔闪一下列表页」，极难归因。
+    const replace = stubLocation();
+    fetchWork.mockReturnValue(new Promise(() => {}));
+    render(<WorkDetailPage id={42} />);
+    expect(screen.getByText(/加载中/)).toBeTruthy();
+    await wait(AFTER_REDIRECT);
+    expect(replace).not.toHaveBeenCalled();
   });
 });
