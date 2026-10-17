@@ -33,6 +33,39 @@ const FALLBACK_EXT = '.png';
  */
 const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 
+/*
+ * 详情页点赞按钮里的爱心：内联 SVG。
+ *
+ * 与 WorksListPage 的排序图标同一套规格（viewBox 0 0 24 24、fill=none、
+ * stroke=currentColor、圆形/折角端点），差别只在尺寸与描边：这里 18px / 1.8，
+ * 比排序的 20px / 1.6 略重一点点 —— 按钮更大、心形要靠描边而不是面积说话，
+ * 17px 上下糊成黑团的风险更高。
+ *
+ * 为什么是爱心不是火焰：爱心 = 「点赞」这个动作（列表页浮层徽章也是心形，
+ * 同一动作同一符号）；火焰 = 「按最热排序」那个排序方式。两者一个是动作、
+ * 一个是排序，不是同一个东西，共存不矛盾。
+ *
+ * aria-hidden：可访问名一律由 <button> 的 aria-label（「N 次点赞」/「已赞，N 次点赞」）
+ * 提供，图形不进朗读。
+ */
+const LIKE_ICON = (
+  <svg
+    className="works-detail-like-icon"
+    viewBox="0 0 24 24"
+    width="18"
+    height="18"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+  </svg>
+);
+
 function safeFileName(title: string): string {
   return title.replace(UNSAFE_FILENAME_CHARS, '_').trim() || 'work';
 }
@@ -161,29 +194,36 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
             一次 SQL 带回真实计数），挂载后 LikeButton 自己再查一次「我今天赞过没」。
             图与「下载原图」链接都在这个 section 之外，点赞不会碰到长按存图那条路径。
           */}
-          <div className="works-detail-like">
-            <LikeButton work={work} onError={setLikeError} />
+          {/*
+            点赞与下载放在同一个 flex 行里，两个控件共用一条左对齐轴 ——
+            它们是「把这张图拿走 / 顺手赞一下」的同辈操作，不再是上下两个
+            各占一行的独立块（以前点赞居中、下载靠左，两条不同的对齐轴夹着
+            一组左对齐的 meta 行，就是用户说的「布局奇怪」）。
+            flex-wrap：窄屏一行放不下就换行，换行后仍从左起点开始（默认行为）。
+          */}
+          <div className="works-detail-actions">
+            <LikeButton work={work} onError={setLikeError} className="works-detail-like" icon={LIKE_ICON} />
+
+            {/*
+              同一个 URL 承担两种用途，这是刻意设计：
+                被 <img> 引用 → 浏览器内联渲染 → 可长按保存（微信内置浏览器唯一可行路径）
+                被带 download 的 <a> 引用 → 浏览器直接下载（微信外浏览器 / Safari / Chrome 桌面）
+              所以不需要 Content-Disposition，也不需要 dev 路由与 nginx 各写一套 ?dl=1 分支。
+              扩展名从 imageUrl 推，不写死 .png —— 原图不保证是 PNG。
+              文件名先过 safeFileName：标题里的 / : 等字符由我们自己替换掉，
+              免得落盘名被浏览器事后消毒成另一副样子（理由见 safeFileName 注释）。
+            */}
+            <a
+              className="works-detail-btn"
+              href={work.imageUrl}
+              download={`${safeFileName(work.title)}${imageExt(work.imageUrl)}`}
+            >
+              下载原图
+            </a>
           </div>
           {likeError && (
             <p className="works-detail-like-error" role="status">操作失败：{likeError}</p>
           )}
-
-          {/*
-            同一个 URL 承担两种用途，这是刻意设计：
-              被 <img> 引用 → 浏览器内联渲染 → 可长按保存（微信内置浏览器唯一可行路径）
-              被带 download 的 <a> 引用 → 浏览器直接下载（微信外浏览器 / Safari / Chrome 桌面）
-            所以不需要 Content-Disposition，也不需要 dev 路由与 nginx 各写一套 ?dl=1 分支。
-            扩展名从 imageUrl 推，不写死 .png —— 原图不保证是 PNG。
-            文件名先过 safeFileName：标题里的 / : 等字符由我们自己替换掉，
-            免得落盘名被浏览器事后消毒成另一副样子（理由见 safeFileName 注释）。
-          */}
-          <a
-            className="works-detail-btn"
-            href={work.imageUrl}
-            download={`${safeFileName(work.title)}${imageExt(work.imageUrl)}`}
-          >
-            下载原图
-          </a>
         </section>
       </main>
     </div>

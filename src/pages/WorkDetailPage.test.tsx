@@ -319,6 +319,45 @@ describe('详情页点赞', () => {
     expect(screen.getByRole('button', { name: /8 次点赞/ })).toBeTruthy();
   });
 
+  it('点赞与下载同在操作区里并排（共用一条左对齐轴）', async () => {
+    // 用户原话「布局很奇怪」。病根是两个紧挨着的按钮用了两条不同的对齐轴：
+    // 点赞 justify-content:center、下载 inline-block 靠左，中间还隔着一组
+    // 左对齐的 meta 行。这条把「同辈 + 同一父容器」钉死 —— 回到上下两块时
+    // 下面两条布局断言仍然全绿（它们只查文案与 download 属性），
+    // 所以这里查的是结构本身。
+    fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    const { container } = render(<WorkDetailPage id={42} />);
+    const btn = await screen.findByRole('button', { name: /8 次点赞/ });
+    const link = screen.getByRole('link', { name: '下载原图' });
+    // 操作区在数据回来后才渲染，所以必须先 await 再查
+    const actions = container.querySelector('.works-detail-actions');
+    expect(actions).toBeTruthy();
+    // 都是操作区的直接子元素（而不是一层 div 里一层 a）
+    const kids = Array.from((actions as HTMLElement).children);
+    expect(kids).toContain(btn);
+    expect(kids).toContain(link);
+    // 点赞按钮带着自己的形态 class，样式是它跟下载对齐的依据
+    expect(btn.className).toContain('works-detail-like');
+  });
+
+  it('点赞用内联 SVG 爱心，不是 ♡ 字符（爱心太小读不出来）', async () => {
+    // 字符心形在 12px 下就是一个小点，用户原话「爱心太小了」。改成内联 SVG 后
+    // 尺寸/描边写在 SVG 属性上，与列表页排序图标同一套规格。
+    fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    const { container } = render(<WorkDetailPage id={42} />);
+    const btn = await screen.findByRole('button', { name: /8 次点赞/ });
+
+    const svg = btn.querySelector('svg');
+    expect(svg).toBeTruthy();
+    expect(svg!.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(svg!.getAttribute('stroke')).toBe('currentColor');
+    expect(svg!.getAttribute('stroke-width')).toBe('1.8');
+    // 图形不进朗读：可访问名由 aria-label 给（上面 name: /8 次点赞/ 就是它）
+    expect(svg!.getAttribute('aria-hidden')).toBe('true');
+    expect(btn.textContent).not.toMatch(/[♡♥]/);
+    expect(container.querySelector('.works-detail-like-icon')).toBe(svg);
+  });
+
   it('点赞按钮没有把大图包进链接（长按存相册的路不能被破坏）', async () => {
     fetchWork.mockResolvedValue(detail({ likes: 8 }));
     const { container } = render(<WorkDetailPage id={42} />);
@@ -336,6 +375,10 @@ describe('详情页点赞', () => {
     const links = Array.from(container.querySelectorAll('a[download]'));
     expect(links).toHaveLength(1);
     expect(links[0].getAttribute('href')).toBe('/media/works/000000000000002a.png');
+    // 操作区容器里不许出现图片或 figure：将来若把大图搬进行内做 overlay，
+    // 长按手势就会被吞掉，这里提前钉死。
+    const actions = container.querySelector('.works-detail-actions') as HTMLElement;
+    expect(actions.querySelector('img, figure')).toBeNull();
   });
 
   it('详情页不监听 popstate（本项目全页跳转，加了也不会触发）', async () => {

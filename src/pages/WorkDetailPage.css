@@ -80,13 +80,33 @@
   margin: 0;
 }
 
+/* 操作区：点赞与「下载原图」共用一条左起点。
+   同高靠 align-items: stretch（两者 min-height 相同，stretch 再兜一层），
+   间距靠 gap 而不是各自的 margin —— margin 会让换行时第一行的间距跟着
+   消失，gap 在换行后每行都还在。 */
+.works-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+/* 主操作：这个页面唯一的任务是「把图拿走」，所以下载是实心主色。 */
 .works-detail-btn {
-  display: inline-block;
-  padding: var(--space-3) var(--space-5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 比通用按钮高一档（44 → 48）：这是页面的主操作区，值得比列表页更显眼；
+     触摸区当然也满足 ≥44px。 */
+  min-height: 48px;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: var(--color-accent);
   color: #fff;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
+  font-weight: 600;
   text-decoration: none;
   text-align: center;
 }
@@ -95,16 +115,45 @@
   background: var(--color-accent-hover);
 }
 
-/* 点赞区：在元信息下方居中，视觉权重低于图片本身 */
-.works-detail-like {
-  display: flex;
-  justify-content: center;
-  margin-top: var(--space-4);
+/* 次操作：点赞。用描边而不是填充表达层级，与列表页那套「不靠面积说话」
+   的语言一致；状态也用颜色而不是填充表达（未赞 --color-text，已赞主色）。
+   选择器写成 `.works-detail-like.works-like` 升到 (0,2,0)：LikeButton.css 里的
+   .works-like 同为 (0,1,0)，让它俩的胜负取决于 CSS 注入顺序（与列表页
+   .works-card .works-card-label 是同一个理由）。 */
+.works-detail-like.works-like {
+  min-height: 48px;
+  padding: var(--space-2) var(--space-4);
+  gap: var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-base);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.works-detail-like.works-like:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 已赞：只换颜色与字重，不换底色。与上面的基础规则同为 (0,2,0)，
+   写在后面才赢；已赞时按钮是 disabled，hover 规则本来就不匹配。 */
+.works-detail-like.works-like--on {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 爱心图标 18px：按钮更大，心形要靠描边读出来，不是靠面积 */
+.works-detail-like-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
 }
 
 .works-detail-like-error {
   margin: var(--space-2) 0 0;
   color: var(--color-error-fg);
   font-size: var(--text-sm);
-  text-align: center;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { fetchLikeState, likeWork, type WorkSummary } from '@/api/works';
 import './LikeButton.css';
 
@@ -12,14 +12,28 @@ export function LikeButton({
   work,
   onError,
   className,
+  icon,
 }: {
   work: WorkSummary;
   onError: (message: string) => void;
   /**
+   * 可选的图标插槽，替换默认的 ♥/♡ 字符。
+   *
+   * 为什么留这个口：列表页那个形态是压在图片角上的**小徽章**，一个 ♥ 字符
+   * 就是它的全部视觉重量；而详情页是页面主操作区的大按钮，字符心形在那里
+   * 「太小了」（用户原话）。两种形态对图标的诉求不同，但按钮只有一个、
+   * 业务逻辑（乐观更新、回滚、不可取消）也完全共用 —— 把心形画在哪一份
+   * JSX 里，就必然要动另一份。加插槽比复制一个按钮组件便宜。
+   *
+   * 不传就是原来的字符心形，DOM 与视觉逐字不变 —— 列表页不传。
+   * 传入的节点自带 aria-hidden 由调用方负责（可访问名一律由按钮的 aria-label 给）。
+   */
+  icon?: ReactNode;
+  /**
    * 追加在 .works-like / .works-like--on 之后的额外 class，透传到根 <button>。
    *
-   * 详情页不传 —— 那里是行内按钮的形态；列表页传 works-card-like，把它改成压在
-   * 图片右下角的小徽章。不传时行为与视觉与以前完全一致。
+   * 详情页传 works-detail-like（与 <a class="works-detail-btn"> 并排成同辈按钮）；
+   * 列表页传 works-card-like，把它改成压在图片右下角的小徽章。
    */
   className?: string;
 }) {
@@ -93,7 +107,7 @@ export function LikeButton({
       // 状态已经写在 aria-label 的「已赞，」里，朗读结果不丢信息。
       aria-label={liked ? `已赞，${likes} 次点赞` : `${likes} 次点赞`}
     >
-      <span aria-hidden="true">{liked ? '♥' : '♡'}</span>
+      {icon ?? <span aria-hidden="true">{liked ? '♥' : '♡'}</span>}
       {likes}
     </button>
   );
