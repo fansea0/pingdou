@@ -1,13 +1,54 @@
+import { useEffect, useState } from 'react';
+import { LikeButton } from '@/components/LikeButton';
 import { SiteNav } from '@/components/SiteNav';
 import { useWorks } from '@/hooks/useWorks';
 import { usePageView } from '@/hooks/useTracking';
+import { parseListQuery } from '@/router';
 import './WorksListPage.css';
+
+/**
+ * 每页 10 条（产品决定，原为 20）。显式传给 useWorks 而不是改 hook 的
+ * PAGE_SIZE 默认值 —— 那个默认值还服务着别的调用方，这里只让作品库走 10。
+ */
+const PAGE_SIZE = 10;
 
 export function WorksListPage() {
   usePageView();
   const {
     items, total, loading, loadingMore, error, loadMoreError, hasMore, loadMore, reload,
-  } = useWorks();
+    query, setQuery, sort, setSort,
+  } = useWorks(PAGE_SIZE);
+  const [likeError, setLikeError] = useState<string | null>(null);
+
+  // 进页面时从 URL 读初值：刷新、分享、从详情页后退回来都保留搜索词。
+  // 一次性读取就够了 —— 本项目没有 client-side 路由，页面每次导航都重新挂载，
+  // 所以刻意不加 popstate 监听（加了也不会触发，见设计文档 §5.2）。
+  const [initial] = useState(() =>
+    parseListQuery(typeof window !== 'undefined' ? window.location.search : ''),
+  );
+  const [urlReady, setUrlReady] = useState(false);
+  useEffect(() => {
+    if (initial.q) setQuery(initial.q);
+    if (initial.sort !== 'latest') setSort(initial.sort);
+    // 置位后本轮渲染带着回填好的 query/sort，URL 同步 effect 不会先把
+    // ?q=xxx 抹成空再写回去（那一下闪动在分享链接上尤其难看）。
+    setUrlReady(true);
+  }, [initial.q, initial.sort, setQuery, setSort]);
+
+  // 搜索词 / 排序写回 URL，让刷新和分享都能保留。
+  useEffect(() => {
+    if (!urlReady) return;
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    if (sort !== 'latest') params.set('sort', sort);
+    const qs = params.toString();
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    // replaceState 而不是 pushState：搜索框每敲一个字都 push 一次的话，
+    // 历史栈会被几十个中间态塞满，用户按「后退」得按几十次才回得去。
+    window.history.replaceState(null, '', url);
+  }, [urlReady, query, sort]);
+
+  const trimmed = query.trim();
 
   return (
     <div className="app">
@@ -18,7 +59,49 @@ export function WorksListPage() {
 
       <SiteNav current="/works" />
 
+      <div className="works-controls">
+        <div className="works-search">
+          <input
+            type="search"
+            className="works-search-input"
+            placeholder="搜作品名…"
+            aria-label="搜索作品"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+          {query && (
+            <button
+              type="button"
+              className="works-search-clear"
+              aria-label="清空搜索框"
+              onClick={() => setQuery('')}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        <div className="works-sort" role="group" aria-label="排序方式">
+          <button
+            type="button"
+            aria-pressed={sort === 'latest'}
+            className={sort === 'latest' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
+            onClick={() => setSort('latest')}
+          >最新</button>
+          <button
+            type="button"
+            aria-pressed={sort === 'hot'}
+            className={sort === 'hot' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
+            onClick={() => setSort('hot')}
+          >最热</button>
+        </div>
+      </div>
+
       <main className="works-main">
+        {likeError && (
+          <p className="works-like-error" role="status">点赞失败：{likeError}</p>
+        )}
+
         {loading && <p className="works-state">加载中…</p>}
 
         {!loading && error && (
@@ -28,19 +111,35 @@ export function WorksListPage() {
           </div>
         )}
 
+        {/* 空状态分两种：库里压根没作品 vs 有作品但没搜到。混成一句「暂无数据」
+            会让搜错词的用户以为站里是空的。 */}
         {!loading && !error && items.length === 0 && (
-          <div className="works-state">
-            <p>还没有作品。</p>
-            <a className="works-btn" href="/">去生成第一个图纸</a>
-          </div>
+          trimmed ? (
+            <div className="works-state">
+              <p>没有找到与「{trimmed}」相关的作品，换个词试试。</p>
+              <button type="button" className="works-btn" onClick={() => setQuery('')}>
+                清除搜索
+              </button>
+            </div>
+          ) : (
+            <div className="works-state">
+              <p>还没有上传作品。</p>
+              <a className="works-btn" href="/">去生成第一个图纸</a>
+            </div>
+          )
         )}
 
         {!loading && !error && items.length > 0 && (
           <>
-            <p className="works-count">共 {total} 件</p>
+            <p className="works-count">
+              {trimmed
+                ? <>找到 {total} 件与「{trimmed}」相关的作品</>
+                : <>共 {total} 件</>}
+            </p>
             <ul className="works-grid">
               {items.map(w => (
                 <li key={w.id} className="works-card">
+                  {/* 点赞按钮必须在这个 <a> 外面（见下面的 works-card-body） */}
                   <a href={`/works/${w.id}`} className="works-card-link">
                     {/* alt 留空是刻意的：标题文字就在同一张 <a> 里，
                         再给 img 一份 alt 会让链接的可访问名变成「标题标题」，
@@ -55,6 +154,14 @@ export function WorksListPage() {
                     />
                     <span className="works-card-title">{w.title}</span>
                   </a>
+                  <div className="works-card-body">
+                    <span className="works-card-meta">
+                      {new Date(w.createdAt).toLocaleDateString()}
+                    </span>
+                    {/* 点赞只改自己的数字，不回调父级、不排序 —— 列表顺序
+                        一律以服务端本次响应为准（设计文档 §4.2.1）。 */}
+                    <LikeButton work={w} onError={setLikeError} />
+                  </div>
                 </li>
               ))}
             </ul>

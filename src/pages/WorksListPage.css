@@ -100,6 +100,136 @@
   line-height: 1.5;
 }
 
+/* 搜索 + 排序。手机上堆叠，≥768px 并排。触摸区统一 44px 起。 */
+.works-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 1100px;
+  margin: 0 auto var(--space-4);
+  padding: 0 var(--space-4);
+}
+
+@media (min-width: 768px) {
+  .works-controls {
+    flex-direction: row;
+    align-items: center;
+  }
+  .works-search { flex: 1; }
+}
+
+.works-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.works-search-input {
+  width: 100%;
+  /* 44px 是移动端可点区域的下限，别为了紧凑压到 40 以下 */
+  min-height: 44px;
+  padding: var(--space-2) var(--space-6) var(--space-2) var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-base);
+  box-sizing: border-box;
+}
+
+.works-search-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.works-search-clear {
+  position: absolute;
+  right: var(--space-2);
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.works-search-clear:hover { background: var(--color-surface-alt); }
+
+.works-sort {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+  flex-shrink: 0;
+}
+
+.works-sort-btn {
+  flex: 1;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: calc(var(--radius-md) - var(--space-1));
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.works-sort-btn--on {
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 点赞按钮：放在卡片底部靠右，不与标题抢注意力 */
+.works-like {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* 触摸区 44px —— 手机上低于这个高度很容易点空 */
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.works-like:hover:not(:disabled) { color: var(--color-accent); }
+.works-like:disabled { cursor: default; }
+
+.works-like--on {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.works-like-error {
+  margin: 0 0 var(--space-3);
+  color: var(--color-error-fg);
+  font-size: var(--text-sm);
+}
+
+/* 卡片底部一行：日期靠左、点赞按钮靠右 */
+.works-card-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.works-card-meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
 .works-more {
   display: flex;
   flex-direction: column;

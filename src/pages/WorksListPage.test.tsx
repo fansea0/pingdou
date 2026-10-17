@@ -4,14 +4,25 @@ import { WorksListPage } from './WorksListPage';
 import { useWorks } from '@/hooks/useWorks';
 
 const listWorks = vi.fn();
+const likeWork = vi.fn();
+const fetchLikeState = vi.fn();
 
 vi.mock('@/api/works', async () => {
   const actual = await vi.importActual<typeof import('@/api/works')>('@/api/works');
-  return { ...actual, listWorks: (...a: unknown[]) => listWorks(...a) };
+  return {
+    ...actual,
+    listWorks: (...a: unknown[]) => listWorks(...a),
+    likeWork: (...a: unknown[]) => likeWork(...a),
+    fetchLikeState: (...a: unknown[]) => fetchLikeState(...a),
+  };
 });
 
 beforeEach(() => {
-  listWorks.mockReset();
+  // 默认返回空库：下面大量用例是「进页面 → 等空状态」这条路径，
+  // 没有默认实现的话 listWorks 返回 undefined，useWorks 里 .then 直接抛 TypeError。
+  listWorks.mockReset().mockResolvedValue({ items: [], total: 0 });
+  likeWork.mockReset().mockResolvedValue({ ok: true, likes: 1, alreadyLiked: true });
+  fetchLikeState.mockReset().mockResolvedValue({ likes: 0, liked: false });
 });
 
 // vitest runs with globals:false, so RTL's automatic cleanup is not registered.
@@ -20,9 +31,11 @@ afterEach(cleanup);
 
 afterEach(() => {
   vi.clearAllMocks();
+  // 有用例会改 location.search（URL 同步 / 初值回填），不清会漏到下一个用例。
+  window.history.replaceState({}, '', '/works');
 });
 
-function work(id: number, title: string) {
+function work(id: number, title: string, likes = 0) {
   return {
     id,
     title,
@@ -30,6 +43,7 @@ function work(id: number, title: string) {
     width: 800,
     height: 1000,
     createdAt: 1_700_000_000_000,
+    likes,
   };
 }
 
@@ -53,6 +67,14 @@ function ReloadHarness() {
       {loadMoreError && <p>翻页失败：{loadMoreError.message}</p>}
     </div>
   );
+}
+
+/**
+ * 多张卡片时按 id 分别给点赞态。fetchLikeState 是按作品 id 查的，
+ * 用一个 mockResolvedValue 会把同一个 likes 糊到所有卡片上，排序用例就废了。
+ */
+function likeStateById(states: Record<number, { likes: number; liked: boolean }>) {
+  fetchLikeState.mockImplementation((id: number) => Promise.resolve(states[id]));
 }
 
 describe('WorksListPage', () => {
@@ -92,7 +114,7 @@ describe('WorksListPage', () => {
   it('空列表给出空状态和前往生成的入口', async () => {
     listWorks.mockResolvedValue({ items: [], total: 0 });
     render(<WorksListPage />);
-    expect(await screen.findByText(/还没有作品/)).toBeTruthy();
+    expect(await screen.findByText(/还没有上传作品/)).toBeTruthy();
     expect(screen.getByRole('link', { name: /去生成第一个图纸/ }).getAttribute('href')).toBe('/');
   });
 
@@ -119,7 +141,9 @@ describe('WorksListPage', () => {
     expect(listWorks).toHaveBeenCalledTimes(2);
     // 第三个参数是 Task 6 起才有的搜索词/排序 —— 没有搜索词时是 { q: '', sort: 'latest' }，
     // api 层会把它折叠成与改造前完全一样的请求（空 q 与 latest 都不进 query）。
-    expect(listWorks.mock.calls[1]).toEqual([20, 1, { q: '', sort: 'latest' }]);
+    // 第一个参数是 10：本 feature 的产品决定是每页 10 条，页面显式传给 useWorks，
+    // 不吃 hook 里 PAGE_SIZE 的默认 20（那个默认值是给别处留的，别去改它）。
+    expect(listWorks.mock.calls[1]).toEqual([10, 1, { q: '', sort: 'latest' }]);
     expect(screen.queryByRole('button', { name: '加载更多' })).toBeNull();
   });
 
@@ -233,5 +257,330 @@ describe('WorksListPage', () => {
 
     await waitFor(() => expect(screen.getByTestId('titles').textContent).toBe('B'));
     expect(listWorks).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('分页大小', () => {
+  it('首屏实际按每页 10 条请求（显式传参，不吃 hook 默认的 20）', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    // 行为级断言而不是 grep 源码里的字面量 10：靠一行显式传参对齐的
+    // 「hook 默认 20 / 页面 10」很容易在后续维护里走散（谁把参数删了就静默变回 20）。
+    expect(listWorks.mock.calls[0][0]).toBe(10);
+  });
+});
+
+describe('搜索框', () => {
+  it('渲染一个搜索框', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    expect(screen.getByRole('searchbox')).toBeTruthy();
+  });
+
+  it('输入会触发带 q 的请求（防抖后）', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    listWorks.mockClear();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '小熊' } });
+    await waitFor(
+      () => expect(listWorks).toHaveBeenCalledWith(10, 0, { q: '小熊', sort: 'latest' }),
+      { timeout: 2000 },
+    );
+  });
+
+  it('搜索词同步到 URL', async () => {
+    const replaceSpy = vi.spyOn(window.history, 'replaceState');
+    try {
+      render(<WorksListPage />);
+      await screen.findByText(/还没有上传作品/);
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: '小熊' } });
+      await waitFor(() => expect(window.location.search).toContain('q='));
+      const lastUrl = replaceSpy.mock.calls.at(-1)?.[2] as string;
+      expect(lastUrl).toContain('q=');
+    } finally {
+      replaceSpy.mockRestore();
+    }
+  });
+
+  /**
+   * 计划自己承认过：「把 replaceState 换成 pushState，这条用例测不出来」。
+   * 那就另写一条钉住它的 —— 搜索框每敲一个字都 push 一次，历史栈会被塞满，
+   * 用户想退回搜索前的页面得按几十次后退。这是很容易被「顺手改回去」的回归。
+   */
+  it('同步 URL 只用 replaceState，绝不 pushState（否则历史栈被每个字塞满）', async () => {
+    const pushSpy = vi.spyOn(window.history, 'pushState');
+    const lengthBefore = window.history.length;
+    try {
+      render(<WorksListPage />);
+      await screen.findByText(/还没有上传作品/);
+
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: '小熊' } });
+      fireEvent.change(screen.getByRole('searchbox'), { target: { value: '小熊宝' } });
+      await waitFor(() => expect(window.location.search).toContain('q='));
+      // 等防抖那次请求落地，确保 URL 写入不是还在路上
+      await waitFor(
+        () => expect(listWorks).toHaveBeenCalledWith(10, 0, { q: '小熊宝', sort: 'latest' }),
+        { timeout: 2000 },
+      );
+
+      expect(pushSpy).not.toHaveBeenCalled();
+      expect(window.history.length).toBe(lengthBefore);
+    } finally {
+      pushSpy.mockRestore();
+    }
+  });
+
+  it('从 URL 初值回填搜索框', async () => {
+    window.history.replaceState({}, '', '/works?q=%E5%B0%8F%E7%86%8A&sort=hot');
+    render(<WorksListPage />);
+    await waitFor(
+      () => expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('小熊'),
+      { timeout: 2000 },
+    );
+    expect(screen.getByRole('button', { name: '最热' }).getAttribute('aria-pressed')).toBe('true');
+    await waitFor(
+      () => expect(listWorks).toHaveBeenCalledWith(10, 0, { q: '小熊', sort: 'hot' }),
+      { timeout: 2000 },
+    );
+  });
+
+  it('清除按钮清空搜索词', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '小熊' } });
+    const clear = await screen.findByRole('button', { name: '清空搜索框' });
+    fireEvent.click(clear);
+    await waitFor(() => expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe(''));
+    // 清空后 URL 里也不该残留 q
+    await waitFor(() => expect(window.location.search).not.toContain('q='));
+  });
+
+  it('有搜索词时展示匹配数量', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, '小熊')], total: 1 });
+    render(<WorksListPage />);
+    await screen.findByText('小熊');
+    expect(screen.getByText(/共 1 件/)).toBeTruthy();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '小熊' } });
+    expect(await screen.findByText(/找到 1 件与「小熊」相关的作品/)).toBeTruthy();
+  });
+});
+
+describe('排序切换', () => {
+  it('有「最新」「最热」两个切换按钮', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    expect(screen.getByRole('button', { name: '最新' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '最热' })).toBeTruthy();
+  });
+
+  it('点「最热」发 sort=hot 的请求', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    listWorks.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '最热' }));
+    await waitFor(() => expect(listWorks).toHaveBeenCalledWith(10, 0, { q: '', sort: 'hot' }));
+    expect(screen.getByRole('button', { name: '最热' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('默认「最新」按下、「最热」未按下', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    expect(screen.getByRole('button', { name: '最新' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '最热' }).getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('两类空状态必须区分', () => {
+  it('无作品时提示「还没有上传作品」', async () => {
+    render(<WorksListPage />);
+    expect(await screen.findByText(/还没有上传作品/)).toBeTruthy();
+    // 空作品库不该出现搜索相关的文案
+    expect(screen.queryByText(/换个词试试/)).toBeNull();
+    expect(screen.queryByRole('button', { name: '清除搜索' })).toBeNull();
+  });
+
+  it('有搜索词但无结果时提示「换个词试试」', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '不存在的词' } });
+    expect(await screen.findByText(/换个词试试/, {}, { timeout: 2000 })).toBeTruthy();
+    // 关键：这时不该再显示「库里没作品」，否则用户搜错词却以为站里空着
+    expect(screen.queryByText(/还没有上传作品/)).toBeNull();
+  });
+
+  it('搜索无结果时提供清除搜索入口', async () => {
+    render(<WorksListPage />);
+    await screen.findByText(/还没有上传作品/);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '不存在的词' } });
+    const clearSearch = await screen.findByRole('button', { name: '清除搜索' }, { timeout: 2000 });
+    fireEvent.click(clearSearch);
+    // 清空后回到「空作品库」那条文案
+    expect(await screen.findByText(/还没有上传作品/)).toBeTruthy();
+  });
+});
+
+describe('点赞按钮', () => {
+  it('每张卡片都有点赞按钮并显示次数', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    expect(screen.getByRole('button', { name: /5 次点赞/ })).toBeTruthy();
+  });
+
+  it('点赞按钮不在卡片链接里（否则点点赞会跳详情页）', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    render(<WorksListPage />);
+    const link = await screen.findByRole('link', { name: 'A' });
+    const btn = screen.getByRole('button', { name: /5 次点赞/ });
+    expect(link.contains(btn)).toBe(false);
+  });
+
+  it('点一下调 likeWork 并更新数字', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    likeWork.mockResolvedValue({ ok: true, likes: 6, alreadyLiked: true });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    fireEvent.click(screen.getByRole('button', { name: /5 次点赞/ }));
+    await waitFor(() => expect(likeWork).toHaveBeenCalledWith(1));
+    expect(await screen.findByRole('button', { name: /6 次点赞/ })).toBeTruthy();
+  });
+
+  it('乐观更新：请求还没回来数字就已经 +1（点击手感即时）', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    // 永不 resolve：只观察乐观更新，服务端回包这一步根本没走到
+    likeWork.mockReturnValue(new Promise(() => {}));
+    render(<WorksListPage />);
+    await screen.findByText('A');
+
+    fireEvent.click(screen.getByRole('button', { name: /5 次点赞/ }));
+    // 判别力来源：删掉乐观更新时这里还是 5
+    expect(screen.getByRole('button', { name: /6 次点赞/ })).toBeTruthy();
+  });
+
+  it('点赞成功后按钮变为已赞状态且不可再点', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    likeWork.mockResolvedValue({ ok: true, likes: 6, alreadyLiked: true });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    fireEvent.click(screen.getByRole('button', { name: /5 次点赞/ }));
+
+    const btn = await screen.findByRole('button', { name: /已赞/ });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+
+    // 产品决定：不能取消点赞。再点一次不能再发请求。
+    fireEvent.click(btn);
+    expect(likeWork).toHaveBeenCalledTimes(1);
+  });
+
+  it('alreadyLiked=false（今天已经赞过）时数字不变、状态为已赞', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    // 服务端判定今天这一票已经投过了：计数不动
+    likeWork.mockResolvedValue({ ok: true, likes: 5, alreadyLiked: false });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    fireEvent.click(screen.getByRole('button', { name: /5 次点赞/ }));
+
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: /5 次点赞/ }) as HTMLButtonElement).disabled).toBe(true),
+    );
+  });
+
+  it('我今天赞过（fetchLikeState.liked=true）时初始就是已赞态', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: true });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    const btn = await screen.findByRole('button', { name: /已赞/ });
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(likeWork).not.toHaveBeenCalled();
+  });
+
+  it('点赞失败时回滚数字并提示', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    likeWork.mockRejectedValue(new Error('网络炸了'));
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    fireEvent.click(screen.getByRole('button', { name: /5 次点赞/ }));
+
+    expect(await screen.findByText(/网络炸了/)).toBeTruthy();
+    // 判别力来源：catch 里不回滚的话这里会停在 6，用户白看到一个假的赞
+    const btn = screen.getByRole('button', { name: /5 次点赞/ }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('被限流（429）时给出能看懂的中文提示且不崩', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    likeWork.mockRejectedValue(new Error('too many likes, try again later'));
+    render(<WorksListPage />);
+    await screen.findByText('A');
+    fireEvent.click(screen.getByRole('button', { name: /5 次点赞/ }));
+
+    expect(await screen.findByText(/点得太快/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /5 次点赞/ })).toBeTruthy();
+  });
+
+  it('同一批次内连点只发一次请求', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    likeWork.mockResolvedValue({ ok: true, likes: 6, alreadyLiked: true });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+
+    // 判别力来源与 useWorks 的 loadMore 用例同源：三次点击落在同一个 act 批次，
+    // busy/liked 的 state 还没提交，三个 handler 读到的是同一个闭包。
+    // 守住它的是组件里的同步标志，不是 DOM 的 disabled。
+    const btn = screen.getByRole('button', { name: /5 次点赞/ });
+    act(() => {
+      fireEvent.click(btn);
+      fireEvent.click(btn);
+      fireEvent.click(btn);
+    });
+    await waitFor(() => expect(likeWork).toHaveBeenCalled());
+    expect(likeWork).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('排名不实时变化（用户明确要求）', () => {
+  it('点赞后卡片顺序不变（客户端绝不重排）', async () => {
+    // 服务端给的顺序是 A(1 赞) 在前、B(0 赞) 在后。点赞后 B 变成 2 赞、反超 A ——
+    // 任何「顺手加个前端 sort 让排名实时」的改动都会在这里露馅。
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 1), work(2, 'B', 0)], total: 2 });
+    likeStateById({ 1: { likes: 1, liked: false }, 2: { likes: 0, liked: false } });
+    likeWork.mockResolvedValue({ ok: true, likes: 2, alreadyLiked: true });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+
+    fireEvent.click(screen.getByRole('button', { name: /0 次点赞/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /2 次点赞/ })).toBeTruthy());
+
+    const titles = screen.getAllByRole('link').map(a => a.textContent ?? '');
+    const idxA = titles.findIndex(t => t.includes('A'));
+    const idxB = titles.findIndex(t => t.includes('B'));
+    expect(idxA).toBeGreaterThanOrEqual(0);
+    expect(idxB).toBeGreaterThanOrEqual(0);
+    expect(idxA).toBeLessThan(idxB);
+  });
+
+  it('点赞只改数字不改 DOM 位置', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 1), work(2, 'B', 0)], total: 2 });
+    likeStateById({ 1: { likes: 1, liked: false }, 2: { likes: 0, liked: false } });
+    likeWork.mockResolvedValue({ ok: true, likes: 2, alreadyLiked: true });
+    render(<WorksListPage />);
+    await screen.findByText('A');
+
+    const before = screen.getAllByRole('link').map(a => a.textContent);
+    fireEvent.click(screen.getByRole('button', { name: /0 次点赞/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /2 次点赞/ })).toBeTruthy());
+
+    expect(screen.getAllByRole('link').map(a => a.textContent)).toEqual(before);
   });
 });
