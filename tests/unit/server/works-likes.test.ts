@@ -123,6 +123,46 @@ describe('likeStateOf', () => {
   });
 });
 
+describe('deleteWork 清理 work_likes', () => {
+  /**
+   * 直查 work_likes 表而不是看 likeStateOf() 的返回。
+   *
+   * 作品已经没了，likeStateOf(已删 id) 本来就返回 { likes: 0, liked: false } ——
+   * 那是 countLikes 查不到行时的默认值，跟「行被真的删掉」不可区分。
+   * 而 rowById / addLike 又都会拒绝这个 id，于是赞数行删没删，这个 API 层面看不出来。
+   * 必须落到表上数行数。
+   */
+  it('删作品会带走它的赞数行', async () => {
+    const id = await seedWork();
+    works.addLike(id, 'iphash-a');
+    works.addLike(id, 'iphash-b');
+    expect(db.queryAll('SELECT 1 FROM work_likes WHERE work_id = ?', [id]).length).toBe(2);
+
+    await works.deleteWork(id);
+
+    expect(db.queryAll('SELECT 1 FROM work_likes WHERE work_id = ?', [id]).length).toBe(0);
+  });
+
+  /**
+   * 「只删这一件」的判别力用例。
+   *
+   * 实现若写成不带 WHERE 的 DELETE FROM work_likes，上面那条用例照样绿
+   * （删完确实是 0 行），但 B 的赞数会被一起清掉。这条钉住 WHERE。
+   */
+  it('删 A 不影响 B 的赞数行', async () => {
+    const a = await seedWork('A');
+    const b = await seedWork('B');
+    works.addLike(a, 'iphash-a');
+    works.addLike(b, 'iphash-b');
+
+    await works.deleteWork(a);
+
+    expect(db.queryAll('SELECT 1 FROM work_likes WHERE work_id = ?', [a]).length).toBe(0);
+    expect(db.queryAll('SELECT 1 FROM work_likes WHERE work_id = ?', [b]).length).toBe(1);
+    expect(works.likeStateOf(b, 'iphash-b')).toEqual({ likes: 1, liked: true });
+  });
+});
+
 describe('DB 里不落明文 IP', () => {
   it('work_likes.ip_hash 存的是 hash 不是明文', async () => {
     const id = await seedWork();

@@ -411,6 +411,16 @@ export async function deleteWork(id: number): Promise<void> {
   // 文件删失败只 warn 不阻断 —— 记录必须删掉，否则前台会一直显示点开 404 的卡片。
   await removeQuietly(row.image_key);
   await removeQuietly(row.thumb_key);
+  // work_likes 没有外键也没有级联（works 表本身也没有外键），删作品必须自己清。
+  //
+  // 危害要说准，别夸大：works.id 是 AUTOINCREMENT，SQLite 保证行号永不复用，所以
+  // 这些孤儿行不会被后来的作品「串号」，也不会让任何真实作品多算赞数。真正的问题是
+  // 它们成了永远无法归属的垃圾 —— 表无界增长、永不回收，行里还留着 ip_hash，
+  // 想清理只能全表扫一遍比对 works。
+  //
+  // addLike 里的 SELECT 校验只能挡「写入时 id 非法」，挡不住「写入之后作品被删」，
+  // 所以删除侧必须显式兜住。WHERE work_id = ? 是「只删这一件」的保证。
+  runStmt(`DELETE FROM work_likes WHERE work_id = ?`, [id]);
   runStmt(`DELETE FROM works WHERE id = ?`, [id]);
   flushNow();
 }
