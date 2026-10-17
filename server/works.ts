@@ -62,16 +62,6 @@ export interface WorkImage {
   mime: string;
 }
 
-export interface CreateWorkInput {
-  title?: unknown;
-  description?: unknown;
-  published?: unknown;
-  width?: unknown;
-  height?: unknown;
-  image: WorkImage;
-  thumb?: WorkImage;
-}
-
 export interface UpdateWorkMeta {
   title?: string;
   description?: string;
@@ -182,11 +172,6 @@ function normalizeDescription(raw: unknown): string {
   return raw.slice(0, MAX_DESCRIPTION);
 }
 
-function normalizeDimension(raw: unknown): number {
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
-}
-
 /**
  * multipart 的文本字段一律是字符串，JSON 接口可能送真 boolean，也可能送数字 0/1。
  * 空串 / '0' / 'false' / 数字 0 都算「明确的关」——未勾选的 checkbox 在 multipart 里
@@ -242,8 +227,8 @@ function paramsOf(row: WorkRow): WorkParams {
 
 /**
  * likes 从 row 上读：detail 的调用方（getPublishedWork / listAllWorks /
- * updateWorkMeta / replaceWorkImage）全部经 rowById 或列表查询拿到行，
- * 都会带上真值。createWork 插入后回读时 likes 必然是刚写入的默认值 0。
+ * updateWorkMeta / attachSubmissionImage）全部经 rowById 或列表查询拿到行，
+ * 都会带上真值。
  */
 function toDetail(row: WorkRow): WorkDetail {
   return {
@@ -384,78 +369,6 @@ export function listAllWorks(filter?: { status?: WorkStatus }): AdminWorkDetail[
   ).map(toAdminDetail);
 }
 
-export async function createWork(input: CreateWorkInput): Promise<AdminWorkDetail> {
-  const ext = extFor(input.image.mime, 'image');
-  if (input.thumb) {
-    const thumbExt = extFor(input.thumb.mime, 'thumb');
-    if (thumbExt !== '.webp') throw new Error('thumb must be image/webp');
-  }
-
-  const hex = randomBytes(8).toString('hex');
-  const imageKey = `works/${hex}${ext}`;
-  // 写成功才赋值的理由：thumb_key 一旦落库就是「这个文件存在」的承诺。写失败还照记，
-  // 会留下一条指向不存在文件的记录 —— /media/works/<hex>-t.webp 永久 404，前台列表
-  // 破图；而后台的「无缩略图」标记恰好判据是 thumbUrl === imageUrl，永远标不出这种故障。
-  let thumbKey = '';
-  let created: WorkRow[] = [];
-
-  try {
-    await storage.put(imageKey, input.image.body, input.image.mime);
-    if (input.thumb) {
-      const candidate = `works/${hex}-t.webp`;
-      try {
-        await storage.put(candidate, input.thumb.body, input.thumb.mime);
-        thumbKey = candidate;
-      } catch (e) {
-        // 降级而不是整体失败：没有缩略图是可降级状态（前端会用原图当缩略图），
-        // 强行失败反而让用户白传一次大图。降级后 thumb_key 留空，DB 不再声称有那个文件。
-        console.warn('[works] 缩略图写入失败，降级为无缩略图', e);
-      }
-    }
-
-    const now = Date.now();
-    // 显式写 status='approved'：这个函数是即将被删除的后台上传路径（spec §5.4，
-  // Task 7），在它还在的这几个任务里必须保住「后台上传 = 直接可公开」的行为，
-  // 否则既有 20 多条 works 测试会全红。DDL 的默认值是 pending，正是为了不让
-  // 「忘了写 status」的行混进公开列表。
-    runStmt(
-      `INSERT INTO works
-         (title, description, image_key, thumb_key, width, height, bytes,
-          published, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)`,
-      [
-        normalizeTitle(input.title),
-        normalizeDescription(input.description),
-        imageKey,
-        thumbKey,
-        normalizeDimension(input.width),
-        normalizeDimension(input.height),
-        input.image.body.byteLength,
-        normalizePublished(input.published, true) ? 1 : 0,
-        now,
-        now,
-      ]
-    );
-
-    // 用 last_insert_rowid() 而不是 image_key 回读：image_key 碰撞的概率极低，
-    // 但真撞上会「静默返回另一条作品的数据（含它的标题）」，不报错，最难排查。
-    //
-    // 顺序有讲究：必须在 flushNow() 之前读。flushNow() 里的 db.export() 会把
-    // 连接的 last_insert_rowid 复位成 0（sql.js 实测），先 flush 再查必然查不到行。
-    created = queryAll<WorkRow>(`SELECT * FROM works WHERE id = last_insert_rowid()`);
-    if (!created[0]) throw new Error('createWork: missing after insert');
-    flushNow();
-  } catch (err) {
-    // 参数都归一化过了，走到这里基本只剩 DB 故障。但文件已经落盘了 ——
-    // 不回收就是一条没有记录、也没有主键可追溯的孤儿文件，只能靠人肉扫盘清理。
-    await removeQuietly(imageKey);
-    await removeQuietly(thumbKey);
-    throw err;
-  }
-
-  return toAdminDetail(created[0]);
-}
-
 export async function updateWorkMeta(id: number, patch: UpdateWorkMeta): Promise<AdminWorkDetail> {
   const row = requireRow(id);
   // next 连 likes 一起带过去：rowById 已经读到真值，而本函数不碰 likes，
@@ -526,55 +439,6 @@ export async function rejectWork(id: number): Promise<AdminWorkDetail> {
   );
   flushNow();
   return toAdminDetail({ ...row, status: 'rejected', published: 0, updated_at: now });
-}
-
-export async function replaceWorkImage(
-  id: number,
-  image: WorkImage,
-  thumb?: WorkImage
-): Promise<AdminWorkDetail> {
-  const row = requireRow(id);
-  const ext = extFor(image.mime, 'image');
-  if (thumb) {
-    const thumbExt = extFor(thumb.mime, 'thumb');
-    if (thumbExt !== '.webp') throw new Error('thumb must be image/webp');
-  }
-
-  const hex = randomBytes(8).toString('hex');
-  const imageKey = `works/${hex}${ext}`;
-  // 同 createWork：写成功才记 key，写失败就不让 DB 声称文件存在
-  let thumbKey = '';
-
-  await storage.put(imageKey, image.body, image.mime);
-  if (thumb) {
-    const candidate = `works/${hex}-t.webp`;
-    try {
-      await storage.put(candidate, thumb.body, thumb.mime);
-      thumbKey = candidate;
-    } catch (e) {
-      console.warn('[works] 缩略图写入失败，降级为无缩略图', e);
-    }
-  }
-
-  // 同上：likes 由 requireRow 带出，本函数不改赞数，直接透传。
-  const next: WorkRow = {
-    ...row,
-    image_key: imageKey,
-    thumb_key: thumbKey,
-    bytes: image.body.byteLength,
-    updated_at: Date.now(),
-  };
-  runStmt(
-    `UPDATE works SET image_key=?, thumb_key=?, bytes=?, updated_at=? WHERE id=?`,
-    [imageKey, thumbKey, next.bytes, next.updated_at, id]
-  );
-
-  // 记录指向新文件之后才删旧文件：反过来若删失败，会留下一条指向已删文件的记录
-  await removeQuietly(row.image_key);
-  await removeQuietly(row.thumb_key);
-
-  flushNow();
-  return toAdminDetail(next);
 }
 
 export async function deleteWork(id: number): Promise<void> {

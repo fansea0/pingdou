@@ -22,7 +22,7 @@ import {
 import { reconcileAssignments, revokeAllForProduct, hasActiveAssignment, getActiveAssignmentsForUser } from './assignments.js';
 import {
   listPublishedWorks, getPublishedWork, listAllWorks,
-  createWork, updateWorkMeta, replaceWorkImage, deleteWork,
+  updateWorkMeta, deleteWork,
   normalizePublished,
   addLike, likeStateOf, likeFingerprint,
   createSubmission, attachSubmissionImage,
@@ -533,8 +533,8 @@ app.get('/api/public/works/:id', (req, res) => {
 /** 投稿成品图 + 浏览器生成的缩略图。缩略图的文件名必须以 .webp 结尾，
  *  服务端按扩展名校验 mime。
  *
- *  声明在投稿路由之前而不是跟 WORK_IMAGE_FIELDS 放一起：const 走 TDZ，
- *  被上面那组 app.post 求值到时会直接 ReferenceError（首次跑用例实测）。
+ *  声明在使用它的 app.post 之前而不是放到文件末尾：const 走 TDZ，被求值到时
+ *  会直接 ReferenceError（首次跑用例实测）。
  */
 const SUBMISSION_IMAGE_FIELDS = [
   { name: 'image', maxCount: 1 },
@@ -565,14 +565,13 @@ app.post('/api/public/works', (req, res) => {
 /**
  * extFor 抛的是**裸 Error**（`unsupported image mime type`），不是
  * SubmissionInputError，attachSubmissionImage 里其余拒绝都是 400 类，唯独这条会在
- * 路由层落进「既不是配额也不是输入错」的分支 → 500。对内网后台路径（createWork /
- * replaceWorkImage）500 只是一次运维噪音，但投稿是**匿名公网入口**，让用户传错格式
- * 换来一个 500 既误导又掩盖真实原因。
+ * 路由层落进「既不是配额也不是输入错」的分支 → 500。投稿是**匿名公网入口**，
+ * 让用户传错格式换来一个 500 既误导又掩盖真实原因。
  *
- * 不去改 extFor 的错误类型：它是 createWork / replaceWorkImage 共用的，动它会波及
- * 内网路径（那两条的 catch 本来就把一切当 400，改类型无收益）。所以在公网入口按消息
- * 特征兜一层，翻译范围严格限制在「不支持的 mime」这一种，不做「未知错误一律 400」
- * —— 那样会把真的存储故障也报成 400，等于把故障藏起来。
+ * 不去改 extFor 的错误类型：它是存储层与投稿路径共用的，动它会波及别处
+ * （改类型无收益）。所以在公网入口按消息特征兜一层，翻译范围严格限制在
+ * 「不支持的 mime」这一种，不做「未知错误一律 400」—— 那样会把真的存储故障
+ * 也报成 400，等于把故障藏起来。
  */
 export function isUnsupportedMimeError(err: unknown): boolean {
   return err instanceof Error && /unsupported (?:image|thumb) mime type/.test(err.message);
@@ -705,16 +704,11 @@ app.get('/media/works/:filename', (req, res) => {
 
 // admin 作品接口。列表走 listAllWorks（含草稿），这条路径必须 requireAuth + requireAdmin，
 // 绝不能和 /api/public/works 共用数据源。
-const WORK_IMAGE_FIELDS = [
-  { name: 'file', maxCount: 1 },
-  { name: 'thumb', maxCount: 1 },
-];
-
-function workImageFrom(req: express.Request, field: 'file' | 'thumb') {
-  const files = (req as any).files as Record<string, Express.Multer.File[]> | undefined;
-  const f = files?.[field]?.[0];
-  return f ? { body: f.buffer, mime: f.mimetype } : undefined;
-}
+//
+// 后台上传通道（POST /api/admin/works 与 POST /api/admin/works/:id/image）已随
+// createWork / replaceWorkImage 一起删除：进货入口只剩投稿，留着它们意味着
+// multer 双文件字段解析、缩略图 mime 校验、孤儿文件回收那一整套还要维护还要测，
+// 却没有任何调用方。将来若要恢复后台直传，从 git 历史取回即可。
 
 // 后台列表走 toAdminDetail：比公开 detail 多一个 published 布尔字段，
 // 后台靠它显示上下架开关。公开接口 /api/public/* 刻意不带该字段。
@@ -731,24 +725,6 @@ app.get('/api/admin/works', requireAuth, requireAdmin, (req, res) => {
   }
 });
 
-app.post('/api/admin/works', requireAuth, requireAdmin, handleUploadFields(WORK_IMAGE_FIELDS), async (req, res) => {
-  const image = workImageFrom(req, 'file');
-  if (!image) return res.status(400).json({ error: 'file required' });
-  try {
-    return res.json(await createWork({
-      title: req.body?.title,
-      description: req.body?.description,
-      published: req.body?.published,
-      width: req.body?.width,
-      height: req.body?.height,
-      image,
-      thumb: workImageFrom(req, 'thumb'),
-    }));
-  } catch (e: any) {
-    return res.status(400).json({ error: e.message ?? 'create failed' });
-  }
-});
-
 app.put('/api/admin/works/:id', requireAuth, requireAdmin, async (req, res) => {
   const { title, description, published } = req.body ?? {};
   const patch: UpdateWorkMeta = {};
@@ -761,16 +737,6 @@ app.put('/api/admin/works/:id', requireAuth, requireAdmin, async (req, res) => {
     return res.json(await updateWorkMeta(Number(req.params.id), patch));
   } catch (e: any) {
     return res.status(404).json({ error: e.message ?? 'update failed' });
-  }
-});
-
-app.post('/api/admin/works/:id/image', requireAuth, requireAdmin, handleUploadFields(WORK_IMAGE_FIELDS), async (req, res) => {
-  const image = workImageFrom(req, 'file');
-  if (!image) return res.status(400).json({ error: 'file required' });
-  try {
-    return res.json(await replaceWorkImage(Number(req.params.id), image, workImageFrom(req, 'thumb')));
-  } catch (e: any) {
-    return res.status(404).json({ error: e.message ?? 'upload failed' });
   }
 });
 

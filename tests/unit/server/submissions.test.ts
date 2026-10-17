@@ -508,8 +508,8 @@ describe('attachSubmissionImage', () => {
   /**
    * 缩略图写盘失败 → 降级为无缩略图，且 DB 不记那个从未落盘的 key。
    *
-   * 与 createWork / replaceWorkImage 的同名用例同款（共用 failThumbPut 助手），
-   * 因为投稿路径的这段代码是独立复制的，不是共用实现，所以也得独立钉一次。
+   * 这段降级逻辑住在 attachSubmissionImage 里，是投稿路径自带的实现，所以在这里
+   * 独立钉一次（共用 failThumbPut 助手）。
    *
    * 护栏在这一步：把 `thumbKey = candidate` 提到 try 之前（写失败也照记）不会让任何
    * 抛错发生，但会让 DB 声称一个不存在的文件存在 —— /media/...-t.webp 永久 404、

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import { makeApprovedWork } from '../../helpers/works.js';
 
 let tmp = '';
 
@@ -65,18 +66,20 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 describe('GET /api/public/works', () => {
   it('无需登录即可拿到已上架作品', async () => {
     const { app, works } = await bootApp();
-    await works.createWork({ title: '小熊', image: { body: PNG, mime: 'image/png' } });
+    await makeApprovedWork(works, { title: '小熊' });
     const r = await request(app).get('/api/public/works');
     expect(r.status).toBe(200);
     expect(r.body.total).toBe(1);
     expect(r.body.items[0].title).toBe('小熊');
-    expect(r.body.items[0].thumbUrl).toMatch(/^\/media\/works\/[0-9a-f]{16}\.png$/);
+    // thumbUrl 是 storage.publicUrl 现算出来的（库里只存 key）：16 位随机 hex +
+    // 派生扩展名。挂的是缩略图，所以是 -t.webp 而不是原图的 .png。
+    expect(r.body.items[0].thumbUrl).toMatch(/^\/media\/works\/[0-9a-f]{16}-t\.webp$/);
   });
 
   it('limit / offset 生效', async () => {
     const { app, works } = await bootApp();
     for (const t of ['A', 'B', 'C']) {
-      await works.createWork({ title: t, image: { body: PNG, mime: 'image/png' } });
+      await makeApprovedWork(works, { title: t });
     }
     const r = await request(app).get('/api/public/works?limit=2&offset=1');
     expect(r.body.items).toHaveLength(2);
@@ -88,8 +91,8 @@ describe('GET /api/public/works', () => {
   // 数据层，覆盖不到这行接线。
   it('公开列表不含草稿', async () => {
     const { app, works } = await bootApp();
-    await works.createWork({ title: '已上架', image: { body: PNG, mime: 'image/png' } });
-    await works.createWork({ title: '草稿', published: false, image: { body: PNG, mime: 'image/png' } });
+    await makeApprovedWork(works, { title: '已上架' });
+    await makeApprovedWork(works, { title: '草稿', published: false });
     const r = await request(app).get('/api/public/works');
     expect(r.status).toBe(200);
     expect(r.body.total).toBe(1);
@@ -100,7 +103,7 @@ describe('GET /api/public/works', () => {
 describe('GET /api/public/works/:id', () => {
   it('返回详情含 imageUrl', async () => {
     const { app, works } = await bootApp();
-    const w = await works.createWork({ title: 'A', description: 'd', image: { body: PNG, mime: 'image/png' } });
+    const w = await makeApprovedWork(works, { title: 'A', description: 'd' });
     const r = await request(app).get(`/api/public/works/${w.id}`);
     expect(r.status).toBe(200);
     expect(r.body.imageUrl).toBe(w.imageUrl);
@@ -109,7 +112,7 @@ describe('GET /api/public/works/:id', () => {
 
   it('草稿返回 404（不区分不存在与未上架）', async () => {
     const { app, works } = await bootApp();
-    const w = await works.createWork({ published: false, image: { body: PNG, mime: 'image/png' } });
+    const w = await makeApprovedWork(works, { published: false });
     expect((await request(app).get(`/api/public/works/${w.id}`)).status).toBe(404);
     expect((await request(app).get('/api/public/works/99999')).status).toBe(404);
   });
@@ -153,17 +156,20 @@ describe('GET /media/works/:filename', () => {
   // 白名单必须覆盖 works.ts 按 mime 派生出的全部扩展名：EXT_BY_MIME 里
   // image/jpeg -> .jpg、image/webp -> .webp，而 multer 的 fileFilter 明确放行
   // 这两种 mime。只放行 .png 会让 jpeg/webp 作品存得上、URL 却永久 400。
-  it('jpeg 原图：上传后 imageUrl 能被 /media/works/ 取到', async () => {
-    const { app } = await bootApp();
-    const cookie = await loginAdmin(app);
-    const created = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .attach('file', JPEG, { filename: 'a.jpg', contentType: 'image/jpeg' });
-    expect(created.status).toBe(200);
-    expect(created.body.imageUrl).toMatch(/^\/media\/works\/[0-9a-f]{16}\.jpg$/);
+  it('jpeg 原图：挂上去后 imageUrl 能被 /media/works/ 取到', async () => {
+    const { app, works } = await bootApp();
+    // 走投稿的两步入库（后台上传通道已随 Task 7 拆掉），jpeg 由 mime 派生 .jpg
+    const created = works.createSubmission(
+      { title: 'jpeg 图', boardW: 50, boardH: 50, beanCount: 100, colorCount: 8, estimateMinutes: 30 },
+      { ip: '10.9.9.9', userAgent: 'vitest-jpeg' },
+    );
+    const detail = await works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: JPEG, mime: 'image/jpeg' },
+    });
+    works.approveWork(detail.id);
+    expect(detail.imageUrl).toMatch(/^\/media\/works\/[0-9a-f]{16}\.jpg$/);
 
-    const r = await request(app).get(created.body.imageUrl);
+    const r = await request(app).get(detail.imageUrl);
     expect(r.status).toBe(200);
     expect(Buffer.from(r.body)).toEqual(JPEG);
   });
@@ -172,22 +178,14 @@ describe('GET /media/works/:filename', () => {
 describe('admin 作品接口', () => {
   it('未登录一律 401', async () => {
     const { app } = await bootApp();
-    expect((await request(app).post('/api/admin/works')).status).toBe(401);
     expect((await request(app).get('/api/admin/works')).status).toBe(401);
   });
 
-  // 其余三条写路由各自要有 401 断言：摘掉任意一条的 requireAuth/requireAdmin，
-  // 之前 16 条用例仍然全绿。
+  // 其余两条写路由各自要有 401 断言：摘掉任意一条的 requireAuth/requireAdmin，
+  // 之前十几条用例仍然全绿。
   it('PUT /api/admin/works/:id 未登录 401', async () => {
     const { app } = await bootApp();
     expect((await request(app).put('/api/admin/works/1').send({ title: 'x' })).status).toBe(401);
-  });
-
-  it('POST /api/admin/works/:id/image 未登录 401', async () => {
-    const { app } = await bootApp();
-    expect(
-      (await request(app).post('/api/admin/works/1/image').attach('file', PNG, { filename: 'a.png', contentType: 'image/png' })).status
-    ).toBe(401);
   });
 
   it('DELETE /api/admin/works/:id 未登录 401', async () => {
@@ -195,74 +193,38 @@ describe('admin 作品接口', () => {
     expect((await request(app).delete('/api/admin/works/1')).status).toBe(401);
   });
 
+  /**
+   * 后台上传通道已下线：这两条路由连同 createWork / replaceWorkImage 一起删掉了。
+   *
+   * 为什么还要留这条用例：路由不存在时 Express 对任意方法都回 404 —— 包括登录后。
+   * 将来若有人「顺手恢复」一条直传路由，这条会立刻红。非登录状态回 404 而不是 401
+   * 恰恰说明**没有走 requireAuth**，也就是它真的不在路由表里。
+   */
+  it('后台上传路由已下线（POST /api/admin/works 与 /:id/image 都是 404）', async () => {
+    const { app } = await bootApp();
+    const cookie = await loginAdmin(app);
+    expect((await request(app).post('/api/admin/works').set('Cookie', cookie)
+      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' })).status).toBe(404);
+    expect((await request(app).post('/api/admin/works/1/image').set('Cookie', cookie)
+      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' })).status).toBe(404);
+  });
+
   it('merchant 角色访问 admin 作品接口 403', async () => {
     const { app } = await bootApp();
     const cookie = await loginMerchant(app);
     expect((await request(app).get('/api/admin/works').set('Cookie', cookie)).status).toBe(403);
-    expect(
-      (await request(app).post('/api/admin/works').set('Cookie', cookie)
-        .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' })).status
-    ).toBe(403);
     expect((await request(app).put('/api/admin/works/1').set('Cookie', cookie).send({ title: 'x' })).status).toBe(403);
     expect((await request(app).delete('/api/admin/works/1').set('Cookie', cookie)).status).toBe(403);
-  });
-
-  it('创建作品：multipart 带 file + thumb + 文本字段', async () => {
-    const { app } = await bootApp();
-    const cookie = await loginAdmin(app);
-    const r = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .field('title', '上传的作品')
-      .field('description', '描述')
-      .field('width', '800')
-      .field('height', '600')
-      .field('published', '1')
-      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' })
-      .attach('thumb', PNG, { filename: 'a.webp', contentType: 'image/webp' });
-    expect(r.status).toBe(200);
-    expect(r.body.title).toBe('上传的作品');
-    expect(r.body.width).toBe(800);
-    expect(r.body.thumbUrl).toMatch(/-t\.webp$/);
-  });
-
-  it('创建作品：只有 file 也行（无缩略图降级）', async () => {
-    const { app } = await bootApp();
-    const cookie = await loginAdmin(app);
-    const r = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' });
-    expect(r.status).toBe(200);
-    expect(r.body.thumbUrl).toBe(r.body.imageUrl);
-  });
-
-  it('创建作品：缺 file 返回 400', async () => {
-    const { app } = await bootApp();
-    const cookie = await loginAdmin(app);
-    const r = await request(app).post('/api/admin/works').set('Cookie', cookie).field('title', 'x');
-    expect(r.status).toBe(400);
   });
 
   // 护栏：后台列表要带 published，后台全靠它区分草稿 —— toAdminDetail 掉这个字段时
   // 界面上已上架/草稿会长得一模一样，而且 listAllWorks 侧的用例只断言长度，覆盖不到。
   // 同时反向守住公开契约：/api/public/* 一律不带 published。
   it('后台列表带 published 区分草稿，公开接口不带该字段', async () => {
-    const { app } = await bootApp();
+    const { app, works } = await bootApp();
     const cookie = await loginAdmin(app);
-    const draft = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .field('title', '草稿')
-      .field('published', '0')
-      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' });
-    expect(draft.status).toBe(200);
-    const pub = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .field('title', '已上架')
-      .attach('file', PNG, { filename: 'b.png', contentType: 'image/png' });
-    expect(pub.status).toBe(200);
+    const pub = await makeApprovedWork(works, { title: '已上架' });
+    await makeApprovedWork(works, { title: '草稿', published: false });
 
     const list = await request(app).get('/api/admin/works').set('Cookie', cookie);
     expect(list.status).toBe(200);
@@ -272,49 +234,35 @@ describe('admin 作品接口', () => {
     );
     expect(byTitle).toEqual({ 已上架: true, 草稿: false });
 
-    const detail = await request(app).get(`/api/public/works/${pub.body.id}`);
+    const detail = await request(app).get(`/api/public/works/${pub.id}`);
     expect(detail.status).toBe(200);
     expect(detail.body).not.toHaveProperty('published');
   });
 
-  it('创建作品：published=0 存为草稿', async () => {
-    const { app } = await bootApp();
+  it('下架的作品公开详情 404，后台仍看得到且 published=false', async () => {
+    const { app, works } = await bootApp();
     const cookie = await loginAdmin(app);
-    const r = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .field('published', '0')
-      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' });
-    expect(r.status).toBe(200);
-    expect((await request(app).get(`/api/public/works/${r.body.id}`)).status).toBe(404);
+    const draft = await makeApprovedWork(works, { published: false });
+    expect((await request(app).get(`/api/public/works/${draft.id}`)).status).toBe(404);
+
     const list = await request(app).get('/api/admin/works').set('Cookie', cookie);
     expect(list.body).toHaveLength(1);
     expect(list.body[0].published).toBe(false);
   });
 
-  it('改元数据 / 换图 / 删除', async () => {
-    const { app } = await bootApp();
+  it('改元数据 / 删除', async () => {
+    const { app, works } = await bootApp();
     const cookie = await loginAdmin(app);
-    const created = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' });
+    const created = await makeApprovedWork(works);
 
     const put = await request(app)
-      .put(`/api/admin/works/${created.body.id}`)
+      .put(`/api/admin/works/${created.id}`)
       .set('Cookie', cookie)
       .send({ title: '改过的标题' });
     expect(put.status).toBe(200);
     expect(put.body.title).toBe('改过的标题');
 
-    const img = await request(app)
-      .post(`/api/admin/works/${created.body.id}/image`)
-      .set('Cookie', cookie)
-      .attach('file', PNG, { filename: 'b.webp', contentType: 'image/webp' });
-    expect(img.status).toBe(200);
-    expect(img.body.imageUrl).not.toBe(created.body.imageUrl);
-
-    const del = await request(app).delete(`/api/admin/works/${created.body.id}`).set('Cookie', cookie);
+    const del = await request(app).delete(`/api/admin/works/${created.id}`).set('Cookie', cookie);
     expect(del.status).toBe(200);
     expect((await request(app).get('/api/admin/works').set('Cookie', cookie)).body).toHaveLength(0);
   });
@@ -328,22 +276,17 @@ describe('admin 作品接口', () => {
   // fail-closed：客户端显式传 null 是「我明确要改这个字段，只是值非法」，
   // 不能和「没传」一起走 fallback —— 否则会把草稿静默上架。
   it('PUT 传 published=null 不上架（fail-closed）', async () => {
-    const { app } = await bootApp();
+    const { app, works } = await bootApp();
     const cookie = await loginAdmin(app);
-    const created = await request(app)
-      .post('/api/admin/works')
-      .set('Cookie', cookie)
-      .field('published', '0')
-      .attach('file', PNG, { filename: 'a.png', contentType: 'image/png' });
-    expect(created.status).toBe(200);
-    expect((await request(app).get(`/api/public/works/${created.body.id}`)).status).toBe(404);
+    const draft = await makeApprovedWork(works, { published: false });
+    expect((await request(app).get(`/api/public/works/${draft.id}`)).status).toBe(404);
 
     const put = await request(app)
-      .put(`/api/admin/works/${created.body.id}`)
+      .put(`/api/admin/works/${draft.id}`)
       .set('Cookie', cookie)
       .send({ published: null });
     expect(put.status).toBe(200);
     // 仍然是草稿：公开详情继续 404
-    expect((await request(app).get(`/api/public/works/${created.body.id}`)).status).toBe(404);
+    expect((await request(app).get(`/api/public/works/${draft.id}`)).status).toBe(404);
   });
 });

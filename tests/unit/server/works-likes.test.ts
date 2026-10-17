@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import initSqlJs from 'sql.js';
+import { makeApprovedWork } from '../../helpers/works.js';
 
 let tmp = '';
 let works: typeof import('../../../server/works.js');
@@ -27,12 +28,9 @@ afterEach(() => {
   if (tmp && existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
 });
 
-/** 建一件已上架作品，返回 id（createWork 是 async，所以 seedWork 也是 async） */
+/** 建一件已过审上架的作品，返回 id。走投稿真实路径：投稿 → 挂图 → 过审。 */
 async function seedWork(title = '小熊'): Promise<number> {
-  const created = await works.createWork({
-    title,
-    image: { body: Buffer.from([1, 2, 3]), mime: 'image/png' },
-  });
+  const created = await makeApprovedWork(works, { title });
   return created.id;
 }
 
@@ -355,7 +353,7 @@ describe('落盘', () => {
   it('点赞会落盘到 works.likes（不依赖后续无关写操作）', async () => {
     const id = await seedWork();
     works.addLike(id, fp('1.1.1.1', UA_A, id));
-    // seedWork 里的 createWork 自己调过 flushNow，那时 dirty 已被复位成 false。
+    // seedWork 里的投稿入库自己调过 flushNow，那时 dirty 已被复位成 false。
     // 这里能写出去，只能是 addLike 自己标了脏 —— 这正是 execReturning 存在的理由。
     db.flushNow();
     expect((await readDiskWorks()).find(w => w.id === id)?.likes).toBe(1);

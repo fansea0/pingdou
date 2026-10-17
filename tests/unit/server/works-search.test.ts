@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { makeApprovedWork, makePendingWork } from '../../helpers/works.js';
 
 let tmp = '';
 let works: typeof import('../../../server/works.js');
@@ -25,13 +26,15 @@ afterEach(() => {
   if (tmp && existsSync(tmp)) rmSync(tmp, { recursive: true, force: true });
 });
 
-/** 建一件作品，返回 id（createWork 是 async —— 要写文件，所以 seed 也是 async） */
+/**
+ * 建一件已过审的作品，返回 id。
+ *
+ * 走投稿真实路径（createSubmission → attachSubmissionImage → approveWork）：
+ * 这里要验的正是「过审之后才进搜索结果」，用 INSERT 捷径造数据会把
+ * status / published 的写入绕过去，验的就不是这条不变量了。
+ */
 async function seed(title: string, published = true) {
-  const created = await works.createWork({
-    title,
-    published,
-    image: { body: Buffer.from([1, 2, 3]), mime: 'image/png' },
-  });
+  const created = await makeApprovedWork(works, { title, published });
   return created.id;
 }
 
@@ -69,11 +72,7 @@ describe('搜索', () => {
   });
 
   it('q 只匹配标题，不匹配描述', async () => {
-    await works.createWork({
-      title: '甲',
-      description: '这里有小熊',
-      image: { body: Buffer.from([1]), mime: 'image/png' },
-    });
+    await makeApprovedWork(works, { title: '甲', description: '这里有小熊' });
     await seed('乙');
     expect((await list({ q: '小熊' })).total).toBe(0);
   });
@@ -134,14 +133,23 @@ describe('搜索', () => {
    * 过滤生效，也可能是 q 根本没匹配上任何东西，用例就成了恒真。
    */
   it('未过审的作品在搜索结果里也不出现', async () => {
-    const pending = await seed('待审小熊');
+    // 三行一起断，缺一不可：
+    //  - 真·待审投稿：published=0，被 published 过滤挡下
+    //  - 已过审又被压回 pending 的行：published=1，**只剩 status 过滤能挡它**。
+    //    这种行在正常流程里造不出来（不变量① 禁止 pending + published=1），所以
+    //    直接写库压状态 —— 它守的正是那道「不依赖不变量成立」的兜底过滤，
+    //    拿「本来就下架的投稿」冒充它会让这条用例恒真。
+    //  - 正常已过审的对照行：没有它，「搜出来是空的」也可能是 q 什么都没匹配上。
+    const { id: submitted } = await makePendingWork(works, { title: '待审小熊' });
+    const demoted = await seed('被压回待审小熊');
+    db.runStmt(`UPDATE works SET status = 'pending' WHERE id = ?`, [demoted]);
     await seed('已过审小熊');
-    db.runStmt(`UPDATE works SET status = 'pending' WHERE id = ?`, [pending]);
 
     const r = await list({ q: '小熊' });
     expect(r.items.map(i => i.title)).toEqual(['已过审小熊']);
     expect(r.total).toBe(1);
-    expect(works.getPublishedWork(pending)).toBeNull();
+    expect(works.getPublishedWork(submitted)).toBeNull();
+    expect(works.getPublishedWork(demoted)).toBeNull();
   });
 });
 
@@ -177,8 +185,7 @@ describe('排序', () => {
    * 所以那条用例杀不掉任何排序变异（M4 实测 49/49 全绿）。
    *
    * 破法只有一个：**让 id 顺序与 created_at 顺序相反**，两个 sort key 才会
-   * 给出可区分的答案。下面直接写库改 created_at（works.test.ts 有同款先例），
-   * 因为 createWork 不接受自定义时间戳。
+   * 给出可区分的答案。下面直接写库改 created_at，因为投稿路径不接受自定义时间戳。
    */
   it('hot 同赞数按 created_at DESC（id 小的那条 created_at 更大）', async () => {
     const a = await seed('AAA'); const b = await seed('BBB');
@@ -244,25 +251,17 @@ describe('详情 / 后台的 likes 口径', () => {
     expect(works.listAllWorks().find(w => w.id === id)?.likes).toBe(2);
   });
 
-  it('createWork 返回 0 赞（此刻确实没人点赞）', async () => {
-    const created = await works.createWork({
-      title: '新作品',
-      image: { body: Buffer.from([1, 2, 3]), mime: 'image/png' },
-    });
+  it('刚过审的作品赞数是 0（此刻确实没人点赞）', async () => {
+    const created = await makeApprovedWork(works, { title: '新作品' });
     expect(created.likes).toBe(0);
   });
 
-  it('updateWorkMeta / replaceWorkImage 返回的赞数不会被抹成 0', async () => {
+  it('updateWorkMeta 返回的赞数不会被抹成 0', async () => {
     const id = await seed('甲');
     works.addLike(id, h('1')(id));
     works.addLike(id, h('2')(id));
     const updated = await works.updateWorkMeta(id, { title: '乙' });
     expect(updated.likes).toBe(2);
-    const replaced = await works.replaceWorkImage(
-      id,
-      { body: Buffer.from([9, 9]), mime: 'image/png' }
-    );
-    expect(replaced.likes).toBe(2);
   });
 });
 
