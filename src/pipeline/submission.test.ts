@@ -1,18 +1,31 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderBeadBoard } from './board';
-import { DEFAULT_COMPOSITE_OPTIONS } from './composite';
+import {
+  DEFAULT_COMPOSITE_OPTIONS,
+  renderCompositeFromBoard,
+  watermarkPlacement,
+} from './composite';
+import { applyWatermark } from './watermark';
 import { renderSubmissionComposite, SUBMISSION_CELL_PX } from './submission';
 import { SUBMISSION_QR_PX } from './qr';
 import type { Palette, PipelineResult } from '@/types';
 
 /**
- * 只把 renderBeadBoard 包成 spy，实现仍走真函数 —— 其余用例拿到的必须是真图，
- * 而这条用例要的是「投稿图这条路径真的把 cellPx 接到了图纸渲染上」。
- * 常量比常量（SUBMISSION_CELL_PX === 32）恒真，接线断了也不变红，所以从调用现场取证。
+ * 只把被调的入口包成 spy，实现仍走真函数 —— 其余用例拿到的必须是真图。
+ * 下面几条要断的都是「接线」：投稿图与下载图长得不一样、水印贴错画布、遮罩
+ * 根本没转发，全都不会改变画布尺寸或白带干净那两条断言，所以只能从调用现场取证。
  */
 vi.mock('./board', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./board')>();
   return { ...actual, renderBeadBoard: vi.fn(actual.renderBeadBoard) };
+});
+vi.mock('./composite', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./composite')>();
+  return { ...actual, renderCompositeFromBoard: vi.fn(actual.renderCompositeFromBoard) };
+});
+vi.mock('./watermark', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./watermark')>();
+  return { ...actual, applyWatermark: vi.fn(actual.applyWatermark) };
 });
 
 // id 是色号字符串（annotator 拿它当文字画进格子里），不是索引 —— 写数字会让
@@ -22,9 +35,12 @@ const PALETTE: Palette = [
   { id: 'A02', rgb: [255, 0, 0], name: '红' },
 ];
 
-function makeResult(): PipelineResult {
+/** 交替色格；masked 时把 index 1 那颗红豆标成背景 —— 该格于是不再画豆 */
+function makeResult(masked = false): PipelineResult {
+  const indices = new Uint8Array([0, 1, 1, 0]);
+  const mask = new Uint8Array(masked ? [0, 1, 0, 0] : [0, 0, 0, 0]);
   return {
-    indices: new Uint8Array([0, 1, 1, 0]),
+    indices,
     gridSize: 2,
     outW: 2,
     outH: 2,
@@ -32,7 +48,7 @@ function makeResult(): PipelineResult {
     sourceH: 2,
     cropped: false,
     token: 0,
-    mask: new Uint8Array([0, 0, 0, 0]),
+    mask,
     simplifyColors: false,
     colorBudget: 'off',
     colorSimplification: {
@@ -42,6 +58,16 @@ function makeResult(): PipelineResult {
       budgetTargetColorCount: 0, budgetSatisfied: true, budgetFidelityLimited: false,
     },
   };
+}
+
+/** 画布上非白像素数。遮罩少画一颗豆，这个数就该跟着少。 */
+function nonWhiteCount(canvas: HTMLCanvasElement): number {
+  const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data;
+  let n = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) n++;
+  }
+  return n;
 }
 
 describe('renderSubmissionComposite', () => {
@@ -73,6 +99,37 @@ describe('renderSubmissionComposite', () => {
     expect(boardSpy).toHaveBeenCalledTimes(1);
     expect(boardSpy.mock.calls[0][4]).toMatchObject({ cellPx: SUBMISSION_CELL_PX });
     expect(SUBMISSION_CELL_PX).toBe(32);
+  });
+
+  it('贴水印：落在成品画布上，落位与导出路径共用同一份定义', async () => {
+    const watermarkSpy = vi.mocked(applyWatermark);
+    watermarkSpy.mockClear();
+    const canvas = await renderSubmissionComposite(PALETTE, makeResult());
+    // 只能从调用现场取证，不能断像素：水印是 fillText 画的，而 tests/setup.ts 的
+    // fillText 是空实现，贴之前贴之后非白像素都是 0。删掉贴水印这两行、或把它贴到
+    // 错误的画布上，这里是唯一会红的地方。
+    expect(watermarkSpy).toHaveBeenCalledTimes(1);
+    // 贴的是最终成品图，不是中途的图纸 —— 贴错画布时导出的图就没有水印
+    expect(watermarkSpy.mock.calls[0][0]).toBe(canvas);
+    // 落位不在这儿另写一份：三条渲染路径共用 watermarkPlacement，改一处即三处同步
+    expect(watermarkSpy.mock.calls[0][1]).toEqual(watermarkPlacement());
+  });
+
+  it('把遮罩转发给两处渲染：去背景的格子在投稿图上同样不画豆', async () => {
+    const boardSpy = vi.mocked(renderBeadBoard);
+    const compositeSpy = vi.mocked(renderCompositeFromBoard);
+    boardSpy.mockClear();
+    compositeSpy.mockClear();
+    const result = makeResult(true);
+    await renderSubmissionComposite(PALETTE, result);
+    // 两处都要转发：图纸层不转发就不画豆，色卡层不转发就会把背景格算进用量里
+    expect(boardSpy.mock.calls[0][4]).toMatchObject({ mask: result.mask });
+    expect(compositeSpy.mock.calls[0][5]).toBe(result.mask);
+    // 端到端再验一次：遮掉一颗红豆，成品图上的非白像素必须真的变少 ——
+    // 夹具里 mask 全 0、0 号又是纯白的话，遮罩丢了也看不出来（两重隐形）。
+    const masked = await renderSubmissionComposite(PALETTE, makeResult(true));
+    const plain = await renderSubmissionComposite(PALETTE, makeResult(false));
+    expect(nonWhiteCount(masked)).toBeLessThan(nonWhiteCount(plain));
   });
 
   it('不画二维码：码依赖作品 id，而 id 落库之后才知道', async () => {
