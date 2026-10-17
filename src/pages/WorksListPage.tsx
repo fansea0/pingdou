@@ -51,8 +51,10 @@ export function WorksListPage() {
   const trimmed = query.trim();
 
   return (
-    <div className="app">
-      <header>
+    <div className="app works-page">
+      {/* 标题区的收紧样式挂在 works-head 上（见 WorksListPage.css）：
+          global.css 里的 header h1 / .subtitle 是三个页面共用的，不能动。 */}
+      <header className="works-head">
         <h1>作品库</h1>
         <p className="subtitle">站主挑好的拼豆图纸，扫码或点进来就能拿走</p>
       </header>
@@ -60,7 +62,11 @@ export function WorksListPage() {
       <SiteNav current="/works" />
 
       <div className="works-controls">
-        <div className="works-search">
+        {/* 排序收进搜索框内部（作为输入框右侧的后缀控件），不再另占一行或一列宽度。
+            ✕ 只在有内容时挂载，所以它与排序的避让交给 CSS：
+            works-search--filled 才把 ✕ 要的那 44px 加进输入框的 padding-right，
+            两者的横向位置都从同一个 --works-sort-w 推导，不可能互相压住。 */}
+        <div className={query ? 'works-search works-search--filled' : 'works-search'}>
           <input
             type="search"
             className="works-search-input"
@@ -79,21 +85,21 @@ export function WorksListPage() {
               ✕
             </button>
           )}
-        </div>
 
-        <div className="works-sort" role="group" aria-label="排序方式">
-          <button
-            type="button"
-            aria-pressed={sort === 'latest'}
-            className={sort === 'latest' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
-            onClick={() => setSort('latest')}
-          >最新</button>
-          <button
-            type="button"
-            aria-pressed={sort === 'hot'}
-            className={sort === 'hot' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
-            onClick={() => setSort('hot')}
-          >最热</button>
+          <div className="works-sort" role="group" aria-label="排序方式">
+            <button
+              type="button"
+              aria-pressed={sort === 'latest'}
+              className={sort === 'latest' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
+              onClick={() => setSort('latest')}
+            >最新</button>
+            <button
+              type="button"
+              aria-pressed={sort === 'hot'}
+              className={sort === 'hot' ? 'works-sort-btn works-sort-btn--on' : 'works-sort-btn'}
+              onClick={() => setSort('hot')}
+            >最热</button>
+          </div>
         </div>
       </div>
 
@@ -139,7 +145,15 @@ export function WorksListPage() {
             <ul className="works-grid">
               {items.map(w => (
                 <li key={w.id} className="works-card">
-                  {/* 点赞按钮必须在这个 <a> 外面（见下面的 works-card-body） */}
+                  {/* 结构约束（三条同时成立才合法）：
+                      1) 标题必须留在 <a> 里 —— img 的 alt 是刻意留空的，
+                         链接的可访问名全靠这段文字，挪出去链接就成了空名字。
+                      2) <button> 不能嵌套在 <a> 里 —— 那是无效 HTML，
+                         点它到底跳不跳详情页各家浏览器行为不一致。
+                      3) 所以点赞按钮是 <a> 的兄弟，靠 position:absolute
+                         压在图片右下角（见 WorksListPage.css 的 .works-card-like）。
+                      日期一并去掉：它曾独占卡片底部一整行，也是「作品太大了」
+                      的一半原因。发布日期不是找图的必要信息。 */}
                   <a href={`/works/${w.id}`} className="works-card-link">
                     {/* alt 留空是刻意的：标题文字就在同一张 <a> 里，
                         再给 img 一份 alt 会让链接的可访问名变成「标题标题」，
@@ -154,14 +168,13 @@ export function WorksListPage() {
                     />
                     <span className="works-card-title">{w.title}</span>
                   </a>
-                  <div className="works-card-body">
-                    <span className="works-card-meta">
-                      {new Date(w.createdAt).toLocaleDateString()}
-                    </span>
-                    {/* 点赞只改自己的数字，不回调父级、不排序 —— 列表顺序
-                        一律以服务端本次响应为准（设计文档 §4.2.1）。 */}
-                    <LikeButton work={w} onError={setLikeError} />
-                  </div>
+                  {/* 点赞只改自己的数字，不回调父级、不排序 —— 列表顺序
+                      一律以服务端本次响应为准（设计文档 §4.2.1）。 */}
+                  <LikeButton
+                    work={w}
+                    onError={setLikeError}
+                    className="works-card-like"
+                  />
                 </li>
               ))}
             </ul>

@@ -434,7 +434,32 @@ describe('点赞按钮', () => {
     render(<WorksListPage />);
     const link = await screen.findByRole('link', { name: 'A' });
     const btn = screen.getByRole('button', { name: /5 次点赞/ });
+    // 浮层形态下按钮是 <a> 的兄弟，压在图片右下角，而不是链接的后代
     expect(link.contains(btn)).toBe(false);
+    expect(btn.closest('a')).toBeNull();
+  });
+
+  it('卡片标题仍留在链接内 —— 链接的可访问名全靠它（img 的 alt 是留空的）', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, '粉色小熊', 5)], total: 1 });
+    render(<WorksListPage />);
+    const link = await screen.findByRole('link', { name: '粉色小熊' });
+    // 可访问名退化（标题挪出 <a>）时这条 findByRole 直接找不到链接
+    expect(link.querySelector('.works-card-title')?.textContent).toBe('粉色小熊');
+    expect(link.querySelector('.works-card-img')).toBeTruthy();
+  });
+
+  it('日期那一行已从卡片上移除，浮层徽章挂在卡片而不是链接里', async () => {
+    listWorks.mockResolvedValue({ items: [work(1, 'A', 5)], total: 1 });
+    fetchLikeState.mockResolvedValue({ likes: 5, liked: false });
+    const { container } = render(<WorksListPage />);
+    await screen.findByText('A');
+
+    // 产品决定：发布日期是设计移除的，不是漏了 —— 底部整行（日期 + 游离的
+    // 小爱心）被一张浮在图片右下角的徽章取代，卡片因此矮了一整行。
+    expect(container.querySelector('.works-card-body')).toBeNull();
+    expect(container.querySelector('.works-card-meta')).toBeNull();
+    const card = container.querySelector('.works-card') as HTMLElement;
+    expect(card.querySelector('.works-card-like')).toBeTruthy();
   });
 
   it('点一下调 likeWork 并更新数字', async () => {

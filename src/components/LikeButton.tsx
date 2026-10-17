@@ -11,9 +11,17 @@ import './LikeButton.css';
 export function LikeButton({
   work,
   onError,
+  className,
 }: {
   work: WorkSummary;
   onError: (message: string) => void;
+  /**
+   * 追加在 .works-like / .works-like--on 之后的额外 class，透传到根 <button>。
+   *
+   * 详情页不传 —— 那里是行内按钮的形态；列表页传 works-card-like，把它改成压在
+   * 图片右下角的小徽章。不传时行为与视觉与以前完全一致。
+   */
+  className?: string;
 }) {
   const [likes, setLikes] = useState(work.likes);
   const [liked, setLiked] = useState(false);
@@ -70,10 +78,14 @@ export function LikeButton({
     }
   };
 
+  // className 透传不碰 liked 状态的 class，只在后面追加 —— 详情页不传，
+  // 渲染结果与改造前逐字相同。
+  const cls = liked ? 'works-like works-like--on' : 'works-like';
+
   return (
     <button
       type="button"
-      className={liked ? 'works-like works-like--on' : 'works-like'}
+      className={className ? `${cls} ${className}` : cls}
       onClick={onClick}
       disabled={liked || busy}
       // 不用 aria-pressed：pressed 语义告诉辅助技术「这是个可来回切换的开关」，
