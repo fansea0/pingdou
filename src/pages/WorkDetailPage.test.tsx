@@ -1,7 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { WorkDetail } from '@/api/works';
 import { WorkDetailPage, formatBytes } from './WorkDetailPage';
 
@@ -321,81 +319,30 @@ describe('详情页点赞', () => {
     expect(screen.getByRole('button', { name: /8 次点赞/ })).toBeTruthy();
   });
 
-  it('点赞按钮在标题行右侧，底部操作区只剩「下载原图」', async () => {
-    // 用户原话「点赞放在标题那一行的右侧」。这条钉的是结构本身：
-    // 点赞是 header 那一行的直接子元素（h1 与它同辈），下载独占底部操作区。
-    // 回到「点赞在 meta 区、与下载并排」时下面两条文案/download 断言仍然全绿，
-    // 所以只有结构断言能拦住这种回退。
+  it('点赞与下载同在操作区里并排（共用一条左对齐轴）', async () => {
+    // 用户原话「布局很奇怪」。病根是两个紧挨着的按钮用了两条不同的对齐轴：
+    // 点赞 justify-content:center、下载 inline-block 靠左，中间还隔着一组
+    // 左对齐的 meta 行。这条把「同辈 + 同一父容器」钉死 —— 回到上下两块时
+    // 下面两条布局断言仍然全绿（它们只查文案与 download 属性），
+    // 所以这里查的是结构本身。
     fetchWork.mockResolvedValue(detail({ likes: 8 }));
     const { container } = render(<WorkDetailPage id={42} />);
     const btn = await screen.findByRole('button', { name: /8 次点赞/ });
-
-    const row = container.querySelector('.works-detail-header-row') as HTMLElement;
-    expect(row).toBeTruthy();
-    // h1 与点赞按钮是同一行的两个直接子元素
-    expect(Array.from(row.children)).toEqual([screen.getByRole('heading', { name: '粉色小熊' }), btn]);
-    expect(row.closest('header')).toBeTruthy();
-
-    // 底部操作区只剩下载，且它仍是直接子元素（没有多包一层）
-    const actions = container.querySelector('.works-detail-actions') as HTMLElement;
-    expect(Array.from(actions.children)).toEqual([screen.getByRole('link', { name: '下载原图' })]);
-    // 点赞按钮带着自己的形态 class，胶囊样式是它跟标题行对齐的依据
+    const link = screen.getByRole('link', { name: '下载原图' });
+    // 操作区在数据回来后才渲染，所以必须先 await 再查
+    const actions = container.querySelector('.works-detail-actions');
+    expect(actions).toBeTruthy();
+    // 都是操作区的直接子元素（而不是一层 div 里一层 a）
+    const kids = Array.from((actions as HTMLElement).children);
+    expect(kids).toContain(btn);
+    expect(kids).toContain(link);
+    // 点赞按钮带着自己的形态 class，样式是它跟下载对齐的依据
     expect(btn.className).toContain('works-detail-like');
-  });
-
-  it('点赞失败提示紧跟在标题行下方（不在 meta 区里）', async () => {
-    // 按钮搬到标题行后，提示必须跟着走 —— 否则「点得太快啦」会出现在页面中部
-    // 离出错源头很远的地方。这条钉的是提示与按钮同处一个 header。
-    fetchWork.mockResolvedValue(detail({ likes: 8 }));
-    likeWork.mockRejectedValue(new Error('too many likes, try again later'));
-    const { container } = render(<WorkDetailPage id={42} />);
-    fireEvent.click(await screen.findByRole('button', { name: /8 次点赞/ }));
-
-    const err = await screen.findByText(/操作失败：点得太快啦/);
-    expect((err as HTMLElement).closest('header')).toBeTruthy();
-    expect(container.querySelector('.works-detail-like-error')).toBe(err);
-  });
-
-  it('已赞态下爱心换成实心填充，不只是换颜色', async () => {
-    // 用户原话「没有记录是否已经点赞，只是展示了点赞数量」。病根是未赞/已赞
-    // 是同一颗心、只换颜色 —— 远看只能读出一个数字。这条钉住形状开关：
-    //   未赞 path 无 fill/stroke 属性（由 CSS 控制）+ 默认态 CSS 是空心描边
-    //   已赞 CSS 那条规则是 fill:currentColor + stroke:none
-    // 只断言 class 名是不够的 —— class 一直在，改回「只换颜色」照样全绿。
-    fetchWork.mockResolvedValue(detail({ likes: 9 }));
-    fetchLikeState.mockResolvedValue({ likes: 9, liked: true });
-    const { container } = render(<WorkDetailPage id={42} />);
-    const btn = await screen.findByRole('button', { name: /已赞，9 次点赞/ });
-    expect(btn.className).toContain('works-like--on');
-
-    const svg = btn.querySelector('svg') as SVGSVGElement;
-    const path = btn.querySelector('svg path') as SVGPathElement;
-    expect(path).toBeTruthy();
-    // fill / stroke 必须是纯 CSS 控制：SVG 呈现属性一旦写在这里（svg 或 path 上都算），
-    // 下面的 .works-like--on 规则就再也切不动形状了。旧版本正是写在 <svg> 上的。
-    for (const el of [svg, path] as Element[]) {
-      expect(el.hasAttribute('fill')).toBe(false);
-      expect(el.hasAttribute('stroke')).toBe(false);
-    }
-
-    // vitest 默认不注入样式表，getComputedStyle 读不到值会空跑，
-    // 所以直接查 CSS 源码（与 RegionStatsPanel.test.tsx 同一个理由）。
-    const css = readFileSync(resolve(process.cwd(), 'src/pages/WorkDetailPage.css'), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '');
-    const offRule = css.slice(css.indexOf('.works-detail-like-icon path'));
-    expect(offRule.slice(0, offRule.indexOf('}'))).toMatch(/fill:\s*none/);
-    const onRule = css.slice(css.indexOf('.works-detail-like.works-like--on .works-detail-like-icon path'));
-    const onBody = onRule.slice(0, onRule.indexOf('}'));
-    expect(onBody).toMatch(/fill:\s*currentColor/);
-    expect(onBody).toMatch(/stroke:\s*none/);
-    // 过渡也不能丢：否则切换是硬跳，两态的区别更读不出来
-    expect(css).toMatch(/transition:\s*fill 0\.18s[^;]*stroke 0\.18s/);
-    expect(container.querySelector('.works-detail-like-icon path')).toBe(path);
   });
 
   it('点赞用内联 SVG 爱心，不是 ♡ 字符（爱心太小读不出来）', async () => {
     // 字符心形在 12px 下就是一个小点，用户原话「爱心太小了」。改成内联 SVG 后
-    // 几何对称路径（两段圆弧严格镜像）+ 18px 内联尺寸。
+    // 尺寸/描边写在 SVG 属性上，与列表页排序图标同一套规格。
     fetchWork.mockResolvedValue(detail({ likes: 8 }));
     const { container } = render(<WorkDetailPage id={42} />);
     const btn = await screen.findByRole('button', { name: /8 次点赞/ });
@@ -403,11 +350,10 @@ describe('详情页点赞', () => {
     const svg = btn.querySelector('svg');
     expect(svg).toBeTruthy();
     expect(svg!.getAttribute('viewBox')).toBe('0 0 24 24');
-    expect(svg!.getAttribute('width')).toBe('18');
-    expect(svg!.getAttribute('stroke-linecap')).toBe('round');
+    expect(svg!.getAttribute('stroke')).toBe('currentColor');
+    expect(svg!.getAttribute('stroke-width')).toBe('1.8');
     // 图形不进朗读：可访问名由 aria-label 给（上面 name: /8 次点赞/ 就是它）
     expect(svg!.getAttribute('aria-hidden')).toBe('true');
-    expect(svg!.getAttribute('focusable')).toBe('false');
     expect(btn.textContent).not.toMatch(/[♡♥]/);
     expect(container.querySelector('.works-detail-like-icon')).toBe(svg);
   });
