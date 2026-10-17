@@ -80,15 +80,43 @@
   margin: 0;
 }
 
-/* 操作区：点赞与「下载原图」共用一条左起点。
-   同高靠 align-items: stretch（两者 min-height 相同，stretch 再兜一层），
-   间距靠 gap 而不是各自的 margin —— margin 会让换行时第一行的间距跟着
-   消失，gap 在换行后每行都还在。 */
+/*
+ * 标题行：h1 靠左、点赞按钮靠右。
+ *
+ * 只做布局，不碰字号 —— global.css 的 `header h1`（--text-2xl / 700，
+ * ≤900px 压到 18px）是整站移动端外壳一起缩小的规则，改它会波及全站。
+ *
+ * h1 侧写 min-width: 0：flex 子项默认 min-width:auto，标题里的长单词/长中文串
+ * 会把这一行撑到超过容器宽度，space-between 也就失效、右边的按钮被挤出屏幕。
+ * 配合 nowrap + ellipsis，标题再长只截断自己。
+ * gap 也给了下限，窄屏下按钮不会被贴到 h1 上。
+ */
+.works-detail-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.works-detail-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 失败提示压在标题行正下方、靠右 —— 与按钮同一侧，提示离出错源头最近。 */
+.works-detail-like-error {
+  margin: var(--space-2) 0 0;
+  color: var(--color-error-fg);
+  font-size: var(--text-sm);
+  text-align: right;
+}
+
+/* 操作区：现在只剩「下载原图」一个按钮（点赞已挪到标题行），
+   主操作独占一条左对齐轴，不再有同辈控件分它的层级。 */
 .works-detail-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: var(--space-3);
   margin-top: var(--space-4);
 }
 
@@ -115,20 +143,21 @@
   background: var(--color-accent-hover);
 }
 
-/* 次操作：点赞。用描边而不是填充表达层级，与列表页那套「不靠面积说话」
-   的语言一致；状态也用颜色而不是填充表达（未赞 --color-text，已赞主色）。
+/* 次操作：点赞。胶囊形（999px 圆角 + 1px 描边），高度 44px —— 触摸区达标，
+   又不至于在标题行里压过标题。用描边而不是填充表达层级。
    选择器写成 `.works-detail-like.works-like` 升到 (0,2,0)：LikeButton.css 里的
    .works-like 同为 (0,1,0)，让它俩的胜负取决于 CSS 注入顺序（与列表页
    .works-card .works-card-label 是同一个理由）。 */
 .works-detail-like.works-like {
-  min-height: 48px;
+  flex: none;
+  min-height: 44px;
   padding: var(--space-2) var(--space-4);
   gap: var(--space-2);
   border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   background: transparent;
   color: var(--color-text);
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   transition: color 0.15s, border-color 0.15s;
 }
@@ -138,22 +167,41 @@
   color: var(--color-accent);
 }
 
-/* 已赞：只换颜色与字重，不换底色。与上面的基础规则同为 (0,2,0)，
-   写在后面才赢；已赞时按钮是 disabled，hover 规则本来就不匹配。 */
+/* 已赞：胶囊描边转主色。与基础规则同为 (0,2,0)，写在后面才赢；
+   已赞时按钮是 disabled，hover 规则本来就不匹配。 */
 .works-detail-like.works-like--on {
   border-color: var(--color-accent);
   color: var(--color-accent);
 }
 
-/* 爱心图标 18px：按钮更大，心形要靠描边读出来，不是靠面积 */
+/*
+ * 爱心 18px：按钮比字符心形大得多，心形要靠描边/面积读出来。
+ *
+ * fill / stroke **不在 SVG 属性上**（见 WorkDetailPage.tsx 的 LIKE_ICON 注释）：
+ * 它们是「未赞空心 / 已赞实心」这个形状开关，交给 CSS 才能切。
+ * 形状变了（描边 ↔ 填充），不只是换颜色 —— 这是「我赞过没」能被一眼读出来的
+ * 全部原因：同一颗心只换颜色时，远看只能读出一个数字。
+ * transition 放在这里而不是按钮上：fill / stroke 是 SVG 图形自己的属性。
+ */
 .works-detail-like-icon {
   width: 18px;
   height: 18px;
   flex: none;
 }
 
-.works-detail-like-error {
-  margin: var(--space-2) 0 0;
-  color: var(--color-error-fg);
-  font-size: var(--text-sm);
+.works-detail-like-icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  transition: fill 0.18s ease, stroke 0.18s ease;
+}
+
+/* 已赞 → 实心填充，描边收掉（避免实心上还叠一圈边糊成一坨）。
+   hover **刻意不给**这个终态：鼠标停在按钮上时如果也填实，鼠标不挪开就点一下，
+   前后两帧长得一模一样 —— 那等于把本轮要解决的「看不出我赞过没」又还回去了。
+   hover 只换颜色与描边（见上面那条 :hover 规则），三态因此互不相同：
+     未赞静置 = 空心 + 中性色 / 未赞悬停 = 空心 + 主色 / 已赞 = 实心 + 主色 */
+.works-detail-like.works-like--on .works-detail-like-icon path {
+  fill: currentColor;
+  stroke: none;
 }

@@ -34,16 +34,15 @@ const FALLBACK_EXT = '.png';
 const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 
 /*
- * 详情页点赞按钮里的爱心：内联 SVG。
+ * 详情页点赞按钮里的爱心：内联 SVG，几何对称版（两段圆弧严格镜像、无凹口）。
  *
- * 与 WorksListPage 的排序图标同一套规格（viewBox 0 0 24 24、fill=none、
- * stroke=currentColor、圆形/折角端点），差别只在尺寸与描边：这里 18px / 1.8，
- * 比排序的 20px / 1.6 略重一点点 —— 按钮更大、心形要靠描边而不是面积说话，
- * 17px 上下糊成黑团的风险更高。
+ * 为什么 SVG 上**不写** fill / stroke：这两条正是「未赞 / 已赞」的形状开关
+ * （空心描边 ↔ 实心填充），写死成呈现属性就没法用 CSS 切换。CSS 规则的优先级
+ * 高于 SVG 呈现属性，所以把它们全部交给 WorkDetailPage.css 控制，
+ * `.works-like--on` 那条才能干净地换形状而不只是换颜色。
  *
  * 为什么是爱心不是火焰：爱心 = 「点赞」这个动作（列表页浮层徽章也是心形，
- * 同一动作同一符号）；火焰 = 「按最热排序」那个排序方式。两者一个是动作、
- * 一个是排序，不是同一个东西，共存不矛盾。
+ * 同一动作同一符号）；火焰 = 「按最热排序」那个排序方式。
  *
  * aria-hidden：可访问名一律由 <button> 的 aria-label（「N 次点赞」/「已赞，N 次点赞」）
  * 提供，图形不进朗读。
@@ -54,15 +53,12 @@ const LIKE_ICON = (
     viewBox="0 0 24 24"
     width="18"
     height="18"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
     strokeLinecap="round"
     strokeLinejoin="round"
     aria-hidden="true"
     focusable="false"
   >
-    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    <path d="M12 20.4 4.1 12.5a4.8 4.8 0 0 1 6.8-6.8L12 6.8l1.1-1.1a4.8 4.8 0 1 1 6.8 6.8Z" />
   </svg>
 );
 
@@ -154,8 +150,29 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
 
   return (
     <div className="app works-detail">
-      <header>
-        <h1>{work.title}</h1>
+      {/* 标题行：h1 靠左、点赞靠右（用户原话「点赞放在标题那一行的右侧」）。
+          flex + space-between 让两极分到容器两端；h1 单行 + ellipsis + min-width:0，
+          标题再长也只是自己截断，不会把右边的按钮挤出屏幕。
+          这里只加布局，不动 global.css 里 header h1 的字号（--text-2xl / 700，
+          ≤900px 压到 18px 是整站外壳一起缩小的规则）。 */}
+      <header className="works-detail-header">
+        <div className="works-detail-header-row">
+          <h1 className="works-detail-title">{work.title}</h1>
+
+          {/*
+            点赞放在标题行里而不是 meta 区：它是「顺手赞一下」的轻操作，
+            挂在标题上比挂在下面那条主操作轴上更像附属动作，也不会跟
+            「下载原图」抢层级。图与这个按钮不在一个容器里，
+            点赞碰不到长按存图那条路径。
+          */}
+          <LikeButton work={work} onError={setLikeError} className="works-detail-like" icon={LIKE_ICON} />
+        </div>
+
+        {/* 失败提示跟着按钮走：按钮在标题行，提示就压在标题行正下方（靠右对齐，
+            与按钮同一侧），而不是掉到页面中部的 meta 区里离出错源头很远。 */}
+        {likeError && (
+          <p className="works-detail-like-error" role="status">操作失败：{likeError}</p>
+        )}
       </header>
 
       <SiteNav current={`/works/${id}`} />
@@ -192,27 +209,20 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
           {/*
             赞数初值来自 fetchWork 带回来的 WorkDetail.likes（Task 3 起列表/详情接口
             一次 SQL 带回真实计数），挂载后 LikeButton 自己再查一次「我今天赞过没」。
-            图与「下载原图」链接都在这个 section 之外，点赞不会碰到长按存图那条路径。
           */}
           {/*
-            点赞与下载放在同一个 flex 行里，两个控件共用一条左对齐轴 ——
-            它们是「把这张图拿走 / 顺手赞一下」的同辈操作，不再是上下两个
-            各占一行的独立块（以前点赞居中、下载靠左，两条不同的对齐轴夹着
-            一组左对齐的 meta 行，就是用户说的「布局奇怪」）。
-            flex-wrap：窄屏一行放不下就换行，换行后仍从左起点开始（默认行为）。
+            操作区现在只剩「下载原图」一个按钮 —— 点赞已挪到标题行右侧。
+            它是这个页面唯一的任务（「把图拿走」），所以这里不该再有同辈控件
+            分它的层级，留一个主操作独占一条左对齐轴。
+            同一个 URL 承担两种用途，这是刻意设计：
+              被 <img> 引用 → 浏览器内联渲染 → 可长按保存（微信内置浏览器唯一可行路径）
+              被带 download 的 <a> 引用 → 浏览器直接下载（微信外浏览器 / Safari / Chrome 桌面）
+            所以不需要 Content-Disposition，也不需要 dev 路由与 nginx 各写一套 ?dl=1 分支。
+            扩展名从 imageUrl 推，不写死 .png —— 原图不保证是 PNG。
+            文件名先过 safeFileName：标题里的 / : 等字符由我们自己替换掉，
+            免得落盘名被浏览器事后消毒成另一副样子（理由见 safeFileName 注释）。
           */}
           <div className="works-detail-actions">
-            <LikeButton work={work} onError={setLikeError} className="works-detail-like" icon={LIKE_ICON} />
-
-            {/*
-              同一个 URL 承担两种用途，这是刻意设计：
-                被 <img> 引用 → 浏览器内联渲染 → 可长按保存（微信内置浏览器唯一可行路径）
-                被带 download 的 <a> 引用 → 浏览器直接下载（微信外浏览器 / Safari / Chrome 桌面）
-              所以不需要 Content-Disposition，也不需要 dev 路由与 nginx 各写一套 ?dl=1 分支。
-              扩展名从 imageUrl 推，不写死 .png —— 原图不保证是 PNG。
-              文件名先过 safeFileName：标题里的 / : 等字符由我们自己替换掉，
-              免得落盘名被浏览器事后消毒成另一副样子（理由见 safeFileName 注释）。
-            */}
             <a
               className="works-detail-btn"
               href={work.imageUrl}
@@ -221,9 +231,6 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
               下载原图
             </a>
           </div>
-          {likeError && (
-            <p className="works-detail-like-error" role="status">操作失败：{likeError}</p>
-          )}
         </section>
       </main>
     </div>
