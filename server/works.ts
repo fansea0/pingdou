@@ -624,3 +624,92 @@ export function likeStateOf(
   rotateDayIfNeeded(now);
   return { likes: likesOf(workId), liked: seenFingerprints.has(fingerprint) };
 }
+
+// ---- 投稿配额（2026-10-17） ----
+
+/**
+ * 每 IP + 每 UA 每天能投几件。
+ *
+ * 3 件/天对真实用户足够（没人会一天投 9 张图），对磁盘的暴露却有界：
+ * 单件成品图 1–5 MB。
+ */
+export const SUBMISSION_DAILY_LIMIT = 3;
+
+/**
+ * 指纹表的上限。指纹里的 IP 和 UA 都由客户端控制，伪造 IP + 轮换 UA 能让 Map
+ * 无限增长 —— 内存被撑爆比 DB 慢严重得多。
+ */
+export const SUBMISSION_QUOTA_MAX = 20_000;
+
+/**
+ * 投稿指纹：hash(IP + User-Agent + 日期 + 盐)。
+ *
+ * 与 likeFingerprint 同一套口径（同一个 WORKS_IP_SALT、同一个 \0 分隔符、同一个
+ * isoDay UTC 日期、同样截断 16 位），只是**去掉了作品 ID 那一段** —— 投稿时作品
+ * 还不存在。
+ *
+ * 包含 UA 的后果要认下来：轮换 UA 就能绕过 3 件/天。这是有意的取舍，兜底是审核
+ * 本身 —— pending 永远不公开，攻击者投进来的东西站主一眼就能看到并拒绝。
+ * 与其把配额做成攻防战，不如让审核队列当最后一道闸。
+ */
+export function submissionFingerprint(
+  ip: string,
+  userAgent: string,
+  now: number = Date.now(),
+): string {
+  return createHash('sha256')
+    .update(`${ip}\u0000${userAgent}\u0000${isoDay(now)}:${WORKS_IP_SALT}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+
+let quotaDay = '';
+let quotaCount = new Map<string, number>();
+
+/**
+ * 跨天轮转。每次读写都调，所以不存在「没人投稿时不轮转、第二天第一次投稿读到
+ * 昨天残留」的问题。与 likeFingerprint 那边的 rotateDayIfNeeded 同一套写法。
+ */
+function rotateQuotaIfNeeded(now: number): void {
+  const day = isoDay(now);
+  if (day === quotaDay) return;
+  quotaDay = day;
+  quotaCount = new Map();
+}
+
+/** 这个指纹今天还能再投几件。0 = 今日额度已用完。只读，不占名额。 */
+export function remainingSubmissions(
+  ip: string,
+  userAgent: string,
+  now: number = Date.now(),
+): number {
+  rotateQuotaIfNeeded(now);
+  const used = quotaCount.get(submissionFingerprint(ip, userAgent, now)) ?? 0;
+  return Math.max(0, SUBMISSION_DAILY_LIMIT - used);
+}
+
+/**
+ * 占用一个名额。返回 false = 今日额度已用完，调用方应回 429。
+ *
+ * **只挂在真正会写库的那一步上**（createSubmission 在参数校验之后调它），
+ * 不要挪到参数校验之前：用户把名称打错一个字收到一个 400，不该同时白扣掉
+ * 每日 3 件里的 1 件。
+ *
+ * 触顶时的选择是**整份丢弃**（fail-open）：配额失效、投稿继续，但进程活着。
+ * 反过来 fail-closed 会把一次异常流量变成当天全站投不了稿。
+ */
+export function allowSubmission(
+  ip: string,
+  userAgent: string,
+  now: number = Date.now(),
+): boolean {
+  rotateQuotaIfNeeded(now);
+  if (quotaCount.size > SUBMISSION_QUOTA_MAX) {
+    quotaCount = new Map();
+  }
+  const fp = submissionFingerprint(ip, userAgent, now);
+  const used = quotaCount.get(fp) ?? 0;
+  if (used >= SUBMISSION_DAILY_LIMIT) return false;
+  quotaCount.set(fp, used + 1);
+  return true;
+}
