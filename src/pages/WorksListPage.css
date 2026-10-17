@@ -121,6 +121,18 @@
   background: var(--color-surface-alt);
 }
 
+/* 缩略图缺失时的占位框（<span>，不是 <img>）。
+   放在 .works-card-img 之后：同特异度，靠源码顺序覆盖它的 display:block，
+   把框内的文字居中。
+   文案走 --color-text-muted：这条行确实没有图，说得中性，不表态是谁没传。 */
+.works-card-img-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
 .works-card-title {
   /* 必须保持块级：flex 容器的匿名子项拿不到 text-overflow，长标题会直接
      冲出卡片被 overflow:hidden 硬切（没有省略号）。垂直居中改用等高行盒。 */

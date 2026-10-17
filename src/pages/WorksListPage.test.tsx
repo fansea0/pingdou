@@ -113,6 +113,33 @@ describe('WorksListPage', () => {
     expect(img.getAttribute('alt')).toBe('');
   });
 
+  // 站主可以把一条「投稿第一步成功、第二步上传没做成」的孤儿行点通过
+  // （approveWork 不看有没有图，这是有意保留的产品口径，见本次报告的遗留项），
+  // 它就会带着空 thumbUrl 落到这里。服务端此时给的是**空串**而不是 '/media/'
+  // （server/works.ts 的 publicUrlOrEmpty），所以只把 imageUrl 置空、却留着合法
+  // thumbUrl 的夹具是假的 —— 那样永远跑不到这条分支。
+  it('thumbUrl 为空时画占位框，不出 src 为空的 <img>，链接可访问名仍只有标题', async () => {
+    listWorks.mockResolvedValue({
+      items: [{ ...work(1, '半途而废'), thumbUrl: '' }],
+      total: 1,
+    });
+    const { container } = render(<WorksListPage />);
+
+    expect(await screen.findByText('半途而废')).toBeTruthy();
+    // 主断言：空 src 不是「不发请求」，浏览器会拿当前页地址再请求一次，
+    // 站主看到的是「缩略图加载失败」，会以为站点坏了。
+    expect(container.querySelector('img')).toBeNull();
+    const placeholder = container.querySelector('.works-card-img-empty');
+    expect(placeholder).toBeTruthy();
+    expect(placeholder!.textContent).toBe('暂无图片');
+    // 占位框沿用 .works-card-img 的 4:5 尺寸，网格才不会因这条行塌一块。
+    expect(placeholder!.classList.contains('works-card-img')).toBe(true);
+    // 占位住在 <a> 里，必须对读屏隐形：否则链接的可访问名会变成「半途而废 暂无图片」。
+    expect(screen.getByRole('link', { name: '半途而废' })).toBeTruthy();
+    // 卡片本身仍是正常可点的详情页入口，不能因为没图就整张卡失效。
+    expect(container.querySelector('.works-card-link')!.getAttribute('href')).toBe('/works/1');
+  });
+
   it('空列表给出空状态和前往生成的入口', async () => {
     listWorks.mockResolvedValue({ items: [], total: 0 });
     render(<WorksListPage />);

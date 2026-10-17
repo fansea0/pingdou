@@ -242,7 +242,7 @@ location /products/ { alias /var/lib/pingdou/images/; }
 
 ### 4.5 `location /media/works/` 的正则 alias
 
-作品原图与缩略图（admin 上传，前台作品库展示）走这条：
+作品原图与缩略图（来自用户投稿，前台作品库展示）走这条：
 
 ```nginx
 location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {

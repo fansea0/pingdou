@@ -237,12 +237,30 @@ export function WorksListPage() {
                         屏幕阅读器读两遍，getByRole('link', {name}) 也匹配不上。
                         也不写 width/height 属性：它们是原图尺寸，而下面 CSS 强制
                         4:5 的框，浏览器按 CSS aspect-ratio 预留位置，留着只会误导。 */}
-                    <img
-                      className="works-card-img"
-                      src={w.thumbUrl}
-                      alt=""
-                      loading="lazy"
-                    />
+                    {/* thumbUrl 为空就是「这件作品没有图」：两列 key 都空时，服务端算出来
+                        的正是空串，而不是一个能取到图的地址（server/works.ts 的
+                        publicUrlOrEmpty）。
+                        这里必须挡：空 src 不是「不发请求」，浏览器会拿当前页地址再请求一次，
+                        要么画破图、要么把整页当图片拉一遍，访客只会以为站点坏了。
+                        判断用真值而不是 === ''：undefined 与空串落进同一个分支，
+                        顺带兜住，不是在断言线上真出现过缺字段的响应。
+                        占位框复用 .works-card-img 的 4:5 尺寸，网格才不会因这条
+                        行而塌一块。
+                        aria-hidden 是必须的：它待在 <a> 里，一旦被读屏念出来，链接的
+                        可访问名就变成「标题暂无图片」，上面那条 alt 留空的约束
+                        （名字只能来自标题文字）就白写了。占位是视觉说明，不是链接名。 */}
+                    {w.thumbUrl ? (
+                      <img
+                        className="works-card-img"
+                        src={w.thumbUrl}
+                        alt=""
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span className="works-card-img works-card-img-empty" aria-hidden="true">
+                        暂无图片
+                      </span>
+                    )}
                     <span className="works-card-title">{w.title}</span>
                   </a>
                   {/* 点赞只改自己的数字，不回调父级、不排序 —— 列表顺序
