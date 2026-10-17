@@ -667,8 +667,16 @@ let quotaDay = '';
 let quotaCount = new Map<string, number>();
 
 /**
- * 跨天轮转。每次读写都调，所以不存在「没人投稿时不轮转、第二天第一次投稿读到
- * 昨天残留」的问题。与 likeFingerprint 那边的 rotateDayIfNeeded 同一套写法。
+ * 跨天轮转。与 likeFingerprint 那边的 rotateDayIfNeeded 同一套写法。
+ *
+ * **它的职责是内存卫生，不是「算对今天用了几件」。** 指纹里已经含 isoDay，
+ * 昨天的 key 今天根本不会被查到 —— 所以就算没有这个函数，跨天后的额度一样是对的
+ * （两套机制在「行为」上等价，任何一套在就够）。
+ *
+ * 不轮转的真正后果在别处：旧 key 再也查不到却仍留在 Map 里，Map 于是**跨天单调
+ * 增长**。很快就越过 SUBMISSION_QUOTA_MAX，此后每次写入都触发整份丢弃 ——
+ * 上限就从「每天 2 万」退化成「进程启动以来累计 2 万」，配额会被反复打穿，
+ * 等于上限本身名存实亡。轮转把上限守回**每日**口径，这才是它不可省的原因。
  */
 function rotateQuotaIfNeeded(now: number): void {
   const day = isoDay(now);

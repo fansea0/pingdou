@@ -49,7 +49,18 @@ describe('投稿配额', () => {
     expect(works.allowSubmission('5.6.7.8', 'UA')).toBe(true);
   });
 
-  it('跨天自动重置（配额按 UTC 日历日，与 events/sessions 同一口径）', async () => {
+  /**
+   * 只承诺「跨一整个日历日后额度恢复」——这一条验的是可观测行为。
+   *
+   * 上一版把它叫「跨天自动重置（配额按 UTC 日历日）」，名字里的「UTC」没有任何
+   * 断言支撑：用例只跨 `+24h`，UTC 日与本地日在这个跨度上都判成两天，
+   * 整时间戳粒度、24 小时滚动窗口同样分不出来（实测把 `isoDay` 换成本地日历日
+   * 仍然全绿）。UTC 那一半已挪到下面「日界钉在 UTC 日界」那条专门负责。
+   *
+   * 「UTC 日」与「每天清表」是两套独立机制（指纹含日期 / rotateQuotaIfNeeded），
+   * 任意一套在就能让本条通过，所以本条也不能替其中任一套作证。
+   */
+  it('跨一整个日历日后额度恢复', async () => {
     const works = await freshWorks();
     const day1 = Date.parse('2026-10-17T10:00:00Z');
     for (let i = 0; i < 3; i++) works.allowSubmission('1.2.3.4', 'UA', day1);
@@ -57,6 +68,69 @@ describe('投稿配额', () => {
     // 东八区凌晨 1 点仍是 UTC 前一天，所以要跨足一整个 UTC 日
     const day2 = day1 + 24 * 60 * 60 * 1000;
     expect(works.allowSubmission('1.2.3.4', 'UA', day2)).toBe(true);
+  });
+
+  /**
+   * 「UTC 日历日」这半个承诺的正式担保。
+   *
+   * 钉在 UTC 日界（23:59:59Z → 00:00:01Z，只差 2 秒）而不是 `+24h`：
+   * 这一对在**本地**日历日上是同一天（东八区 07:59:59 和 08:00:01，都落在 10-18），
+   * 在 UTC 日历日上才是两天。所以按本地时区切日的实现（`toLocaleDateString`）
+   * 会算成「同一天额度已满」→ 第 4 件被拒 → 本条红。按 UTC 切 → 重置 → 放行。
+   *
+   * 换句话说：本条的判别力来自「这两个瞬间本地同日、UTC 异日」这个前提，
+   * 上面的 `+24h` 用例没有这个前提，所以抓不住时区实现的错。
+   *
+   * 已知局限（不是漏写断言，是原理上做不到）：判别依赖运行环境时区非 UTC。
+   * 开发/CI 机器是 UTC+8（`getTimezoneOffset()` = -480），前提成立；
+   * 若在 TZ=UTC 的机器上跑，本地日与 UTC 日恒等，时区实现与正确实现不可区分，
+   * 这时本条退化为「跨 2 秒会重置」的弱断言。下面那条 UTC 日的直接断言
+   * 与时区无关，两条合起来把契约兜住。
+   */
+  it('日界钉在 UTC 日界，不是本地日历日也不是 24 小时窗口', async () => {
+    const works = await freshWorks();
+    const lateNight = Date.parse('2026-10-17T23:59:59Z');
+    const nextDay = Date.parse('2026-10-18T00:00:01Z');
+
+    // 先钉住这对瞬间确实跨了 UTC 日界（与时区无关），否则「跨 2 秒」会变成空转断言
+    expect(new Date(lateNight).toISOString().slice(0, 10))
+      .not.toBe(new Date(nextDay).toISOString().slice(0, 10));
+
+    for (let i = 0; i < 3; i++) works.allowSubmission('1.2.3.4', 'UA', lateNight);
+    expect(works.allowSubmission('1.2.3.4', 'UA', lateNight)).toBe(false);
+    // 只过 2 秒就到下一个 UTC 日：额度必须已经回来
+    expect(works.allowSubmission('1.2.3.4', 'UA', nextDay)).toBe(true);
+  });
+
+  /**
+   * 上一条的另一半：本地午夜**不是**额度边界。
+   *
+   * 为什么需要它：日界那条只在「两处日期都换成本地日」时才抓得住时区实现。
+   * 但日期在实现里出现两次（指纹串里一次、rotateQuotaIfNeeded 里一次），
+   * 只坏掉其中一处时，另一样还是 UTC，**用户可感知的额度仍然按 UTC 日重置** ——
+   * 唯一的破绽是「本地午夜会给所有人白送一次额度重置」。
+   *
+   * 这条就钉那个破绽：这对瞬间在**本地**上是两天（东八区 23:59 与次日 00:00:30），
+   * 在 UTC 上仍是同一天。所以正确实现必须判「额度已满、拒绝」。
+   * 指纹或轮转任何一处改用本地日，用户都会在本地午夜白捡 3 件 → 本条变红。
+   *
+   * 与日界那条成对：那条钉「该重置时必须重置」，本条钉「不该重置时不许重置」，
+   * 两条一起把「UTC 日历日」这个承诺从两头封死。
+   */
+  it('本地午夜不是额度边界：仍在同一个 UTC 日内，跨本地日界也拒绝', async () => {
+    const works = await freshWorks();
+    // 15:59Z = 东八区 23:59；16:00:30Z = 东八区次日 00:00:30 —— 差 90 秒
+    const beforeLocalMidnight = Date.parse('2026-10-17T15:59:00Z');
+    const afterLocalMidnight = Date.parse('2026-10-17T16:00:30Z');
+
+    // 先钉住这对瞬间在 UTC 上是同一天（与运行环境时区无关），否则断言会变成空转
+    expect(new Date(beforeLocalMidnight).toISOString().slice(0, 10))
+      .toBe(new Date(afterLocalMidnight).toISOString().slice(0, 10));
+
+    for (let i = 0; i < 3; i++) works.allowSubmission('1.2.3.4', 'UA', beforeLocalMidnight);
+    expect(works.allowSubmission('1.2.3.4', 'UA', beforeLocalMidnight)).toBe(false);
+    // UTC 还是 10-17：跨过本地午夜不算新的一天，不该白送额度
+    expect(works.allowSubmission('1.2.3.4', 'UA', afterLocalMidnight)).toBe(false);
   });
 
   it('remainingSubmissions 反映还能再投几件', async () => {
@@ -91,6 +165,11 @@ describe('投稿配额', () => {
     expect(works.submissionFingerprint('1.2.3.4', 'UA')).toMatch(/^[0-9a-f]{16}$/);
   });
 
+  /**
+   * 这条只管「触顶**之后**新投稿还进得来」（区分 fail-open 与 fail-closed）。
+   * 它**抓不到「把上限检查整段删掉」的变异** —— 删掉之后新身份照样放行，断言照样成立。
+   * 判别力在下面 describe 的「整份丢弃的代价可观测」那几条。
+   */
   it('指纹异常膨胀时整份丢弃（fail-open），而不是拒绝新投稿', async () => {
     const works = await freshWorks();
     // 伪造 20_000+ 个不同 UA，把 Map 撑过上限
@@ -100,4 +179,108 @@ describe('投稿配额', () => {
     // 触顶后新投稿仍然放行 —— 一次异常流量不该把当天全站投稿入口变成不可用
     expect(works.allowSubmission('203.0.113.9', 'UA-fresh')).toBe(true);
   });
+});
+
+// ---------------------------------------------------------------------------
+// 配额指纹表的上限
+// ---------------------------------------------------------------------------
+
+describe('配额指纹表的上限', () => {
+  /**
+   * 灌 n 个不同身份进配额表。
+   *
+   * 身份必须**两两不同**：指纹只由 ip+ua+日 决定，撞了就还是同一个 key，
+   * Map 的 size 涨不上去（点赞侧踩过同一个坑：用只读接口灌集合，集合里根本没东西，
+   * 「上限触发后怎样」自然测不出任何差别）。`from` 是身份序号起点，
+   * 换段起点即可保证与先前灌入的身份不重合。
+   */
+  function fillIdentities(
+    works: typeof import('../../../server/works.js'),
+    n: number,
+    now: number,
+    from = 0,
+  ): void {
+    for (let i = from; i < from + n; i++) {
+      works.allowSubmission(`10.${(i >> 8) % 256}.${i % 256}`, `UA-${i}`, now);
+    }
+  }
+
+  const EARLY_IP = '1.1.1.1';
+  const EARLY_UA = 'UA-early';
+  const T0 = Date.parse('2026-10-17T10:00:00Z');
+
+  /** 让 early 这个身份把当天 3 件用光，返回它此刻的剩余额度 */
+  function exhaustEarly(works: typeof import('../../../server/works.js')): void {
+    for (let i = 0; i < works.SUBMISSION_DAILY_LIMIT; i++) {
+      works.allowSubmission(EARLY_IP, EARLY_UA, T0);
+    }
+  }
+
+  /**
+   * 触顶策略本身的判别力用例 ★ —— 与点赞侧 works-likes.test.ts 的同名思路一致。
+   *
+   * 「整份丢弃」这个策略的**代价本身是可观测的**：清空之后，早期登记过的指纹
+   * 也一起忘了，那位用户今天还能再投 3 件。上限检查若被整段删掉，
+   * 清空永不发生、被忘掉的指纹仍然记得 → 下面两条断言立刻变红。
+   *
+   * 时序要点：触发清空的是**一条新身份**的写入。若拿 early 那条去调，
+   * 它此刻还在表里，会在 `used >= LIMIT` 那一支直接返回 false，根本走不到清空逻辑。
+   *
+   * 这条同时把一个安全语义落成断言：**攻击者只要把表灌爆，就能把所有人的当日
+   * 额度重置**。这是 fail-open 的既定代价（宁可放开也不让全站投不了稿），
+   * 写进用例是为了让它以后被人改动时必须有人看见。
+   */
+  it('触顶时整份丢弃：早期指纹的额度也被一起清零 ★', async () => {
+    const works = await freshWorks();
+    exhaustEarly(works);
+    expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(0);
+
+    // early 1 条 + MAX 条新身份 → 表里 MAX+1 条，越过上限
+    fillIdentities(works, works.SUBMISSION_QUOTA_MAX, T0);
+    // 再来一条新身份：此刻 size 已越界 → 整份被丢弃
+    expect(works.allowSubmission('203.0.113.9', 'UA-trigger', T0)).toBe(true);
+
+    expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(works.SUBMISSION_DAILY_LIMIT);
+    expect(works.allowSubmission(EARLY_IP, EARLY_UA, T0)).toBe(true);
+  }, 30_000);
+
+  /**
+   * 对照：没到上限时**不许**清空。
+   *
+   * 这条是上面那条的判别力前提 —— 若实现写成「每次写入都清空」，
+   * 两条会同时绿（本条在 1000 条时就忘了 early，上条则仍然成立），
+   * 所以本条必须保留。
+   */
+  it('未到上限时额度不失效（对照：清空只在真的越界时发生）', async () => {
+    const works = await freshWorks();
+    exhaustEarly(works);
+    fillIdentities(works, 1000, T0);
+    expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(0);
+  });
+
+  /**
+   * 把 `>` 与 `>=` 的边界钉死。
+   *
+   * 实现是 `if (quotaCount.size > SUBMISSION_QUOTA_MAX)`，检查发生在**写入之前**，
+   * 所以 size 恰好等于上限时不该清空，要等下一个身份进来（size 变成 MAX+1）才清。
+   * 把 `>` 改成 `>=` 会在「恰好等于上限」那一刻提前一刀切 —— 上面的用例仍绿
+   * （那时它反而"正常"清掉了），只有本条能分辨。
+   *
+   * 前半段钉「== MAX 不清」，后半段钉「越界要清」，缺一不可。
+   */
+  it('恰好等于上限时不清空，越过一个才清空（钉死 > 与 >=）', async () => {
+    const works = await freshWorks();
+    exhaustEarly(works);
+
+    // early 1 条 + MAX-1 条新身份 = 恰好 MAX 条
+    fillIdentities(works, works.SUBMISSION_QUOTA_MAX - 1, T0);
+    // 下一条写入发生在 size == MAX 的时刻：按现在的实现不该清空
+    expect(works.allowSubmission('10.9.9.9', 'UA-boundary', T0)).toBe(true);
+    // 早期额度仍在 = 上一步没有清空。把 > 改成 >= 会在这里提前清掉
+    expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(0);
+
+    // 再来一条全新身份：此刻 size 已是 MAX+1，越界 → 该清了
+    fillIdentities(works, 1, T0, 5_000_000);
+    expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(works.SUBMISSION_DAILY_LIMIT);
+  }, 30_000);
 });
