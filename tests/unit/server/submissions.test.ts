@@ -1,19 +1,31 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let tmp = '';
 
-/** 每个用例都重新求值 server/works.js —— 配额是模块级状态，靠 resetModules 清干净。
- *  （与 works-likes.test.ts 对进程内去重 Set 的处理方式一致） */
-async function freshWorks(): Promise<typeof import('../../../server/works.js')> {
+/**
+ * 每个用例都重新求值 server/works.js —— 配额是模块级状态，靠 resetModules 清干净。
+ *  （与 works-likes.test.ts 对进程内去重 Set 的处理方式一致）
+ *
+ * 连 paths / db 一起返回：投稿第二步要断言「文件有没有真的落盘」，那只能从
+ * mediaDir 里 readdir 出来看；只回 works 模块的话测试就得自己去猜目录布局，
+ * 而目录布局恰恰是被测行为之外的、随时可能重构的东西。
+ */
+async function freshWorks(): Promise<{
+  works: typeof import('../../../server/works.js');
+  paths: typeof import('../../../server/paths.js');
+  db: typeof import('../../../server/db.js');
+}> {
   tmp = mkdtempSync(join(tmpdir(), 'sub-quota-'));
   process.env.PINGDOU_DATA_DIR = tmp;
   vi.resetModules();
   const db = await import('../../../server/db.js');
   await db.initDb();
-  return import('../../../server/works.js');
+  const paths = await import('../../../server/paths.js');
+  const works = await import('../../../server/works.js');
+  return { works, paths, db };
 }
 
 beforeEach(() => {
@@ -28,7 +40,7 @@ afterEach(() => {
 
 describe('投稿配额', () => {
   it('同一 IP + UA 连投 3 件都放行，第 4 件被拒', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     expect(works.SUBMISSION_DAILY_LIMIT).toBe(3);
     expect(works.allowSubmission('1.2.3.4', 'UA')).toBe(true);
     expect(works.allowSubmission('1.2.3.4', 'UA')).toBe(true);
@@ -37,14 +49,14 @@ describe('投稿配额', () => {
   });
 
   it('换 UA 算另一个人（沿用点赞已拍板的取向）', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     for (let i = 0; i < 3; i++) works.allowSubmission('1.2.3.4', 'UA-A');
     expect(works.allowSubmission('1.2.3.4', 'UA-A')).toBe(false);
     expect(works.allowSubmission('1.2.3.4', 'UA-B')).toBe(true);
   });
 
   it('换 IP 算另一个人', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     for (let i = 0; i < 3; i++) works.allowSubmission('1.2.3.4', 'UA');
     expect(works.allowSubmission('5.6.7.8', 'UA')).toBe(true);
   });
@@ -61,7 +73,7 @@ describe('投稿配额', () => {
    * 任意一套在就能让本条通过，所以本条也不能替其中任一套作证。
    */
   it('跨一整个日历日后额度恢复', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     const day1 = Date.parse('2026-10-17T10:00:00Z');
     for (let i = 0; i < 3; i++) works.allowSubmission('1.2.3.4', 'UA', day1);
     expect(works.allowSubmission('1.2.3.4', 'UA', day1)).toBe(false);
@@ -88,7 +100,7 @@ describe('投稿配额', () => {
    * 与时区无关，两条合起来把契约兜住。
    */
   it('日界钉在 UTC 日界，不是本地日历日也不是 24 小时窗口', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     const lateNight = Date.parse('2026-10-17T23:59:59Z');
     const nextDay = Date.parse('2026-10-18T00:00:01Z');
 
@@ -118,7 +130,7 @@ describe('投稿配额', () => {
    * 两条一起把「UTC 日历日」这个承诺从两头封死。
    */
   it('本地午夜不是额度边界：仍在同一个 UTC 日内，跨本地日界也拒绝', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     // 15:59Z = 东八区 23:59；16:00:30Z = 东八区次日 00:00:30 —— 差 90 秒
     const beforeLocalMidnight = Date.parse('2026-10-17T15:59:00Z');
     const afterLocalMidnight = Date.parse('2026-10-17T16:00:30Z');
@@ -134,14 +146,14 @@ describe('投稿配额', () => {
   });
 
   it('remainingSubmissions 反映还能再投几件', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     expect(works.remainingSubmissions('1.2.3.4', 'UA')).toBe(3);
     works.allowSubmission('1.2.3.4', 'UA');
     expect(works.remainingSubmissions('1.2.3.4', 'UA')).toBe(2);
   });
 
   it('指纹含 UA 与日期：同 IP 换 UA、同指纹跨天都不同', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     const day1 = Date.parse('2026-10-17T10:00:00Z');
     const day2 = day1 + 24 * 60 * 60 * 1000;
     expect(works.submissionFingerprint('1.2.3.4', 'UA', day1))
@@ -154,14 +166,14 @@ describe('投稿配额', () => {
   });
 
   it('分隔符是 NUL：ip="ab"+ua="c" 与 ip="a"+ua="bc" 必须是两个人', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     const t = Date.parse('2026-10-17T10:00:00Z');
     expect(works.submissionFingerprint('ab', 'c', t))
       .not.toBe(works.submissionFingerprint('a', 'bc', t));
   });
 
   it('指纹是 16 位 hex（与 likeFingerprint 同规格）', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     expect(works.submissionFingerprint('1.2.3.4', 'UA')).toMatch(/^[0-9a-f]{16}$/);
   });
 
@@ -171,7 +183,7 @@ describe('投稿配额', () => {
    * 判别力在下面 describe 的「整份丢弃的代价可观测」那几条。
    */
   it('指纹异常膨胀时整份丢弃（fail-open），而不是拒绝新投稿', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     // 伪造 20_000+ 个不同 UA，把 Map 撑过上限
     for (let i = 0; i < works.SUBMISSION_QUOTA_MAX + 10; i++) {
       works.allowSubmission(`10.0.${Math.floor(i / 256)}.${i % 256}`, `UA-${i}`);
@@ -231,7 +243,7 @@ describe('配额指纹表的上限', () => {
    * 写进用例是为了让它以后被人改动时必须有人看见。
    */
   it('触顶时整份丢弃：早期指纹的额度也被一起清零 ★', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     exhaustEarly(works);
     expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(0);
 
@@ -252,7 +264,7 @@ describe('配额指纹表的上限', () => {
    * 所以本条必须保留。
    */
   it('未到上限时额度不失效（对照：清空只在真的越界时发生）', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     exhaustEarly(works);
     fillIdentities(works, 1000, T0);
     expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(0);
@@ -269,7 +281,7 @@ describe('配额指纹表的上限', () => {
    * 前半段钉「== MAX 不清」，后半段钉「越界要清」，缺一不可。
    */
   it('恰好等于上限时不清空，越过一个才清空（钉死 > 与 >=）', async () => {
-    const works = await freshWorks();
+    const { works } = await freshWorks();
     exhaustEarly(works);
 
     // early 1 条 + MAX-1 条新身份 = 恰好 MAX 条
@@ -283,4 +295,179 @@ describe('配额指纹表的上限', () => {
     fillIdentities(works, 1, T0, 5_000_000);
     expect(works.remainingSubmissions(EARLY_IP, EARLY_UA, T0)).toBe(works.SUBMISSION_DAILY_LIMIT);
   }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// 投稿两步的服务层
+// ---------------------------------------------------------------------------
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+const WEBP = Buffer.from([0x52, 0x49, 0x46, 0x46]);
+
+const CLIENT = { ip: '1.2.3.4', userAgent: 'UA' };
+
+function goodInput(over: Record<string, unknown> = {}) {
+  return {
+    title: '粉色小熊',
+    boardW: 87,
+    boardH: 62,
+    beanCount: 3814,
+    colorCount: 42,
+    estimateMinutes: 190,
+    ...over,
+  };
+}
+
+describe('createSubmission', () => {
+  it('写入一行 pending 记录并返回 id 与不可猜的令牌', async () => {
+    const { works } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    expect(created.id).toBeGreaterThan(0);
+    expect(created.uploadToken).toMatch(/^[0-9a-f]{32}$/);
+    const rows = works.listAllWorks();
+    expect(rows[0].status).toBe('pending');
+    expect(rows[0].published).toBe(false);
+    expect(rows[0].title).toBe('粉色小熊');
+  });
+
+  it('四个图纸参数原样入库', async () => {
+    const { works } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    const row = works.listAllWorks().find(r => r.id === created.id)!;
+    expect(row.boardW).toBe(87);
+    expect(row.boardH).toBe(62);
+    expect(row.beanCount).toBe(3814);
+    expect(row.colorCount).toBe(42);
+    expect(row.estimateMinutes).toBe(190);
+    expect(row.description).toBe('');
+  });
+
+  it('标题 trim 后为空则报 400 类错误（投稿必须填名称 unlike 后台上传）', async () => {
+    const { works } = await freshWorks();
+    expect(() => works.createSubmission(goodInput({ title: '   ' }), CLIENT))
+      .toThrow(works.SubmissionInputError);
+    expect(() => works.createSubmission(goodInput({ title: 123 }), CLIENT))
+      .toThrow(works.SubmissionInputError);
+  });
+
+  it('数字字段非法一律抛错，绝不静默转 0', async () => {
+    const { works } = await freshWorks();
+    for (const bad of ['87', 87.5, true, null, undefined, NaN, 0, -1, 501]) {
+      expect(() => works.createSubmission(goodInput({ boardW: bad }), CLIENT))
+        .toThrow(works.SubmissionInputError);
+    }
+  });
+
+  it('estimateMinutes 允许 0（预估时间可以缺），但不允许负数', async () => {
+    const { works } = await freshWorks();
+    expect(() => works.createSubmission(goodInput({ estimateMinutes: 0 }), CLIENT)).not.toThrow();
+    expect(() => works.createSubmission(goodInput({ estimateMinutes: -1 }), CLIENT))
+      .toThrow(works.SubmissionInputError);
+  });
+
+  it('参数校验失败不消耗配额（名称打错字不该白扣 3 件里的 1 件）', async () => {
+    const { works } = await freshWorks();
+    expect(() => works.createSubmission(goodInput({ title: '' }), CLIENT)).toThrow();
+    expect(works.remainingSubmissions(CLIENT.ip, CLIENT.userAgent)).toBe(3);
+  });
+
+  it('配额用尽时抛 SubmissionQuotaError，且不再写库', async () => {
+    const { works } = await freshWorks();
+    for (let i = 0; i < 3; i++) works.createSubmission(goodInput(), CLIENT);
+    expect(() => works.createSubmission(goodInput(), CLIENT))
+      .toThrow(works.SubmissionQuotaError);
+    expect(works.listAllWorks()).toHaveLength(3);
+  });
+});
+
+describe('attachSubmissionImage', () => {
+  it('写入图片、落盘文件，并清空一次性令牌', async () => {
+    const { works, paths } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    const detail = await works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG, mime: 'image/png' },
+      thumb: { body: WEBP, mime: 'image/webp' },
+      width: 1500, height: 2200,
+    });
+    expect(detail.imageUrl).toMatch(/^\/media\/works\/[0-9a-f]{16}\.png$/);
+    expect(detail.bytes).toBe(PNG.byteLength);
+    expect(detail.width).toBe(1500);
+    expect(detail.height).toBe(2200);
+    expect(existsSync(join(paths.PATHS.mediaDir, 'works'))).toBe(true);
+
+    // 令牌用完即失效：同一个令牌不能二次上传
+    await expect(works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG, mime: 'image/png' },
+    })).rejects.toThrow(works.SubmissionInputError);
+  });
+
+  it('令牌不匹配就拒（id 是可猜的自增整数，只靠 id 别人就能挂图到你的记录上）', async () => {
+    const { works } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    await expect(works.attachSubmissionImage(created.id, 'deadbeef', {
+      image: { body: PNG, mime: 'image/png' },
+    })).rejects.toThrow(works.SubmissionInputError);
+    // 被拒之后原行仍然是「没有图」的状态。
+    // 注意不能写 toBe('')：storage.publicUrl('') 拼出来的是 '/media/'，
+    // 那是恒假的断言（正确实现也过不了），等于这条只验了 throws。
+    // 真正要钉的是「没有被写进任何文件 key」，用「URL 里不出现 works/ 前缀」表达。
+    expect(works.listAllWorks()[0].imageUrl).not.toMatch(/\/media\/works\//);
+  });
+
+  it('id 不存在抛 SubmissionInputError', async () => {
+    const { works } = await freshWorks();
+    await expect(works.attachSubmissionImage(9999, 'x', {
+      image: { body: PNG, mime: 'image/png' },
+    })).rejects.toThrow(works.SubmissionInputError);
+  });
+
+  it('缩略图不是 webp 时整次上传被拒（不落半张图）', async () => {
+    const { works, paths } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    await expect(works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG, mime: 'image/png' },
+      thumb: { body: PNG, mime: 'image/png' },
+    })).rejects.toThrow(/webp/i);
+    // 原图也不该留下：校验发生在落盘之前。
+    // 目录压根没被创建是「零文件」的合法形态（readdirSync 直接 ENOENT 抛错，
+    // 那报的是「目录不存在」，不是「目录里有几个文件」），所以先判存在性。
+    const worksDir = join(paths.PATHS.mediaDir, 'works');
+    const landed = existsSync(worksDir) ? readdirSync(worksDir) : [];
+    expect(landed).toHaveLength(0);
+  });
+
+  it('尺寸缺省或非法时落 0，详情页显示「未知」而不是 NaN', async () => {
+    const { works } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    const d = await works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG, mime: 'image/png' },
+      width: 'abc', height: '',
+    });
+    expect(d.width).toBe(0);
+    expect(d.height).toBe(0);
+  });
+
+  /**
+   * 审核动作先到时，令牌仍然有效也不许再挂图。
+   *
+   * 为什么单列一条：正常路径下 `status !== 'pending'` 与「令牌已清空」是两件事，
+   * 但在「挂完图就再调一次」的场景里前者**不可观测** —— 上一次成功已经把
+   * upload_token 置空，所以把 status 检查整段删掉，上面那条的 throws 断言照样成立
+   * （实测：变异后 26 条全绿）。留着这条把 status 检查的职责单独钉住：
+   * 站主在投稿还没配图时就把它拒了，用户拿着第一步的令牌再来挂图，必须被拒，
+   * 否则审核队列里会冒出一张「已拒绝」状态却带着成品图的记录，语义自相矛盾。
+   *
+   * 用 SQL 改状态而不是走后台审核接口：那个接口属于后续任务，本文件不该依赖它。
+   */
+  it('投稿已被审核处理后，即使令牌仍然有效也不许再挂图', async () => {
+    const { works, db } = await freshWorks();
+    const created = works.createSubmission(goodInput(), CLIENT);
+    // 令牌还留在行里（没走过挂图那步），此时把状态改成已处理
+    db.runStmt(`UPDATE works SET status = 'rejected' WHERE id = ?`, [created.id]);
+
+    await expect(works.attachSubmissionImage(created.id, created.uploadToken, {
+      image: { body: PNG, mime: 'image/png' },
+    })).rejects.toThrow(works.SubmissionInputError);
+    expect(works.listAllWorks()[0].imageUrl).not.toMatch(/\/media\/works\//);
+  });
 });

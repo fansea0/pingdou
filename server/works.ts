@@ -105,6 +105,61 @@ const MAX_DESCRIPTION = 2000;
 const MAX_TITLE = 200;
 const FALLBACK_TITLE = '未命名作品';
 
+// ---- 投稿（2026-10-17） ----
+
+/** 投稿参数不合法。由 HTTP 层映射成 400。 */
+export class SubmissionInputError extends Error {}
+
+/** 当日投稿额度用尽。由 HTTP 层映射成 429。 */
+export class SubmissionQuotaError extends Error {}
+
+const MAX_BOARD_CELL = 500;
+const MAX_BEAN_COUNT = 250_000;
+const MAX_COLOR_COUNT = 221;
+const MAX_ESTIMATE_MINUTES = 100_000;
+const MAX_IMAGE_DIM = 20_000;
+
+/**
+ * 投稿数字字段的严格校验。
+ *
+ * 刻意要求 `typeof raw === 'number'` 而不是 `Number(raw)`：JSON body 里出现
+ * `true` / `null` / `"87"` 时，Number() 会把它们分别变成 1 / 0 / 87，其中
+ * `boardW: true` 会被放行成 1 格宽的图纸 —— 静默、且没有任何报错。
+ *
+ * 这四个数字会原样出现在审核队列和作品详情页上，被静默转成 0 会让站主以为这是
+ * 张空图、让访客以为「0 颗豆子」，所以一律拒。
+ */
+function requireCount(raw: unknown, field: string, min: number, max: number): number {
+  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < min || raw > max) {
+    throw new SubmissionInputError(`${field} 不是合法数值（应为 ${min}–${max} 的整数）`);
+  }
+  return raw;
+}
+
+/**
+ * multipart 文本字段都是字符串，所以这一处才放宽成先 Number()。
+ * 非法值一律落 0（详情页显示「未知」），不抛错 —— 图片本身已经是有效 PNG，
+ * 尺寸只是元数据，为此拒绝整次投稿不划算。
+ */
+function optionalCount(raw: unknown, max: number): number {
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isInteger(n) && n > 0 && n <= max ? n : 0;
+}
+
+/** 投稿必须填名称。与后台上传的 normalizeTitle 不同：这里空标题是错误，不是回落。 */
+function requireTitle(raw: unknown): string {
+  if (typeof raw !== 'string') throw new SubmissionInputError('名称必须是文本');
+  const t = raw.trim();
+  if (t.length === 0) throw new SubmissionInputError('名称不能为空');
+  return t.slice(0, MAX_TITLE);
+}
+
+export interface CreatedSubmission {
+  id: number;
+  /** 32 位 hex，只在这一次响应里出现。id 是可猜的自增整数，令牌是第二道闸。 */
+  uploadToken: string;
+}
+
 const EXT_BY_MIME: Record<string, string> = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
@@ -720,4 +775,131 @@ export function allowSubmission(
   if (used >= SUBMISSION_DAILY_LIMIT) return false;
   quotaCount.set(fp, used + 1);
   return true;
+}
+
+/**
+ * 第一步：占一个 id。
+ *
+ * **三步的顺序不能换**：参数校验 → 占配额 → 插入。
+ * 配额排在参数校验之后，是为了让「名称打错字收到 400」不同时扣掉每日 3 件里的
+ * 1 件。这里与点赞接口「令牌桶排在存在性校验之前」相反，因为代价结构不同：
+ * 点赞那一步要打 DB，而这一步只多一次纯 JS 的数字校验，真正贵的 5 MB 文件传输
+ * 在第二步、已经被上一步消耗的配额和令牌的一次性语义双重挡着。
+ *
+ * 写成函数内部固定顺序而不是让 HTTP 层安排，也是为了将来新增写路径时
+ * 不可能排错。
+ */
+export function createSubmission(
+  raw: unknown,
+  client: { ip: string; userAgent: string },
+): CreatedSubmission {
+  const input = (raw ?? {}) as Record<string, unknown>;
+
+  const title = requireTitle(input.title);
+  const boardW = requireCount(input.boardW, '图纸宽度', 1, MAX_BOARD_CELL);
+  const boardH = requireCount(input.boardH, '图纸高度', 1, MAX_BOARD_CELL);
+  const beanCount = requireCount(input.beanCount, '豆子数量', 1, MAX_BEAN_COUNT);
+  const colorCount = requireCount(input.colorCount, '颜色数量', 1, MAX_COLOR_COUNT);
+  const estimateMinutes = requireCount(input.estimateMinutes, '预估时间', 0, MAX_ESTIMATE_MINUTES);
+
+  if (!allowSubmission(client.ip, client.userAgent)) {
+    throw new SubmissionQuotaError(`今天的投稿次数已用完（每台设备每天 ${SUBMISSION_DAILY_LIMIT} 件），明天再来吧`);
+  }
+
+  const now = Date.now();
+  const uploadToken = randomBytes(16).toString('hex');
+  runStmt(
+    `INSERT INTO works
+       (title, description, image_key, thumb_key, width, height, bytes,
+        published, status, board_w, board_h, bean_count, color_count,
+        estimate_minutes, upload_token, created_at, updated_at)
+     VALUES (?, '', '', '', 0, 0, 0, 0, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [title, boardW, boardH, beanCount, colorCount, estimateMinutes, uploadToken, now, now],
+  );
+
+  // 必须在 flushNow() 之前读 last_insert_rowid()：db.export() 会把连接的
+  // last_insert_rowid 复位成 0（sql.js 实测），先 flush 再查必然查不到行。
+  const rows = queryAll<{ id: number }>(`SELECT id FROM works WHERE id = last_insert_rowid()`);
+  const id = rows[0]?.id;
+  if (id == null) throw new Error('createSubmission: missing after insert');
+  flushNow();
+  return { id, uploadToken };
+}
+
+export interface SubmissionImageInput {
+  image: WorkImage;
+  thumb?: WorkImage;
+  width?: unknown;
+  height?: unknown;
+}
+
+/**
+ * 第二步：把带二维码的成品图挂到这条投稿上。
+ *
+ * **令牌校验是这里的核心，不能省。** works.id 是 AUTOINCREMENT 整数、完全可猜；
+ * 不校验 upload_token 的话，任何人都能 POST /api/public/works/7/image 把一张
+ * 任意图片挂到别人的待审记录上 —— 既污染审核队列，又能把别人的投稿换成自己的图。
+ * 令牌只在第一步的响应里出现一次（128 位随机值），比对用 === 即可，
+ * 不上 timingSafeEqual：猜不中的前提下时序差不构成实际攻击面。
+ */
+export async function attachSubmissionImage(
+  id: number,
+  uploadToken: string,
+  input: SubmissionImageInput,
+): Promise<AdminWorkDetail> {
+  const row = rowById(id);
+  if (!row) throw new SubmissionInputError('投稿不存在');
+  if (row.status !== 'pending') throw new SubmissionInputError('该投稿已处理，无法再上传图片');
+  if (!uploadToken || row.upload_token !== uploadToken) throw new SubmissionInputError('上传凭证无效，请重新投稿');
+  // 与令牌校验在正常写入路径下等价（下面的 UPDATE 一次改两列），保留是为了让
+  // 「图已存在」这个失败原因在错误文案里单独可辨，而不是笼统的「凭证无效」
+  if (row.image_key) throw new SubmissionInputError('该投稿已上传过图片');
+
+  const ext = extFor(input.image.mime, 'image');
+  if (input.thumb) {
+    const thumbExt = extFor(input.thumb.mime, 'thumb');
+    if (thumbExt !== '.webp') throw new SubmissionInputError('缩略图必须是 WebP');
+  }
+
+  const hex = randomBytes(8).toString('hex');
+  const imageKey = `works/${hex}${ext}`;
+  // 写成功才赋值的理由：thumb_key 一旦落库就是「这个文件存在」的承诺。写失败还
+  // 照记会留下一条指向不存在文件的记录，前台列表永久破图，而后台的「无缩略图」
+  // 标记恰好判据是 thumbUrl === imageUrl，永远标不出这种故障。
+  let thumbKey = '';
+
+  await storage.put(imageKey, input.image.body, input.image.mime);
+  if (input.thumb) {
+    const candidate = `works/${hex}-t.webp`;
+    try {
+      await storage.put(candidate, input.thumb.body, input.thumb.mime);
+      thumbKey = candidate;
+    } catch (e) {
+      // 降级而不是整体失败：没有缩略图是可降级状态（前端会用原图当缩略图）
+      console.warn('[works] 缩略图写入失败，降级为无缩略图', e);
+    }
+  }
+
+  try {
+    runStmt(
+      `UPDATE works
+          SET image_key = ?, thumb_key = ?, bytes = ?, width = ?, height = ?,
+              upload_token = '', updated_at = ?
+        WHERE id = ?`,
+      [
+        imageKey, thumbKey, input.image.body.byteLength,
+        optionalCount(input.width, MAX_IMAGE_DIM),
+        optionalCount(input.height, MAX_IMAGE_DIM),
+        Date.now(), id,
+      ],
+    );
+    flushNow();
+  } catch (err) {
+    // 文件已经落盘，不回收就是一条没有记录、也没有主键可追溯的孤儿文件
+    await removeQuietly(imageKey);
+    await removeQuietly(thumbKey);
+    throw err;
+  }
+
+  return toAdminDetail(requireRow(id));
 }
