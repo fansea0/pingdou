@@ -120,6 +120,26 @@ export async function initDb(): Promise<void> {
       -- likeFingerprint / 每日轮转）。代价是**重启后当天可以再赞**，用户已明确接受。
       -- 计数是「次数」不是「人数」：同一 IP 次日可再点赞，计数会累加。
       likes       INTEGER NOT NULL DEFAULT 0,
+      -- 2026-10-17：用户投稿 + 后台审核。作品来源从后台上传整个切换成用户投稿，
+      -- 于是同一张表要同时表达「审核到哪一步」和「图纸本身长什么样」。
+      --
+      -- status 默认 pending 是刻意的失败安全：任何漏写 status 的行（手写 SQL、
+      -- 将来新增的写路径忘了带这个字段）落成「不公开」，而不是直接对外可见。
+      status           TEXT    NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'approved', 'rejected')),
+      -- 图纸格数（如 87 × 62）。存两个整数而不是 "1:1.4" 字符串：比例由展示层现算，
+      -- 改展示精度不用洗历史数据；而字符串还要防有人传 "1:999" 这种离谱值。
+      board_w          INTEGER NOT NULL DEFAULT 0,
+      board_h          INTEGER NOT NULL DEFAULT 0,
+      -- 实际画出的豆子数 / 用到的色号种数。审核时站主要靠这两项判断值不值得过。
+      bean_count       INTEGER NOT NULL DEFAULT 0,
+      color_count      INTEGER NOT NULL DEFAULT 0,
+      -- 预估装配工时，存**分钟数**不存文案：以后改 formatAssemblyHours 的措辞，
+      -- 历史数据一行都不用动。
+      estimate_minutes INTEGER NOT NULL DEFAULT 0,
+      -- 第二步上传图片用的一次性令牌（spec §5.2）。id 是可猜的自增整数，
+      -- 只靠 id 校验的话任何人都能把图挂到别人的待审记录上。图写入后清空成 ''。
+      upload_token     TEXT    NOT NULL DEFAULT '',
       CHECK (published IN (0, 1))
     );
     CREATE INDEX IF NOT EXISTS idx_works_published_created
@@ -165,6 +185,23 @@ export async function initDb(): Promise<void> {
   // 提前建索引会抛 "no such column: likes" 直接让 initDb 起不来。
   ensureIndex('idx_works_published_likes', 'works(published, likes DESC, created_at DESC, id DESC)');
   migrateWorkLikesToCountColumn();
+
+  // 用户投稿 + 审核（2026-10-17）。七列全是纯追加，老行落成默认值。
+  //
+  // 刻意**不**回填 status='approved'：那会把「未过审」和「已过审」在数据上混成同一个
+  // 值，而这次改动的全部意义就是这两者分开。存量数据的归宿是被清库脚本删掉，不是
+  // 被洗成 approved。在脚本跑之前它们被公开查询的 `AND status='approved'` 全部挡住
+  // —— 即「部署后图库显示为空」是预期行为，不是故障（spec §9）。
+  ensureColumn('works', 'status', "TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected'))");
+  ensureColumn('works', 'board_w', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('works', 'board_h', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('works', 'bean_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('works', 'color_count', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('works', 'estimate_minutes', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn('works', 'upload_token', "TEXT NOT NULL DEFAULT ''");
+  // 必须排在 ensureColumn('works','status',...) 之后：老库还没有 status 列，
+  // 提前建索引会抛 "no such column: status"，initDb 直接起不来。
+  ensureIndex('idx_works_status_created', 'works(status, created_at DESC)');
 
   runStmt(
     `INSERT OR IGNORE INTO settings(key, value, updated_at, updated_by) VALUES(?, ?, ?, ?)`,
