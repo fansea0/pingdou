@@ -89,20 +89,47 @@ function ipHashOf(ip: string): string {
 
 ```sql
 INSERT OR IGNORE INTO work_likes (work_id, day, ip_hash, created_at)
-VALUES (?, ?, ?, ?) RETURNING work_id
+SELECT id, ?, ?, ? FROM works WHERE id = ? RETURNING work_id
 ```
+
+绑定顺序是 `[day, ipHash, now, workId]` —— 注意 `workId` 在最后。
+
+**为什么不是 `VALUES (?, ?, ?, ?)`**：`work_likes` 没有外键（`works` 表本身也没有外键），
+`VALUES` 会老老实实把一个来路不明的 workId 写进去，于是给不存在的作品也留下垃圾行，
+并且 `countLikes` 对任意 id 都能返回虚假的正数。改成 `SELECT ... FROM works WHERE id = ?`
+之后，作品不存在 → 选出 0 行 → `liked:false`、计数 0，天然无副作用，也不用抛异常
+（`addLike` 的签名保持不变）。副作用是把「作品不存在」从异常变成了静默的空操作。
 
 **实测确认**（sql.js）：主键冲突时 `RETURNING` 返回 **0 行**，插入成功返回 **1 行**，
 次日同 IP 再赞返回 **1 行**。因此「是否新赞」直接由返回行数判定。
 
 ```ts
-const rows = queryAll('... RETURNING work_id', [workId, day, ipHash, now]);
+// 必须用 execReturning，不能用 queryAll —— 见下方警告
+const rows = execReturning('... RETURNING work_id', [day, ipHash, now, workId]);
 const inserted = rows.length > 0;   // true = 新赞，false = 今天已经点过了
 return { liked: inserted, likes: countLikes(workId) };
 ```
 
 选 `RETURNING` 而非「读 `db.changes`」的原因：仓库现有的 `runStmt()` 返回 `void`，
-拿不到受影响行数；`queryAll()` 已经是通用读接口，`RETURNING` 能零改动复用。
+拿不到受影响行数；`RETURNING` 正好把「这次到底插没插进去」直接读出来，省掉一次 SELECT。
+
+> **警告：必须走 `execReturning`，不能直接 `queryAll`。**
+>
+> 早期版本的这段 spec 写的是 `queryAll(...)`，理由是「`queryAll` 已经是通用读接口，
+> 能零改动复用」。**那是个测试全绿但功能失效的实现，照抄会把 bug 装回去。**
+>
+> 原因：`server/db.ts` 里 `queryAll` 是纯读接口，**不调 `markDirty()`**。本项目的
+> sql.js 是纯内存库，只有 `flushNow()` 执行 `db.export()` 时才会落盘，而
+> `flushNow()` 开头就 `if (!dirty) return`。于是 `queryAll` 写进去的那行在内存里
+> 一直都在、重启即消失；只要站点没有别的写操作（`trackEvent` 之类）顺手标脏，
+> 这个赞就从来没被保存过。`execReturning` 正是为此存在：它就是
+> `queryAll` + `markDirty`，两者缺一不可。
+>
+> **危险的地方在于「测试测不出来」**：断言若查的是内存库里的同一个 sql.js 实例，
+> 不管 flush 标没标脏，那行都还在，断言照样通过。正确做法是**用只读的第二个连接
+> 重开磁盘上的 `stats.db` 去数行数**（`tests/unit/server/works-likes.test.ts` 的
+> 「落盘」一节就是这么做的）。写这类「读接口顺便写库」的代码时，先问一句：
+> 这个测试换一套实现还能不能变红？不能，就说明它没有判别力。
 
 **不需要先 SELECT 再判断** —— 少一次查询，且两个并发请求不会都判定为「新赞」。
 
@@ -253,7 +280,17 @@ fetchLikeState(id: number): Promise<{ likes: number; liked: boolean }>
 - 用 `history.replaceState` 而非 `pushState`：搜索框每敲一个字都 push
   会把历史栈塞满，后退键完全没法用
 - 进页面时从 `location.search` 读初值 → 刷新与分享都保留
-- 已确认：**不做**「从详情页返回时记住搜索词和滚动位置」
+- **从详情页返回：搜索词和排序会被还原，滚动位置不会。**
+  这一版实际是「部分保留」，本条订正早期 spec 里「已确认：**不做**从详情页返回时
+  记住搜索词和滚动位置」的说法 —— 搜索进 URL 顺手把它解决了，原来的取舍判断已过时。
+  - **保留的**：URL 里带着 `?q=xxx&sort=hot`，从详情页后退是一次全新加载，
+    `parseListQuery` 直接从 URL 读回搜索词和排序，所以两项都还在。
+  - **不保留的**：**滚动位置**。它不在 URL 里，而卡片跳转是 `<a href>` 全页跳转，
+    页面必然卸载重建 —— 本项目没有任何状态能承载滚动偏移。要保留得引入
+    `history.scrollRestoration` 处理或改客户端路由，两者都超出本 feature 范围。
+    实际表现以浏览器默认行为为准，本项目不做任何承诺。
+  - 对「用户搜『小熊』→ 进详情 → 后退」的路径：结果集和排序是对的，
+    视觉上会回到列表顶部。
 
 **打破的既有约束**：Task 8 台账记有「本项目无 client-side 路由，整页刷新」。
 搜索进 URL 后，卡片跳转仍是 `<a href>` 全页跳转，从详情页「后退」回到
