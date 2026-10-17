@@ -7,30 +7,34 @@
  * 容器里，当前项就自然成为容器内唯一的实心块，一眼可辨。
  */
 .site-nav {
-  display: flex;
+  /* grid 而不是 flex：两条 1fr 轨道在内容宽度下都会解析成「较宽那条」的内容宽，
+     两项因此永远等宽，选中块不会一边长一边短；容器宽度仍然由内容决定。
+     （纯 flex + width:fit-content 做不到这点：实测两项会退回各自的内容宽。） */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: var(--space-1);
-  justify-content: center;
   margin: var(--space-3) 0 var(--space-1);
   /* 内边距是「轨道」的厚度：容器自身是浅色底，项在里面滑动 */
   padding: var(--space-1);
   border-radius: var(--radius-md);
   background: var(--color-surface-alt);
-  /* 宽度不给死，由两项内容撑开；但让容器比纯内容稍宽一点，两端留出呼吸 */
+  /* 宽度由两项内容撑开（fit-content），再由 margin-inline:auto 居中。
+     之前 ≥480px 时写死 width:320px —— 一过这个断点，导航就从「刚好包住两个词」
+     突然摊成一块 320px 的实心块，在页面上比什么都抢眼（「这 tab 太大了」的由来）。
+     内容撑开则两个断点表现一致：小屏不挤、大屏不铺。 */
   width: fit-content;
   max-width: 100%;
   margin-inline: auto;
 }
 
-/* 容器宽度撑不满时，让两个项均分，避免「选中块长短不一」显得随意 */
-@media (min-width: 480px) {
-  .site-nav {
-    width: 320px;
-  }
-}
-
 .site-nav-link {
-  flex: 1;
-  padding: var(--space-2) var(--space-4);
+  /* 容器改用 grid 均分轨道，这里不再需要 flex:1（留着也无效果）。 */
+  /* 横向 16px → 12px。纵向 8px 保持不变 —— 用户抱怨的是宽/占地，
+     而 .site-nav-link 的实际高度（12px 字号 × 1.5 行高 + 上下各 8px ≈ 34px）
+     本来就低于 spec §5.4 的 44px 下限，再往下压就真的难点中了。
+     「补到 44px」与「别再变大」冲突，留给用户拍板，本次只动横向。 */
+  padding: var(--space-2) var(--space-3);
   border-radius: calc(var(--radius-md) - var(--space-1));
   color: var(--color-text-muted);
   text-decoration: none;
@@ -53,7 +57,9 @@
   color: #fff;
   background: var(--color-accent);
   font-weight: 600;
-  box-shadow: var(--shadow-sm);
+  /* 选中块的投影去掉了。主信号是实心主题色块 + 加粗白字，足够一眼可辨；
+     投影只是让这块色再「浮」起来一层，去掉后页面上不再有哪个元素比导航更抢眼。
+     （原值是 var(--shadow-sm)，已经是仓库里最轻的一档，降不下去只能整条去掉。） */
 }
 
 .site-nav-link--active:hover {
