@@ -17,7 +17,25 @@ export interface WorkSummary {
   likes: number;
 }
 
-export interface WorkDetail extends WorkSummary {
+export type WorkStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * 图纸参数。详情页与后台审核队列要展示，公开列表不需要 ——
+ * 列表页每张卡片只显示标题和缩略图，塞进去是白给流量。
+ */
+export interface WorkParams {
+  /** 图纸宽度，单位格（如 87）。与 height 一起构成「87 × 62」的尺寸。 */
+  boardW: number;
+  boardH: number;
+  /** 实际画出的豆子数（已扣掉被去掉的背景格）。 */
+  beanCount: number;
+  /** 图纸用到的色号种数。 */
+  colorCount: number;
+  /** 预估装配工时，单位分钟。展示层走 formatAssemblyHours，不存文案。 */
+  estimateMinutes: number;
+}
+
+export interface WorkDetail extends WorkSummary, WorkParams {
   description: string;
   imageUrl: string;
   bytes: number;
@@ -34,6 +52,9 @@ export interface WorkDetail extends WorkSummary {
  */
 export interface AdminWorkDetail extends WorkDetail {
   published: boolean;
+  /** 审核态。与 published 同样只出现在后台形状里：公开接口只返回已过审作品，
+   *  这个字段恒为 'approved'，写进公开响应只是废话。 */
+  status: WorkStatus;
 }
 
 export interface WorkImage {
@@ -70,6 +91,14 @@ interface WorkRow {
   created_at: number;
   updated_at: number;
   likes: number;
+  // 2026-10-17 用户投稿新增
+  status: string;
+  board_w: number;
+  board_h: number;
+  bean_count: number;
+  color_count: number;
+  estimate_minutes: number;
+  upload_token: string;
 }
 
 const MAX_DESCRIPTION = 2000;
@@ -140,6 +169,18 @@ function toSummary(row: WorkRow): WorkSummary {
   };
 }
 
+function paramsOf(row: WorkRow): WorkParams {
+  return {
+    boardW: row.board_w ?? 0,
+    boardH: row.board_h ?? 0,
+    // ?? 0 与 likes 同理：行类型上必填，但手工 SQL 改库写进 NULL 时，
+    // 前端会拿到 NaN 渲染。取 0 是明确的安全退路。
+    beanCount: row.bean_count ?? 0,
+    colorCount: row.color_count ?? 0,
+    estimateMinutes: row.estimate_minutes ?? 0,
+  };
+}
+
 /**
  * likes 从 row 上读：detail 的调用方（getPublishedWork / listAllWorks /
  * updateWorkMeta / replaceWorkImage）全部经 rowById 或列表查询拿到行，
@@ -148,6 +189,7 @@ function toSummary(row: WorkRow): WorkSummary {
 function toDetail(row: WorkRow): WorkDetail {
   return {
     ...toSummary(row),
+    ...paramsOf(row),
     description: row.description,
     imageUrl: storage.publicUrl(row.image_key),
     bytes: row.bytes,
@@ -155,9 +197,13 @@ function toDetail(row: WorkRow): WorkDetail {
   };
 }
 
-/** DB 里 published 是 0/1，JSON 侧统一成 boolean，避免前端去猜 0 和 '0' 的区别 */
+/** DB 里 published 是 0/1、status 是文本，JSON 侧统一成 boolean / 枚举。 */
 function toAdminDetail(row: WorkRow): AdminWorkDetail {
-  return { ...toDetail(row), published: row.published === 1 };
+  return {
+    ...toDetail(row),
+    published: row.published === 1,
+    status: (row.status === 'approved' || row.status === 'rejected' ? row.status : 'pending'),
+  };
 }
 
 /**
@@ -209,12 +255,15 @@ export function listPublishedWorks(opts: {
   const lim = Math.max(1, Math.min(60, raw));
   const off = Math.max(0, Math.floor(offset) || 0);
 
-  // q 的 WHERE 与 total 的 COUNT 必须字面一致，否则 hasMore 会一直显示
-  // （搜出 5 条但 total 是全表 200 条）。两处共用同一个 where 变量，不允许各写一遍。
+  // 三处 WHERE（列表 / 有 q 的列表 / COUNT）必须字面一致，否则 hasMore 会一直显示。
+  //
+  // `status = 'approved'` 是**独立于** published 的第二道过滤，不依赖
+  // 「published=1 蕴含已过审」这个不变量成立：那是不变量①在接口层的防手滑，
+  // 这里是万一①被绕过后的兜底。公开路径的正确性不该建立在另一条约束没被违反之上。
   const q = (opts.q ?? '').trim().slice(0, 100);
   const where = q
-    ? `WHERE w.published = 1 AND w.title LIKE ? ESCAPE '\\'`
-    : `WHERE w.published = 1`;
+    ? `WHERE w.published = 1 AND w.status = 'approved' AND w.title LIKE ? ESCAPE '\\'`
+    : `WHERE w.published = 1 AND w.status = 'approved'`;
   const likeParam = q ? `%${escapeLike(q)}%` : null;
 
   // 排序必须完全确定，否则每次请求顺序抖动会导致 React 重复 key、滚动跳变。
@@ -248,11 +297,12 @@ export function listPublishedWorks(opts: {
   };
 }
 
-/** 草稿一律返回 null —— 不区分「不存在」和「未上架」，避免用状态码探测草稿。 */
+/** 未过审 / 已下架 / 不存在一律返回 null —— 不区分三者的原因与既有立场一致：
+ *  区分开等于告诉访客这个 id 曾经存在过。 */
 export function getPublishedWork(id: number): WorkDetail | null {
   if (!Number.isInteger(id) || id <= 0) return null;
   const row = rowById(id);
-  if (!row || row.published !== 1) return null;
+  if (!row || row.published !== 1 || row.status !== 'approved') return null;
   return toDetail(row);
 }
 
@@ -295,10 +345,15 @@ export async function createWork(input: CreateWorkInput): Promise<AdminWorkDetai
     }
 
     const now = Date.now();
+    // 显式写 status='approved'：这个函数是即将被删除的后台上传路径（spec §5.4，
+  // Task 7），在它还在的这几个任务里必须保住「后台上传 = 直接可公开」的行为，
+  // 否则既有 20 多条 works 测试会全红。DDL 的默认值是 pending，正是为了不让
+  // 「忘了写 status」的行混进公开列表。
     runStmt(
       `INSERT INTO works
-         (title, description, image_key, thumb_key, width, height, bytes, published, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (title, description, image_key, thumb_key, width, height, bytes,
+          published, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)`,
       [
         normalizeTitle(input.title),
         normalizeDescription(input.description),

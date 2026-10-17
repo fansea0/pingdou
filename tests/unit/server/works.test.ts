@@ -365,3 +365,59 @@ describe('normalizePublished', () => {
     expect(works.normalizePublished(1, false)).toBe(true);
   });
 });
+
+describe('作品响应形状与公开可见性', () => {
+  it('createWork 产出的作品是 approved 且公开可见（保住改动前行为）', async () => {
+    const { works } = await freshWorks();
+    const w = await works.createWork({
+      title: '老作品',
+      image: { body: PNG, mime: 'image/png' },
+      published: true,
+    });
+    expect(w.status).toBe('approved');
+    expect(works.getPublishedWork(w.id)).not.toBeNull();
+  });
+
+  it('图纸参数为 0 时原样透传给详情（不因缺省而消失）', async () => {
+    const { works } = await freshWorks();
+    const w = await works.createWork({ title: '无参数', image: { body: PNG, mime: 'image/png' } });
+    const d = works.getPublishedWork(w.id)!;
+    expect(d.boardW).toBe(0);
+    expect(d.beanCount).toBe(0);
+    expect(d.estimateMinutes).toBe(0);
+  });
+
+  it('status 为 pending 的作品不出现在公开列表，total 也不含它', async () => {
+    const { works } = await freshWorks();
+    const visible = await works.createWork({
+      title: '已过审', image: { body: PNG, mime: 'image/png' },
+    });
+    // 手工把这一行压成 pending，模拟「投稿已入库但还没审核」
+    const db = await import('../../../server/db.js');
+    db.runStmt(`UPDATE works SET status='pending' WHERE id=?`, [visible.id]);
+
+    const list = works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' });
+    expect(list.total).toBe(0);
+    expect(works.getPublishedWork(visible.id)).toBeNull();
+  });
+
+  it('status 为 rejected 的作品同样不可见', async () => {
+    const { works } = await freshWorks();
+    const w = await works.createWork({ title: '被拒', image: { body: PNG, mime: 'image/png' } });
+    const db = await import('../../../server/db.js');
+    db.runStmt(`UPDATE works SET status='rejected' WHERE id=?`, [w.id]);
+    expect(works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' }).total).toBe(0);
+    expect(works.getPublishedWork(w.id)).toBeNull();
+  });
+
+  it('后台形状带 status，公开形状不带（与 published 同样的隔离理由）', async () => {
+    const { works } = await freshWorks();
+    const w = await works.createWork({ title: 'x', image: { body: PNG, mime: 'image/png' } });
+    const admin = works.listAllWorks().find(x => x.id === w.id)!;
+    expect(admin.status).toBe('approved');
+    expect(admin.published).toBe(true);
+    // 公开 detail 不含 status —— 恒为 approved 的字段写进响应只是废话，
+    // 还让客户端误以为「拿不到该字段 = 已上架」这种反向推断成立
+    expect('status' in works.getPublishedWork(w.id)!).toBe(false);
+  });
+});
