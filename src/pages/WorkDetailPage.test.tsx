@@ -264,10 +264,13 @@ describe('formatBytes', () => {
 });
 
 describe('详情页点赞', () => {
-  it('展示点赞次数与按钮，赞数来自详情接口的真实 likes', async () => {
-    // 判别力来源：WorkDetail.likes 是 Task 3 起接口带回的真实计数。详情页必须用它，
-    // 不能写死 0 或从别处凑一个数。
+  it('状态查询失败时赞数退回详情接口带回的真实 likes', async () => {
+    // 判别力来源（实测过）：WorkDetail.likes 是 Task 3 起接口带回的真实计数，LikeButton
+    // 挂载后会再查一次「我今天赞过没」，成功时两者相等 —— 这时候把 work.likes 换成
+    // 硬编码的 0 也能让用例全绿，判别力是 0。所以这里让状态查询失败：
+    // 组件的 catch 按「未赞」处理并保留挂载时的计数，赞数只能来自详情接口。
     fetchWork.mockResolvedValue(detail({ likes: 8 }));
+    fetchLikeState.mockRejectedValue(new Error('offline'));
     render(<WorkDetailPage id={42} />);
     expect(await screen.findByRole('button', { name: /8 次点赞/ })).toBeTruthy();
   });
