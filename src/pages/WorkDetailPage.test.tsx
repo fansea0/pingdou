@@ -33,9 +33,9 @@ afterEach(() => {
 });
 
 /**
- * 用工厂函数而不是字面量常量：WorkDetail 的 updatedAt 是必填的
- * （server/works.ts:23，src/api/works.ts:21），字面量漏掉它会直接
- * typecheck 失败。走工厂之后 overrides 也天然是完整的。
+ * 用工厂函数而不是字面量常量：WorkDetail 的必填字段一多，字面量漏掉任何一个
+ * 都会直接 typecheck 失败（updatedAt 是先例，见 server/works.ts:23 与
+ * server/works.ts 的 toSummary）。走工厂之后 overrides 也天然是完整的。
  */
 function detail(overrides: Partial<WorkDetail> = {}): WorkDetail {
   return {
@@ -52,6 +52,15 @@ function detail(overrides: Partial<WorkDetail> = {}): WorkDetail {
     // WorkSummary.likes 是必填的（列表接口一次 SQL 带回，见 server/works.ts 的 toSummary），
     // 夹具漏掉它会直接 typecheck 失败 —— 与 updatedAt 同理。0 表示这个夹具还没被赞过。
     likes: 0,
+    // 五个图纸参数同样是必填（src/api/works.ts 的 WorkDetail）。取值不是随手编的：
+    // 100 × 120 与 18 色跟上面 description 里那句「100×120 · 18 色」对齐，
+    // 这样详情页把参数渲染出来时不会自相矛盾（Task 13 会真的把它们显示出来）。
+    // 3800 颗是 12000 格图纸里去掉背景格后的量级，190 分钟是 timeEstimate 的同一套口径。
+    boardW: 100,
+    boardH: 120,
+    beanCount: 3800,
+    colorCount: 18,
+    estimateMinutes: 190,
     ...overrides,
   };
 }
