@@ -1,13 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSecondaryToggle, type SecondaryAction } from '@/hooks/useSecondaryToggle';
 import './ExportPanel.css';
-
-/** 可以切到主按钮上的次级动作（当前是投稿） */
-export interface SecondaryAction {
-  /** 切过去之后主按钮显示的文案，必须诚实描述点下去会发生什么 */
-  label: string;
-  /** 主按钮处在该状态时被点击 → 调它 */
-  onSelect: () => void;
-}
 
 interface Props {
   onExport: () => void;
@@ -26,7 +19,7 @@ interface Props {
 
 export function ExportPanel({ onExport, disabled, exporting, flash, secondary }: Props) {
   const [progress, setProgress] = useState(0);
-  const [mode, setMode] = useState<'primary' | 'secondary'>('primary');
+  const { onSecondary: onSecondaryMode, toggle } = useSecondaryToggle(secondary);
   const rafRef = useRef<number | null>(null);
   const wasRunningRef = useRef(false);
 
@@ -55,14 +48,10 @@ export function ExportPanel({ onExport, disabled, exporting, flash, secondary }:
     };
   }, [exporting]);
 
-  // 次级动作被撤掉后还停在它的状态上，主按钮就会显示一个点了没反应的标签
-  useEffect(() => {
-    if (!secondary && mode === 'secondary') setMode('primary');
-  }, [secondary, mode]);
-
-  const onSecondary = mode === 'secondary' && secondary;
-  const label = onSecondary
-    ? secondary.label
+  // 收成一个值，省得后面到处写 secondary! —— onSecondaryMode 为真才可能有它
+  const active = secondary && onSecondaryMode ? secondary : null;
+  const label = active
+    ? active.label
     : exporting
     ? '正在生成…'
     : flash === 'done'
@@ -75,11 +64,11 @@ export function ExportPanel({ onExport, disabled, exporting, flash, secondary }:
           而不是第二个动作，所以不能跟主按钮抢同样的视觉权重。 */}
       <div className="export-actions">
         <button
-          className={`primary export-btn${exporting && !onSecondary ? ' is-loading' : ''}${progress >= 1 && !onSecondary ? ' is-done' : ''}`}
+          className={`primary export-btn${exporting && !onSecondaryMode ? ' is-loading' : ''}${progress >= 1 && !onSecondaryMode ? ' is-done' : ''}`}
           disabled={disabled || !!exporting}
-          onClick={() => (onSecondary ? onSecondary.onSelect() : onExport())}
+          onClick={() => (active ? active.onSelect() : onExport())}
         >
-          {!onSecondary && progress > 0 && progress < 1 && (
+          {!onSecondaryMode && progress > 0 && progress < 1 && (
             <span
               className="export-progress"
               style={{ width: `${Math.round(progress * 100)}%` }}
@@ -92,10 +81,10 @@ export function ExportPanel({ onExport, disabled, exporting, flash, secondary }:
           <button
             type="button"
             className="export-swap"
-            aria-pressed={mode === 'secondary'}
-            onClick={() => setMode(mode === 'primary' ? 'secondary' : 'primary')}
+            aria-pressed={onSecondaryMode}
+            onClick={toggle}
           >
-            {mode === 'primary' ? secondary.label : '下载'}
+            {onSecondaryMode ? secondary.backLabel ?? '下载' : secondary.label}
           </button>
         )}
       </div>

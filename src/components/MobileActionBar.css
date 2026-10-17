@@ -114,6 +114,42 @@
     margin-left: 2px;
   }
 
+  /* === 下载 / 投稿：最右边这一个按钮的两态 ===
+     底部栏只有一行，塞不下第四格。投稿因此不做成独立按钮，而是挂在下载按钮
+     上：主按钮在「下载 / 投稿」之间切换，右侧窄切换位只改状态。切换位无填充、
+     字小、灰 —— 它是「换一件事做」，给同等视觉权重就又变回两个按钮并排。 */
+  .mobile-primary-group {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .mobile-primary-group .mobile-btn-primary {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .mobile-swap {
+    flex: 0 0 auto;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-surface-alt);
+    color: var(--color-text-muted);
+    font-family: inherit;
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .mobile-swap[aria-pressed='true'] {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-accent-soft);
+  }
+
   /* === Export progress / states === */
   .mobile-action-button .export-progress {
     position: absolute;

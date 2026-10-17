@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './MobileActionBar.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
 import { ColorBudgetPicker } from './ColorBudgetPicker';
+import { useSecondaryToggle, type SecondaryAction } from '@/hooks/useSecondaryToggle';
 import type { ColorBudgetLevel } from '@/types';
 
 const GRID_PRESETS = [20, 30, 50, 75, 100, 150, 200, 300] as const;
@@ -46,6 +47,13 @@ interface Props {
   canExport: boolean;
   exporting: boolean;
   flash?: 'idle' | 'done';
+  /**
+   * 投稿入口。桌面端它挂在导出面板上，而导出面板在 ≤900px 是整块隐藏的
+   * （global.css 的 `.param-panel, .export-panel, .upload-zone { display:none }`），
+   * 所以手机端必须在这里另开一个口 —— 否则手机上根本没有投稿入口。
+   * 手感与导出面板完全一致：主按钮两态，旁边的窄切换位只改状态。
+   */
+  secondary?: SecondaryAction;
 }
 
 export function MobileActionBar({
@@ -64,9 +72,11 @@ export function MobileActionBar({
   canExport,
   exporting,
   flash,
+  secondary,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState(0);
+  const { onSecondary: onSecondaryMode, toggle } = useSecondaryToggle(secondary);
   const rafRef = useRef<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -141,7 +151,11 @@ export function MobileActionBar({
     document.addEventListener('pointerup', handleUp);
   }, [setValueFromPointer]);
 
-  const exportLabel = exporting
+  // 收成一个值，省得后面到处写 secondary! —— onSecondaryMode 为真才可能有它
+  const active = secondary && onSecondaryMode ? secondary : null;
+  const exportLabel = active
+    ? active.label
+    : exporting
     ? '生成中…'
     : flash === 'done'
     ? '已下载 ✓'
@@ -216,39 +230,72 @@ export function MobileActionBar({
           </svg>
         </button>
 
-        <button
-          className={`primary mobile-action-button mobile-btn-primary${exporting ? ' is-loading' : ''}${flash === 'done' ? ' is-done' : ''}`}
-          disabled={!canExport || exporting}
-          onClick={onExport}
-          aria-label="下载图片"
-        >
-          {progress > 0 && progress < 1 && (
-            <span
-              className="export-progress"
-              style={{ width: `${Math.round(progress * 100)}%` }}
-              aria-hidden
-            />
-          )}
-          <span className="export-label">
-            <svg
-              className="mobile-btn-icon"
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              aria-hidden="true"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+        <div className="mobile-primary-group">
+          <button
+            className={`primary mobile-action-button mobile-btn-primary${exporting && !active ? ' is-loading' : ''}${flash === 'done' && !active ? ' is-done' : ''}`}
+            disabled={!canExport || exporting}
+            onClick={() => (active ? active.onSelect() : onExport())}
+            /* 语音控制读的是 aria-label 而不是可见文案，两态下它必须跟着变，
+               否则会念「下载图片」然后真的去下载。 */
+            aria-label={active ? '投稿到作品库' : '下载图片'}
+          >
+            {!active && progress > 0 && progress < 1 && (
+              <span
+                className="export-progress"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+                aria-hidden
+              />
+            )}
+            <span className="export-label">
+              {active ? (
+                <svg
+                  className="mobile-btn-icon"
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 19V5" />
+                  <path d="m5 12 7-7 7 7" />
+                </svg>
+              ) : (
+                <svg
+                  className="mobile-btn-icon"
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 4v12" />
+                  <path d="m7 11 5 5 5-5" />
+                  <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+                </svg>
+              )}
+              {exportLabel}
+            </span>
+          </button>
+          {secondary && (
+            <button
+              type="button"
+              className="mobile-swap"
+              aria-pressed={onSecondaryMode}
+              aria-label={onSecondaryMode ? '切回下载' : '切换到投稿'}
+              onClick={toggle}
             >
-              <path d="M12 4v12" />
-              <path d="m7 11 5 5 5-5" />
-              <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-            </svg>
-            {exportLabel}
-          </span>
-        </button>
+              {onSecondaryMode ? secondary.backLabel ?? '下载' : secondary.label}
+            </button>
+          )}
+        </div>
       </div>
 
       {settingsOpen && (

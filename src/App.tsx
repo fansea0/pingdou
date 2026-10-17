@@ -187,9 +187,9 @@ export function App() {
             disabled={status === 'idle' || status === 'loading'}
           />
           {/* 投稿是导出面板上的一个可切换状态，而不是并排的第二个按钮：
-              手机端左列实测只有 206px，两个按钮各分到 100px，点按区域太小。
+              左列实测只有 206px，两个按钮各分到 100px，点按区域太小。
               合成一个之后主按钮拿回整行宽度，另一侧只留一个窄切换位。
-              切换位不进 MobileActionBar —— 那里已经有上传和导出。 */}
+              手机端这一整块是隐藏的，入口改由 MobileActionBar 的下载按钮承担。 */}
           <ExportPanel
             disabled={!result || exporting}
             onExport={handleExport}
@@ -251,6 +251,9 @@ export function App() {
       <Disclaimer />
 
       <MobileActionBar
+        /* 导出面板在 ≤900px 是整块隐藏的，所以手机端的投稿入口只能开在这里。
+           与桌面同一份 secondary 契约、同一套手感：主按钮两态，窄切换位只改状态。 */
+        secondary={{ label: '投稿', onSelect: () => setSubmitOpen(true) }}
         gridSize={gridSize}
         removeBackground={removeBackground}
         simplifyColors={simplifyColors}
