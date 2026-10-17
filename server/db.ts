@@ -112,10 +112,22 @@ export async function initDb(): Promise<void> {
       published   INTEGER NOT NULL DEFAULT 1,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL,
+      -- 2026-10-17：从 work_likes 表聚合改为**直接存计数**。原来赞数只增不减地堆在
+      -- 独立表里，列表查询每次都要对全表做一次 GROUP BY 聚合，那才是「存库查询压力大」
+      -- 的真正来源；改成整数列后列表直读该列 —— 零聚合、表零增长。
+      --
+      -- 「同一 IP 每天一次」的去重不再落库，改为进程内 Set（见 works.ts 的
+      -- likeFingerprint / 每日轮转）。代价是**重启后当天可以再赞**，用户已明确接受。
+      -- 计数是「次数」不是「人数」：同一 IP 次日可再点赞，计数会累加。
+      likes       INTEGER NOT NULL DEFAULT 0,
       CHECK (published IN (0, 1))
     );
     CREATE INDEX IF NOT EXISTS idx_works_published_created
       ON works(published, created_at DESC);
+    -- hot 排序走这个索引。没有它的话 ORDER BY likes DESC 会退化成扫表 + 临时排序，
+    -- 而这次改造的全部意义就是让列表查询变便宜，不能在这一步把收益吐回去。
+    CREATE INDEX IF NOT EXISTS idx_works_published_likes
+      ON works(published, likes DESC, created_at DESC, id DESC);
 
     -- 点赞：每 IP 对每张图每天限一次（用户已确认不支持取消）
     -- 复合主键即幂等保证，不需要「先查后插」；跨天是新 key，
@@ -157,6 +169,10 @@ export async function initDb(): Promise<void> {
   ensureColumn('sessions', 'city', 'TEXT');
   ensureColumn('sessions', 'is_self', 'INTEGER NOT NULL DEFAULT 0');
   ensureIndex('idx_events_province', 'events(province, created_at)');
+
+  // 老库没有 likes 列，纯追加升级，老行新列取默认 0（= 0 赞，正确）。
+  // 这一步是纯增量的：work_likes 还在、还在照旧读写，回填与删表是下一步单独的事。
+  ensureColumn('works', 'likes', 'INTEGER NOT NULL DEFAULT 0');
 
   runStmt(
     `INSERT OR IGNORE INTO settings(key, value, updated_at, updated_by) VALUES(?, ?, ?, ?)`,
