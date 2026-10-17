@@ -343,7 +343,7 @@ describe('createSubmission', () => {
     expect(row.description).toBe('');
   });
 
-  it('标题 trim 后为空则报 400 类错误（投稿必须填名称 unlike 后台上传）', async () => {
+  it('标题 trim 后为空则报 400 类错误（投稿必须填名称 unlike 编辑期回落）', async () => {
     const { works } = await freshWorks();
     expect(() => works.createSubmission(goodInput({ title: '   ' }), CLIENT))
       .toThrow(works.SubmissionInputError);

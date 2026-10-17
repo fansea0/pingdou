@@ -117,8 +117,9 @@ describe('WorkDetailPage', () => {
   });
 
   it('尺寸或体积缺失时显示「未知」，不把 NaN / 0 B 抖到页面上', async () => {
-    // 后台建作品时 width/height 可以是 0（server/works.ts normalizeDimension
-    // 对非正数返回 0），bytes 也可能是 0。这几条路径不能露出 NaN。
+    // 成品图的 width/height 来自投稿第二步，走 server/works.ts 的 optionalCount：
+    // 非法值一律落 0（尺寸只是元数据，详情页显示「未知」），bytes 也可能是 0。
+    // 这几条路径都不能把 NaN 抖到页面上。
     fetchWork.mockResolvedValue(detail({ width: 0, height: 0, bytes: 0 }));
     const { container } = render(<WorkDetailPage id={42} />);
     await screen.findByRole('heading', { name: '粉色小熊' });

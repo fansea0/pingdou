@@ -139,7 +139,7 @@ function optionalCount(raw: unknown, max: number): number {
   return Number.isInteger(n) && n > 0 && n <= max ? n : 0;
 }
 
-/** 投稿必须填名称。与后台上传的 normalizeTitle 不同：这里空标题是错误，不是回落。 */
+/** 投稿必须填名称。与 normalizeTitle 不同：那里空标题回落成「未命名作品」，这里空标题是错误。 */
 function requireTitle(raw: unknown): string {
   if (typeof raw !== 'string') throw new SubmissionInputError('名称必须是文本');
   const t = raw.trim();

@@ -568,10 +568,13 @@ app.post('/api/public/works', (req, res) => {
  * 路由层落进「既不是配额也不是输入错」的分支 → 500。投稿是**匿名公网入口**，
  * 让用户传错格式换来一个 500 既误导又掩盖真实原因。
  *
- * 不去改 extFor 的错误类型：它是存储层与投稿路径共用的，动它会波及别处
- * （改类型无收益）。所以在公网入口按消息特征兜一层，翻译范围严格限制在
- * 「不支持的 mime」这一种，不做「未知错误一律 400」—— 那样会把真的存储故障
- * 也报成 400，等于把故障藏起来。
+ * 保留正则兜底而不是在 extFor 源头改错误类型，是一次明确的取舍：源头改只剩
+ * attachSubmissionImage 一个调用方要跟着改（后台上传通道已删），成本已降到最低，
+ * 改与不改都属于本文件之外的决定，先不夹带。
+ *
+ * **所以在公网入口按消息特征兜一层时，翻译范围必须严格限制在「不支持的 mime」
+ * 这一种**，不做「未知错误一律 400」—— 那样会把真的存储故障也报成 400，
+ * 等于把故障藏起来。
  */
 export function isUnsupportedMimeError(err: unknown): boolean {
   return err instanceof Error && /unsupported (?:image|thumb) mime type/.test(err.message);

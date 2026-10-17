@@ -34,7 +34,11 @@ export interface SeedWorkOptions {
   boardH?: number;
   /**
    * false = 挂图时不带缩略图，thumb_key 留空（前台用原图当缩略图）。
-   * 生产上前端总会传，所以只在专测「无缩略图」降级路径的用例里关掉。
+   *
+   * thumb 之所以做成开关：spec（docs/superpowers/specs/2026-10-17-user-submission-and-review-design.md
+   * 的投稿接口段）把 thumb 标为**可选**字段，所以「没有缩略图」是这条路径上
+   * 真实存在的状态，值得让 helper 能造出来。默认 true，只是因为绝大多数用例
+   * 不关心它。
    */
   thumb?: boolean;
 }
@@ -57,8 +61,10 @@ export async function makeApprovedWork(
 ): Promise<AdminWorkDetail> {
   const { id } = await makePendingWork(works, opts);
   const approved = works.approveWork(id);
-  // 下架必须落在「已过审」之后：updateWorkMeta 会对 published=true 且未过审的行抛错，
-  // 顺序反了这里直接炸，而炸的原因不是「草稿不该存在」而是「不变量①被绕过」。
+  // 下架必须落在「已过审」之后：approveWork 无条件写 published=1，反过来先下架的话
+  // 这一步会把 published 又置回 1，造出来的是上架件而不是草稿，而且**不报错** ——
+  // updateWorkMeta 的守卫只拦 published=true（不变量①），published=false 那一路
+  // 对未过审的行照样放行，顺序错了只会安静地产出错误数据。
   return opts.published === false ? works.updateWorkMeta(id, { published: false }) : approved;
 }
 

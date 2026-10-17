@@ -158,7 +158,7 @@ describe('GET /media/works/:filename', () => {
   // 这两种 mime。只放行 .png 会让 jpeg/webp 作品存得上、URL 却永久 400。
   it('jpeg 原图：挂上去后 imageUrl 能被 /media/works/ 取到', async () => {
     const { app, works } = await bootApp();
-    // 走投稿的两步入库（后台上传通道已随 Task 7 拆掉），jpeg 由 mime 派生 .jpg
+    // 走投稿的两步入库（进货只有投稿这一条路），jpeg 由 mime 派生 .jpg
     const created = works.createSubmission(
       { title: 'jpeg 图', boardW: 50, boardH: 50, beanCount: 100, colorCount: 8, estimateMinutes: 30 },
       { ip: '10.9.9.9', userAgent: 'vitest-jpeg' },
