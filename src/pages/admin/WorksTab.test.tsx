@@ -221,6 +221,14 @@ describe('WorksTab 审核队列', () => {
     confirmSpy.mockReturnValue(true);
     fireEvent.click(screen.getByRole('button', { name: '删除 已下架' }));
     await waitFor(() => expect(adminDeleteWork).toHaveBeenCalledWith(3));
+    // 调了接口还不够：行必须真的从列表里消失。少了这半句，把 setWorks 的
+    // filter 整段删掉测试照样全绿 —— 界面上会留着一行点不动也删不掉的幽灵作品，
+    // 而站主没有任何办法刷新掉它（删除按钮已经随幽灵行一起失效了）。
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: '作品集' })).queryByRole('button', { name: '删除 已下架' })
+      ).toBeNull()
+    );
   });
 
   // ↓↓ 以下三条与「上传通道」无关，是整体替换测试文件时被顺带弄掉的旧护栏。
@@ -296,6 +304,17 @@ describe('WorksTab 审核队列', () => {
     expect(await screen.findByRole('alert')).toBeTruthy();
     adminDeleteWork.mockResolvedValueOnce({ ok: true });
     fireEvent.click(screen.getByRole('button', { name: '删除 B' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+
+    // 4. 审核失败 → 红条；再通过成功 → 红条必须消失。审核路径的 setError(null)
+    //    与上面三条是各自独立的调用点，漏掉一条的后果是：审核重试成功了，
+    //    上一次「磁盘满了」的红条还挂在界面上，站主会以为重试也失败了。
+    //    失败后行已回滚到待审核区，所以两次点的是同一个按钮。
+    adminApproveWork.mockRejectedValueOnce(new Error('boom-approve'));
+    fireEvent.click(screen.getByRole('button', { name: '通过 待审作品' }));
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    adminApproveWork.mockResolvedValueOnce({ ...PENDING, status: 'approved', published: true });
+    fireEvent.click(screen.getByRole('button', { name: '通过 待审作品' }));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 });

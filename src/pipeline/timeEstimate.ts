@@ -27,8 +27,9 @@ export function estimateAssemblyMinutes(beanCount: number): number {
  * 把 works.estimate_minutes（**分钟数**）渲染成展示文案。
  *
  * 方向与 estimateAssemblyMinutes 相反：那是「豆子数 → 存库」，这是「读库 → 显示」。
- * 两个方向各有一次 60/64 倍换算，所以除法也必须有函数 + 有用例，不能让调用点
- * 自己写 `minutes / 60`（后台审核队列与作品详情页各有一处，散着写迟早少一个 60）。
+ * 两个方向各占一次 60/64 倍换算的一端，所以两端都得是函数、都得有用例。
+ * 读这一端目前只有后台审核队列一个调用点，但「就一处」不是把 minutes / 60
+ * 直接抄进 JSX 的理由：调用点一多，散着写迟早漏掉一个 60，而类型系统不会报。
  *
  * 文案复用 formatAssemblyHours 而不是另写一句「约 X 小时」：投稿弹窗、
  * 导出图的图例、后台队列三处必须读起来是同一句话，改措辞才只需要改一处。
