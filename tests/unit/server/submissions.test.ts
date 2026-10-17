@@ -331,6 +331,19 @@ describe('createSubmission', () => {
     expect(rows[0].title).toBe('粉色小熊');
   });
 
+  // P1：第一步成功、第二步没做成（上传失败或用户直接关页面）会留下一条
+  // image_key 与 thumb_key **都为空**的孤儿 pending 行。这条行的两个 URL 必须
+  // 是空串 —— 直接调 publicUrl('') 拼出来的是 '/media/'，那是个指向目录、必然
+  // 404 的地址，前端拿它画 <img> 就是后台那张破图。
+  it('孤儿 pending 行（两步只走了一步）的图片地址是空串，不是 /media/', async () => {
+    const { works } = await freshWorks();
+    works.createSubmission(goodInput(), CLIENT);
+    const row = works.listAllWorks()[0];
+    expect(row.status).toBe('pending');
+    expect(row.thumbUrl).toBe('');
+    expect(row.imageUrl).toBe('');
+  });
+
   it('四个图纸参数原样入库', async () => {
     const { works } = await freshWorks();
     const created = works.createSubmission(goodInput(), CLIENT);

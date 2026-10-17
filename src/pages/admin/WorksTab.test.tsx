@@ -187,12 +187,23 @@ describe('WorksTab 审核队列', () => {
     ).toBeNull();
   });
 
-  it('没有图片的 pending 行显示「图片未上传」并仍可被拒绝', async () => {
-    adminListWorks.mockResolvedValue([{ ...PENDING, id: 5, title: '半途而废', imageUrl: '' }]);
+  // 孤儿 pending 行（投稿第一步成功、第二步上传失败/没做）的真实形态：**两个字段
+  // 都是空**。只把 imageUrl 覆盖成空串、却留下继承来的合法 thumbUrl 是假夹具 ——
+  // 服务端两个 key 都空时算出来的 thumbUrl 同样是空的（server/works.ts 的
+  // publicUrlOrEmpty），留着一个能取到的缩略图会让这条用例永远跑不到真实形态。
+  it('没有图片的 pending 行显示「图片未上传」、不画 img，并仍可被拒绝', async () => {
+    adminListWorks.mockResolvedValue([
+      { ...PENDING, id: 5, title: '半途而废', imageUrl: '', thumbUrl: '' },
+    ]);
     render(<WorksTab />);
     await findApproveButton('半途而废');
     const pendingSection = screen.getByRole('region', { name: '待审核' });
     expect(pendingSection.textContent).toContain('图片未上传');
+    // 两个 URL 都空还去画 <img>，浏览器要么去请求站点首页、要么对着空 src 画破图，
+    // 站主看到的是「缩略图加载失败」，会以为站点坏了。这半句是这条用例的主断言。
+    expect(pendingSection.querySelector('img')).toBeNull();
+    // 「无缩略图，前台加载的是原图」也是假的：这条行压根没有图可加载。
+    expect(pendingSection.textContent).not.toContain('前台加载的是原图');
     fireEvent.click(screen.getByRole('button', { name: '拒绝 半途而废' }));
     await waitFor(() => expect(adminRejectWork).toHaveBeenCalledWith(5));
   });

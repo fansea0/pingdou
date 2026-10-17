@@ -247,9 +247,10 @@ location /products/ { alias /var/lib/pingdou/images/; }
 ```nginx
 location ~ ^/media/works/(?<file>[0-9a-f]{16}(-t)?\.(png|jpg|webp))$ {
     alias /var/lib/pingdou/media/works/$file;
-    # 作品图文件名是 16 位随机 hex，内容永不变（换图走 replaceWorkImage
-    # 会重新生成新的 hex），等于自带内容指纹，可以放心永久缓存。
-    # 不配的话每次访问都要回源，公网图又大，是纯浪费。
+    # 作品图文件名是 16 位随机 hex，文件名与内容一一对应：图片上传之后就
+    # 永久不变了 —— 进货渠道是用户投稿，作品图不可更换（拒绝是删文件、
+    # 彻底删除是删记录，都不会拿新图盖同一个 key）。等于自带内容指纹，
+    # 可以放心永久缓存。不配的话每次访问都要回源，公网图又大，是纯浪费。
     expires 1y;
     add_header Cache-Control "public, immutable";
 }

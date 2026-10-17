@@ -29,6 +29,15 @@ function ThumbOrPlaceholder({ work }: { work: AdminWorkDetail }) {
   if (work.status === 'rejected') {
     return <span className="works-admin-flag">源文件已删除</span>;
   }
+  // 孤儿 pending 行（投稿第一步成功、第二步上传没做成）：thumb_key 与 image_key
+  // 都是空，服务端把 thumbUrl 算成空串而不是 '/media/'（server/works.ts 的
+  // publicUrlOrEmpty）。空 src 一样是一次破图请求/一次对着当前页的请求，所以
+  // 这里必须挡，不能只修服务端那一半。
+  // 这里只占位不出声：这一行的说明由下面字段区的「图片未上传」标记承担，
+  // 同一行说两遍会被当成两个问题。
+  if (!work.thumbUrl) {
+    return <span className="works-admin-flag" aria-hidden="true" />;
+  }
   return <img className="works-admin-thumb" src={work.thumbUrl} alt="" />;
 }
 
@@ -212,8 +221,10 @@ export function WorksTab() {
 
           {/* thumb_key 为空时服务端回落用原图当缩略图（toSummary: thumb_key || image_key），
               前台列表会真的去拉大图。标出来，免得站主以为「列表只加载缩略图」
-              这句文案在骗人。rejected 行不判：它那个 imageUrl 本来就取不到图。 */}
-          {work.thumbUrl === work.imageUrl && sec !== 'rejected' && (
+              这句文案在骗人。rejected 行不判：它那个 imageUrl 本来就取不到图。
+              imageUrl 为空同样不判：那一行压根没有图，「前台加载的是原图」是假的
+              （孤儿 pending 行两个 URL 都是空串，等值条件天然成立，会误报）。 */}
+          {!!work.imageUrl && work.thumbUrl === work.imageUrl && sec !== 'rejected' && (
             <span className="works-admin-flag">无缩略图，前台加载的是原图</span>
           )}
           {/* 用户在生成图之前就关掉页面，会留下一条只有元数据、没有图片的投稿。

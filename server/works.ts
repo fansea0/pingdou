@@ -187,6 +187,31 @@ export function normalizePublished(raw: unknown, fallback: boolean): boolean {
 }
 
 /**
+ * key 为空时返回**空串**，而不是原样交给 storage.publicUrl。
+ *
+ * 为什么不改 publicUrl 本身、让驱动对空 key 返回空串：
+ * - **「这个作品没有图」是作品行的状态，不是存储层的状态。** StorageDriver 的契约
+ *   是「给我一个 key，我给你它的地址」；空 key 在驱动看来是调用方的 bug。改成静默
+ *   返回空串，等于让驱动替调用方把 bug 藏起来 —— 而且每一个新写的驱动都得记得补
+ *   这道判断，忘了就是同一个半截地址 bug 换个地方再犯一次。
+ * - 保留 publicUrl 的原样行为，spec（docs/superpowers/specs/2026-10-16-qr-works-gallery-design.md
+ *   的 StorageDriver 一节）与 storage 单测都不用改，改动面只留在 works 这一层。
+ *
+ * 为什么要拦：storage.publicUrl('') 拼出来的是 `/media/` —— 一个指向目录、必然
+ * 404 的地址。作品表里**真的存在**两列都为空的行（投稿第一步成功、第二步上传失败
+ * 或用户没做就关掉页面，见 createSubmission 插入时 image_key/thumb_key 写死空串），
+ * 让这个半截地址冒充图片地址，前端就会拿它去画 <img>，站主在后台看到一张破图，
+ * 还以为站点坏了。
+ *
+ * 这条也不违背「只存 key 不存 URL」（server/db.ts 里 works 建表的注释）：那条原则
+ * 说的是**库里不许出现 url 列**，对外地址一律现算；本函数仍然是现算，只是把
+ * 「没有 key」这件事先表达出来，而不是硬凑一个假的地址出来。
+ */
+function publicUrlOrEmpty(key: string): string {
+  return key ? storage.publicUrl(key) : '';
+}
+
+/**
  * likes 直接从 works.likes 列读，**没有 JOIN、没有子查询、没有聚合**。
  *
  * 这正是本次改造的全部意义：原来这里是
@@ -205,7 +230,9 @@ function toSummary(row: WorkRow): WorkSummary {
   return {
     id: row.id,
     title: row.title,
-    thumbUrl: storage.publicUrl(row.thumb_key || row.image_key),
+    // thumb_key 为空时回落用原图当缩略图；两个 key 都空（孤儿 pending 行）时
+    // publicUrlOrEmpty 给空串，让「没有图」成为一个能表达出来的状态。
+    thumbUrl: publicUrlOrEmpty(row.thumb_key || row.image_key),
     width: row.width,
     height: row.height,
     createdAt: row.created_at,
@@ -235,7 +262,7 @@ function toDetail(row: WorkRow): WorkDetail {
     ...toSummary(row),
     ...paramsOf(row),
     description: row.description,
-    imageUrl: storage.publicUrl(row.image_key),
+    imageUrl: publicUrlOrEmpty(row.image_key),
     bytes: row.bytes,
     updatedAt: row.updated_at,
   };

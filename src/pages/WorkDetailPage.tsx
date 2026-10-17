@@ -102,20 +102,9 @@ export function formatBytes(bytes: number): string {
  */
 export const REDIRECT_DELAY_MS = 800;
 
-/**
- * 拿不到作品时自动跳回列表页。
- *
- * 用 location.replace 而不是赋值 location.href：无效详情页不该留在浏览器
- * 历史里，否则访客按「后退」会被反复弹回这一页，历史记录越按越乱。
- *
- * 延迟见 REDIRECT_DELAY_MS：为了让提示先渲染出来、来得及被读完。
- * 延迟期间组件仍然显示提示，不做空白。
- *
- * 依赖只写 [missing]，而定时器的 cleanup 是承重的：作品到位后 missing 翻 false，
- * cleanup 必须把还没触发的定时器清掉。少了它，访客从无效详情页点进一张有效作品
- * （同一个组件实例换 id，不重新挂载）就会在 REDIRECT_DELAY_MS 之后被弹回列表 ——
- * 正在看的东西被自己的导航抢走，且症状是「偶发」，现场几乎抓不到。
- */
+// 「拿不到作品就跳回列表页」的全部理由写在下面那个 useEffect 上，不要在这里
+// 再抄一份：那份注释此前在这里和 effect 上各存在一份逐字相同的副本，改一边
+// 忘另一边就会留下一段没人维护的过期说明。
 export function WorkDetailPage({ id }: WorkDetailPageProps) {
   usePageView();
   const [work, setWork] = useState<WorkDetail | null>(null);
@@ -153,6 +142,8 @@ export function WorkDetailPage({ id }: WorkDetailPageProps) {
 
   /**
    * 拿不到作品时自动跳回列表页。
+   *
+   * 这是本组件唯一的跳转出口，理由集中写在这里（组件上不再抄一份）：
    *
    * 用 location.replace 而不是赋值 location.href：无效详情页不该留在浏览器
    * 历史里，否则访客按「后退」会被反复弹回这一页，历史记录越按越乱。

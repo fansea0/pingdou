@@ -150,6 +150,46 @@ describe('rejectWork', () => {
     spy.mockRestore();
   });
 
+  // 本文件上面那条只守住了「第一次删除完成之前」；这条守的是它后面那一段：
+  // 第一次删除**已经完成**、第二次（缩略图）还悬着的那次 await。变异是把 UPDATE
+  // 插到两次 removeQuietly 之间 —— 那时磁盘上只剩缩略图，记录却已经写成
+  // rejected，于是「这条被拒的投稿还留着一个文件」变成了站点自己制造的孤儿，
+  // 而站主在界面上再也点不到它（它已经不在待审核区了）。这个窗口只有一次
+  // await 宽，触发条件是崩溃或磁盘事件，可追溯性没丢（reject 的 UPDATE 不清
+  // thumb_key，被拒行仍记着缩略图 key），所以按已知取舍接受，但边界必须钉住。
+  it('两次删文件之间记录也还是 pending（UPDATE 排在第二次删除之后）', async () => {
+    const { works, paths } = await freshWorks();
+    const id = await makePending(works);
+    const { storage } = await import('../../../server/storage/index.js');
+    let release = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let calls = 0;
+    // spy 会把 delete 整个换掉，所以先把真的那个抓在手里：第一次照常真删，
+    // 只有第二次卡住不放。不这么写的话「第一次删除已完成」只是句空话 ——
+    // 盘上一个文件都没少，测出来的窗口不是我要守的那个窗口。
+    const realDelete = storage.delete.bind(storage);
+    const spy = vi.spyOn(storage, 'delete').mockImplementation(async (key: string) => {
+      calls += 1;
+      if (calls === 2) await gate;
+      return realDelete(key);
+    });
+
+    const settled = works.rejectWork(id);
+    // 推进微任务直到第二次 delete 被调起。**必须设上界**：实现退化成只删一次时
+    // 这里会永远转下去，测试挂住而不是报红，比误判成「偶发红」更难查。
+    for (let i = 0; i < 50 && calls < 2; i++) await Promise.resolve();
+    // 窗口本身：原图已经删掉、缩略图还在磁盘上。
+    expect(calls).toBe(2);
+    expect(mediaFiles(paths)).toHaveLength(1);
+    // 窗口里记录必须还是 pending —— 这是「崩溃也不会留下无人认领的孤儿」的全部依据。
+    expect(works.listAllWorks()[0].status).toBe('pending');
+
+    release();
+    await settled;
+    expect(works.listAllWorks()[0].status).toBe('rejected');
+    spy.mockRestore();
+  });
+
   it('文件删不掉时仍然标记 rejected（删失败只 warn，不把投稿永远卡在 pending）', async () => {
     const { works, paths } = await freshWorks();
     const id = await makePending(works);
