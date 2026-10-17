@@ -360,7 +360,7 @@ openssl s_client -servername xn--muu023g.xyz -connect xn--muu023g.xyz:443 </dev/
 │   └── *.jpg, *.png                     ← 商品图片（admin 上传）
 └── media/                               ← 作品库文件（StorageDriver 所有，后端可写）
     └── works/
-        └── <16hex>.png, <16hex>-t.webp  ← 作品原图 + 缩略图（admin 上传）
+        └── <16hex>.png, <16hex>-t.webp  ← 作品原图 + 缩略图（用户投稿，非 admin 上传）
 ```
 
 ### 启动 env（`PINGDOU_DATA_DIR` 默认 `/var/lib/pingdou`，可不设）
@@ -508,3 +508,77 @@ systemctl restart pingdou-backend
 3. **图片显示不出来？** — 服务端会 fallback 到 `/static-data/default-product.png`（在 `public/` 下）；如果连这个都看不到，说明 nginx 配置里 `/static-data/` 没被服务到。
 4. **改完商品需要重启后端吗？** — 不需要。后端写完 `products` 表后，下次 `GET /api/products` 请求就拿到新的了。访客可能因为浏览器缓存看不到，强制刷新或加 `?t=<timestamp>` cache-bust。
 5. **nginx 报 403？** — 大概率是 `/var/lib/pingdou/images` 的权限没设对，`chmod -R a+rX` 一次。
+
+### 一次性清空作品库（2026-10-17 作品来源切换）
+
+作品来源从「后台上传」换成了「用户投稿」，存量图库需要物理清空。**这是一次性动作，
+不是常规运维**，跑之前请完整读完本节。
+
+#### ⚠️ 第一条前提：必须先停服
+
+```bash
+cd /root/project/pingdou
+systemctl stop pingdou-backend      # ← 先停服，确认进程退出
+PINGDOU_DATA_DIR=/var/lib/pingdou node scripts/reset-gallery.mjs
+systemctl start pingdou-backend     # ← 跑完再起
+```
+
+服务名是 `pingdou-backend`（见 `scripts/deploy-server.sh` 里
+`UNIT_FILE=/etc/systemd/system/pingdou-backend.service` 与 `systemctl restart pingdou-backend`）。
+
+**为什么在服务运行中跑会出事，而且备份也救不回来**：后端的 `flushNow()`
+（`server/db.ts`）用 `db.export()` **整库重写** `stats.db`，防抖 500ms。它手里那份
+内存库是在脚本开跑之前加载的、`works` 仍带全部行 —— 所以脚本删完图片、打印「完成」、
+`exit 0` 之后，服务端下一次任意写操作（登录、埋点）就会把那批行**原样写回磁盘**：
+
+```
+works = N 行（回来了）      media/works/ = 0 个文件（回不来）
+```
+
+站点于是指向一批不存在的图片，页面上全是裂图/404。而**回滚 `.bak` 也救不回来** ——
+回滚之后运行中的服务下一次 flush 又会用它内存里那份旧库把它们盖回去。**必须先停服。**
+
+**为什么脚本里那三道兜底检查不能替代停服**：兜底（写回前比对 `stats.db` 身份、删文件前
+再 `stat` 一次、删完再复核 `works` 行数）**只是「发现」机制，不是「防止」机制**。
+它们挡得住「脚本跑着的时候服务正在写库」，挡不住最阴的那种：脚本全程没有冲突、
+三道检查全过、脚本干净退出，**服务在脚本退出之后才 flush**。那时候已经没有任何代码在跑了。
+所以这三道检查的价值是「覆盖运维压根没想起来停服这个人为失误」，不是并发安全保证。
+
+#### 脚本真实的执行顺序（决定「它到底删了没有」）
+
+```
+备份 stats.db ─ 开库 / 统计 / DELETE（全部只在内存里）─ db.export()
+  ─ 写临时文件再 rename 原子落盘 ─ 重新打开落盘的库复核 works=0 行
+  ─ 才开始删 media/works/ 下的文件 ─ 删完再复核一次 works 行数
+```
+
+要点：
+
+- **备份失败会中止**，中止时磁盘上什么都还没动。
+- 但**备份成功之后仍有一整段可能中止**：落盘失败、复核失败（库已空但图还在）、
+  兜底 1a/1b 检测到有别的进程在写库 —— 这些都在「删文件之前」，退出时
+  「库还是满的、图片还在」，可以放心排查后重跑。唯一例外是「落盘已成功但复核失败」：
+  此时**库已经空了、图片全都还在**，只是多几个没人引用的孤儿文件，重跑一次即可清掉。
+- **落盘成功之前，一个字节的图片都不会被删。**
+- 反过来「文件没了但库还在」这个更糟的状态，脚本的顺序本身不会产生 ——
+  **前提是服务已停**（服务在跑时它自己就能造出这个状态）。
+
+#### 备份只覆盖数据库，不覆盖图片
+
+`.bak-*` 里**只有 `stats.db`**，没有 `media/works/` 下的图。所以「先备份再删」
+不等于「可以回滚」：数据库能靠 `.bak` 还原，**图片删了就是永久没了**。
+本脚本只承诺前者。
+
+#### 关于「部署后图库显示为空」
+
+> 部署新版本后、脚本跑之前，作品库会显示为空 —— **这是预期行为，不是故障**：
+> 老行被 `ensureColumn` 补成了 `status='pending'`（`server/db.ts` 里 `status` 列的
+> 默认值就是 `'pending'`，迁移刻意**不**回填 `approved`），被公开查询的
+> `AND status='approved'` 全部挡住。脚本的作用只是把这批已经不可见的行和
+> 它们的文件从磁盘上物理清掉。
+
+#### 收尾
+
+确认线上没问题（`GET /api/health` 有响应、站点能打开）后，
+可以把 `/var/lib/pingdou/stats.db.bak-*` 删掉。注意：`works` 表本来就是空的时候，
+脚本刚生成的那份 `.bak` **不含任何作品数据**，别拿它当回滚点。

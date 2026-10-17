@@ -157,12 +157,16 @@ nohup 起 vite preview 或 `npm run start:backend`；见 [`docs/DEPLOY.md`](./do
 与 [`docs/nginx-https-setup.md`](./docs/nginx-https-setup.md)。）
 
 环境变量（**生产部署必填**，详见 [`docs/DEPLOY.md#运行时数据管理`](./docs/DEPLOY.md#运行时数据管理)）：
-- `PRODUCTS_JSON_PATH` — 商品数据 JSON 文件（必填）
-- `PRODUCTS_IMAGES_DIR` — 商品图片目录（必填）
-- `STATS_DB_PATH` — SQLite 统计库路径（必填）
-- `ROOT_PASSWORD` — 首次部署种子密码（必填，seed 完后可删）
+- `PINGDOU_DATA_DIR` — 运行时数据根目录，**下面所有路径都从它派生**。
+  不设时默认 `/var/lib/pingdou`（`server/paths.ts`），生产建议通过 systemd 显式注入
 - `PORT`（默认 `3000`） — 后端端口
 - `BACKEND_URL`（默认 `http://localhost:3000`） — Vite dev/preview 代理目标
+
+> **已退役、设了也没用的变量**：`PRODUCTS_JSON_PATH` / `PRODUCTS_IMAGES_DIR` /
+> `STATS_DB_PATH` / `ROOT_PASSWORD`。代码里已不再识别它们，照着设置不会报错但也
+> **不产生任何效果**；`scripts/deploy-server.sh` 只会在检测到它们仍留在 systemd
+> 配置里时告警并提示删除。`ROOT_PASSWORD` 从未真正生效过：默认 seed 密码是硬编码的
+> `12345678`，首次启动后必须改密。
 
 ## 作品库
 
@@ -197,11 +201,16 @@ nohup 起 vite preview 或 `npm run start:backend`；见 [`docs/DEPLOY.md`](./do
   时也各自能赞。集合有上限（2 万条/天），因为 IP 和 UA 都由客户端伪造；
   触顶后整份丢弃（去重暂时失效、可以多赞）而不是拒绝新赞。
   **代价：重启后当天的去重记忆清零，同一个访客当天可以再赞一次。**
-- **后台上传**：后台第 4 个 tab「作品」。上传原图时浏览器用 canvas 生成 480px WebP
-  缩略图一起提交，服务端不引入 `sharp`。列表页只加载缩略图，下载仍是原始 PNG。
-- **上下架**：只有 `published=1` 的作品出现在公开列表和详情里。
-  `GET /api/admin/works` 的响应比公开 detail 多一个 `published` 布尔字段
-  （服务端 `toAdminDetail` 单独序列化），公开接口**不带**这个字段。
+- **进货渠道**：作品全部来自**用户投稿**（生成页参数面板下方），不再有后台上传入口。
+  投稿先进待审核队列，站主通过后才出现在公开列表里。缩略图由浏览器压成 480px WebP
+  一起提交（服务端不引入 `sharp`），列表页只加载缩略图，下载仍是原始 PNG。
+- **上下架**：只有 `published=1` **且** `status='approved'` 的作品出现在公开列表和详情里。
+  `GET /api/admin/works` 的响应比公开 detail 多 `published` 与 `status` 两个字段
+  （服务端 `toAdminDetail` 单独序列化），公开接口**不带**这两个字段。
+- **二维码**：导出图的二维码是**构建期**生成的静态码，指向 `/works` 列表页；
+  投稿图的二维码是**运行时**生成的，指向 `/works/:id`，扫描直达这一件作品。
+  两者共用同一个 `drawWorksQr`（`src/pipeline/qr.ts`），规格也刻意一致
+  （version 3 / ECC L / 静区 4 / 111×111），所以画法一行不用改。
 - **存储**：`works` 表只存 key（`works/<16hex>.png`），不存 URL，对外地址一律由
   `server/storage/` 里的 `StorageDriver.publicUrl()` 现算。换 S3/OSS 只需新增一个
   driver 实现文件 + 改 `server/storage/index.ts` 一行，老数据一行不用洗。
@@ -212,7 +221,8 @@ API：
 - `GET /api/public/works?limit&offset&q&sort` — 公开列表（无需登录）。`q` 按标题模糊搜索
   （`%` `_` 按字面转义），`sort` 为 `latest`（默认）或 `hot`（按点赞数）；
   默认每页 10 条
-- `GET /api/public/works/:id` — 公开详情（草稿返回 404）
+- `GET /api/public/works/:id` — 公开详情（**未过审 / 已下架 / 不存在一律 404**，三者不区分，
+  避免用状态码探测某个 id 是否曾经存在）
 - `GET /api/public/works/:id/like` — 点赞状态查询（`{ likes, liked }`，只读）
 - `POST /api/public/works/:id/like` — 点赞，返回 `{ ok, likes, alreadyLiked }`。
   **每个 IP + 每个浏览器对每张图每天限一次**（进程内指纹集合保证幂等，不落库）。
@@ -221,8 +231,65 @@ API：
   另有进程内令牌桶按 IP 限频（1 次/秒），排在作品存在性校验**之前**，超了返回 429
   且一条 SQL 都不发。点赞不可取消；同一访客次日可再赞，所以计数是「次数」不是「人数」。
   令牌桶与去重集合都只在本进程内生效（当前是 systemd 单进程部署）；横向扩展需换 Redis。
-- `GET /api/admin/works` / `POST /api/admin/works` / `PUT /api/admin/works/:id` /
-  `POST /api/admin/works/:id/image` / `DELETE /api/admin/works/:id` — 后台（需 admin）
+- `GET /api/admin/works` / `PUT /api/admin/works/:id` /
+  `POST /api/admin/works/:id/approve` / `POST /api/admin/works/:id/reject` /
+  `DELETE /api/admin/works/:id` — 后台（需 admin）。**后台已没有建作品 / 换图的接口**
+  （`POST /api/admin/works` 与 `POST /api/admin/works/:id/image` 随投稿通道一起删除了）
+
+## 投稿与审核
+
+访客在生成页填完参数后点「投稿」，填一个名称即可提交。投稿图**就是用户屏幕上
+那张图** —— 直接吃 `PipelineResult` 渲染，不重新采样，所以预览与投稿永远一致。
+
+- **两步入库**：先 POST 元数据（名称 + 四个图纸参数）拿 `id` 与一次性
+  `uploadToken`，再用 `id` 生成二维码画进已预留白带的画布，最后上传带码成品图。
+  白带高度在渲染时就固定成 111px —— version 3 的码是 29×29 模块，加静区 4 后
+  共 37 列，37 × 3px = 111px，模块边长正好是整数 3px，扫得出来。
+  缩略图由浏览器压成 480px WebP 一起提交；压不出来就降级成「无缩略图」
+  （服务端留空 `thumb_key`，前端用原图当缩略图），不是致命错误。
+- **`id` 可猜，所以第二步必须校验 `uploadToken`**。`works.id` 是自增整数，
+  只靠它的话任何人都能把图挂到别人的待审记录上。令牌是 128 位随机值
+  （`randomBytes(16)`，32 个 hex 字符），写入图片后随同 `image_key`
+  在同一条 `UPDATE` 里清空，因此只对那一次上传有效。
+- **投稿参数**：图纸格数（宽 × 高）、豆子数量、颜色数量、预估工时（存**分钟数**，
+  展示时现算文案）。这四项既用于后台审核队列，也用于作品详情页展示。
+  服务端对四个数字做严格校验（必须是范围内的**整数**，非整数一律 400），
+  不做静默兜底 —— 悄悄把非法值变成 0 会让审核者以为那是张空图。
+- **配额**：每个 IP + 每个浏览器每天 3 件，指纹与点赞同一套口径
+  （`hash(IP + User-Agent + UTC 日期 + 同一个盐)`，只去掉作品 ID 那一段），
+  只在进程内计数、跨天轮转，`works` 表不落任何 IP 派生数据。
+  **重启当日配额清零** —— 与点赞去重同一前提，横向扩展需换 Redis。
+  轮换 UA 可以绕过这个上限，这是有意换来的：兜底是审核队列本身，
+  与其把配额做成攻防战，不如让站主在 pending 列表里一眼看到并拒绝。
+- **审核态**：`pending → approved` / `pending → rejected`，另有与审核正交的
+  `published` 上下架。通过会自动上架；拒绝时**物理删除源文件**（原图与缩略图），
+  `image_key` 字符串保留在库里作审计线索（所以 rejected 行在后台显示
+  「源文件已删除」而不是裂图）。
+- **硬不变量**：`published=1` 必须伴随 `status='approved'`。后台 PUT 想上架一件未过审的
+  作品会被拒（`updateWorkMeta` 直接抛错，作品行一个字节都不改）—— 但**注意它返回的
+  是 404 而不是 400**：该路由把 `updateWorkMeta` 的所有异常一律映射成 404，
+  所以**别拿这个 404 去推断「作品不存在」**。
+  公开列表与详情另有 `AND status='approved'` 的显式过滤，
+  **不依赖**上面那条不变量成立 —— 公开路径的正确性不该建立在另一条约束没被违反之上。
+- **未过审 / 已下架 / 不存在的 id**：`GET /api/public/works/:id` 一律 404（不区分三者，
+  避免用状态码探测），详情页 800ms 后自动 `location.replace('/works')`。
+
+API：
+- `POST /api/public/works` — 投稿第一步，`201 { id, uploadToken }`；参数非法 400，
+  当日额度用尽 429
+- `POST /api/public/works/:id/image` — 投稿第二步，multipart（`image` + `thumb` +
+  `uploadToken` + `width` + `height`），`200 { ok, id }`
+- `POST /api/admin/works/:id/approve` / `POST /api/admin/works/:id/reject` — 审核（需 admin）
+- `GET /api/admin/works?status=pending|approved|rejected|all` — 后台列表（需 admin）
+  （不传 `status` 等于全量）
+
+非目标：用户侧没有投稿查询入口与结果通知，投稿不可编辑不可撤回。
+
+> **作品来源切换是一次性的、不可逆的运维动作。** 存量图库要物理清空时，
+> 必须**先停服**再跑 `scripts/reset-gallery.mjs`；在服务运行中跑它，
+> 内存库会把已删的作品行写回磁盘，得到「有作品行、图片却不存在」的坏图库，
+> **这种情况连备份都救不回来**。完整步骤与脚本内部的执行顺序见
+> [`docs/DEPLOY.md`](./docs/DEPLOY.md#一次性清空作品库2026-10-17-作品来源切换)。
 
 ## 统计功能
 
@@ -235,7 +302,11 @@ API：
 - 按时间桶（日）聚合的事件总数（折线图）
 - 支持 1/7/30/90 天时间范围切换
 
-数据存储在 SQLite 文件，路径由 `STATS_DB_PATH` 指定。生产环境位于 `/var/lib/pingdou/db/stats.db`，**随服务器物理文件一起持久**，重启不丢失。
+数据存储在 SQLite 文件里，路径由 `PINGDOU_DATA_DIR` 派生：`server/paths.ts` 里
+`dbPath = join(DATA_DIR, 'stats.db')`，**没有 `db/` 这一层**。所以默认配置下它落在
+`/var/lib/pingdou/stats.db`（不是 `/var/lib/pingdou/db/stats.db`），**随服务器物理文件
+一起持久**，重启不丢失。要备份就备份整个 `/var/lib/pingdou/`，见
+[`docs/DEPLOY.md#备份与恢复`](./docs/DEPLOY.md#备份与恢复)。
 
 API 端点：
 - `POST /api/track` — 上报事件（无需鉴权）
