@@ -144,9 +144,13 @@
 
 .works-search-clear {
   position: absolute;
-  right: var(--space-2);
-  width: 32px;
-  height: 32px;
+  /* 44px 触摸区（spec §5.4 的移动端下限），比输入框同高，
+     居中不靠 flex 对绝对定位子项的对齐行为，显式 translate 更稳 */
+  right: var(--space-1);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 50%;
   background: transparent;
@@ -168,7 +172,8 @@
 
 .works-sort-btn {
   flex: 1;
-  min-height: 36px;
+  /* 触摸区 44px，与输入框同高（spec §5.4） */
+  min-height: 44px;
   padding: var(--space-2) var(--space-4);
   border: none;
   border-radius: calc(var(--radius-md) - var(--space-1));
@@ -183,30 +188,6 @@
 .works-sort-btn--on {
   background: var(--color-accent);
   color: #fff;
-  font-weight: 600;
-}
-
-/* 点赞按钮：放在卡片底部靠右，不与标题抢注意力 */
-.works-like {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  /* 触摸区 44px —— 手机上低于这个高度很容易点空 */
-  min-height: 44px;
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: color 0.15s;
-}
-
-.works-like:hover:not(:disabled) { color: var(--color-accent); }
-.works-like:disabled { cursor: default; }
-
-.works-like--on {
-  color: var(--color-accent);
   font-weight: 600;
 }
 

@@ -1,0 +1,29 @@
+/*
+ * 点赞按钮样式。列表页与详情页共用这一个组件，所以样式跟着组件走，
+ * 不留在 WorksListPage.css 里 —— 详情页不加载那份 CSS，写在那儿等于样式失效。
+ * 规则从 WorksListPage.css 原样搬来，视觉零变化。
+ */
+
+/* 放在卡片底部靠右，不与标题抢注意力 */
+.works-like {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  /* 触摸区 44px —— 手机上低于这个高度很容易点空 */
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.works-like:hover:not(:disabled) { color: var(--color-accent); }
+.works-like:disabled { cursor: default; }
+
+.works-like--on {
+  color: var(--color-accent);
+  font-weight: 600;
+}

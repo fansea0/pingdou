@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchLikeState, likeWork, type WorkSummary } from '@/api/works';
+import './LikeButton.css';
 
 /**
  * 单个作品的点赞按钮。列表页与详情页共用。
@@ -75,7 +76,9 @@ export function LikeButton({
       className={liked ? 'works-like works-like--on' : 'works-like'}
       onClick={onClick}
       disabled={liked || busy}
-      aria-pressed={liked}
+      // 不用 aria-pressed：pressed 语义告诉辅助技术「这是个可来回切换的开关」，
+      // 而本按钮按产品决定不支持取消 —— 宣告一个按不回来的开关是假可供性。
+      // 状态已经写在 aria-label 的「已赞，」里，朗读结果不丢信息。
       aria-label={liked ? `已赞，${likes} 次点赞` : `${likes} 次点赞`}
     >
       <span aria-hidden="true">{liked ? '♥' : '♡'}</span>
