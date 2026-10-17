@@ -122,6 +122,27 @@ describe('搜索', () => {
     await seed('小熊', false);
     expect((await list({ q: '小熊' })).total).toBe(0);
   });
+
+  /**
+   * 未过审的作品在**搜索分支**也搜不到。
+   *
+   * 为什么要单独一条：带 q 的 WHERE 是另一段独立 SQL 字面量，不与不搜索分支共享代码。
+   * 只从搜索分支删掉 `AND w.status = 'approved'`，works.test.ts 里那两条不传 q 的
+   * 用例一条都不会红 —— 而搜索恰恰是访客最容易撞见未过审内容的入口。
+   *
+   * 对照行（已过审、同关键词）是这条用例的关键：没有它，「搜出来是空的」既可能是
+   * 过滤生效，也可能是 q 根本没匹配上任何东西，用例就成了恒真。
+   */
+  it('未过审的作品在搜索结果里也不出现', async () => {
+    const pending = await seed('待审小熊');
+    await seed('已过审小熊');
+    db.runStmt(`UPDATE works SET status = 'pending' WHERE id = ?`, [pending]);
+
+    const r = await list({ q: '小熊' });
+    expect(r.items.map(i => i.title)).toEqual(['已过审小熊']);
+    expect(r.total).toBe(1);
+    expect(works.getPublishedWork(pending)).toBeNull();
+  });
 });
 
 describe('排序', () => {

@@ -397,6 +397,10 @@ describe('作品响应形状与公开可见性', () => {
     db.runStmt(`UPDATE works SET status='pending' WHERE id=?`, [visible.id]);
 
     const list = works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' });
+    // items 与 total 都要断。只断 total 是空断言的一半：今天两处共用同一个
+    // where 变量，结论成立；但一旦有人把列表查询的 WHERE 内联改写、只给 COUNT
+    // 保留过滤，待审作品就会带着 total=0 一起渲染进图库，而只断 total 全绿。
+    expect(list.items).toEqual([]);
     expect(list.total).toBe(0);
     expect(works.getPublishedWork(visible.id)).toBeNull();
   });
@@ -406,7 +410,9 @@ describe('作品响应形状与公开可见性', () => {
     const w = await works.createWork({ title: '被拒', image: { body: PNG, mime: 'image/png' } });
     const db = await import('../../../server/db.js');
     db.runStmt(`UPDATE works SET status='rejected' WHERE id=?`, [w.id]);
-    expect(works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' }).total).toBe(0);
+    const list = works.listPublishedWorks({ limit: 20, offset: 0, sort: 'latest' });
+    expect(list.items).toEqual([]);
+    expect(list.total).toBe(0);
     expect(works.getPublishedWork(w.id)).toBeNull();
   });
 
