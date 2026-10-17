@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createWorkSubmission, uploadSubmissionImage } from '@/api/works';
 import { renderSubmissionComposite } from '@/pipeline/submission';
 import { canvasToBlob } from '@/pipeline/exporter';
@@ -16,6 +16,13 @@ export interface SubmitWorkButtonProps {
   estimateLabel: string | null;
   estimateMinutes: number;
   disabled?: boolean;
+  /**
+   * 弹窗开关由外部控制：触发器住在导出面板里（那一行只放得下一个能点出结果的
+   * 按钮，投稿入口降级成它旁边的切换位）。所以本组件不再自带触发按钮，只负责
+   * 弹窗本身与事后提示。
+   */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 /** 缩略图长边，与后台上传时期一致（THUMB_MAX = 480）。 */
@@ -63,12 +70,34 @@ export function SubmitWorkButton({
   estimateLabel,
   estimateMinutes,
   disabled,
+  open,
+  onOpenChange,
 }: SubmitWorkButtonProps) {
-  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const busy = phase === 'submitting';
+
+  // beanCount === 0 与「没有图纸」不是一回事，必须一起挡住：App.tsx 的 beanCount
+  // 数的是 mask 里非背景的格子，为 0 说明去背景把整张图都判成背景了。这种图纸
+  // 渲出来是一张没有豆子的空白板 + 白带 + 码，投出去既没人会看，还要吃掉用户
+  // 一天的投稿配额。弹窗摘要里豆子数那格显示「—」也是同一个口径。
+  const blocked = disabled || !result || beanCount <= 0;
+
+  // 挡住的时候把已经开着的弹窗收掉：触发器在导出面板里，那边只管调
+  // onOpenChange(true)，并不知道当前有没有图纸。开着关不掉是最糟的一种。
+  useEffect(() => {
+    if (blocked && open) onOpenChange(false);
+  }, [blocked, open, onOpenChange]);
+
+  // 重置必须发生在「打开」这一刻。投稿失败时弹窗是被 submit 关掉的，若把清理
+  // 挂在 open 上连带执行，刚设上的 error 会被同一次关闭抹掉 —— 配额 429 这种
+  // 第一步就失败的场景会再也看不见提示。所以 open 变 false 时这里直接 return。
+  useEffect(() => {
+    if (!open) return;
+    setTitle('');
+    setError(null);
+  }, [open]);
 
   const submit = useCallback(async () => {
     const name = title.trim();
@@ -78,7 +107,7 @@ export function SubmitWorkButton({
     // 提交一开始就关窗：投稿要跑渲染 + 两次请求，期间用户不该还能改名字重开弹窗。
     // 失败提示因此必须活在弹窗之外（见文件末尾的 role="alert"），
     // 否则「点确认 → 失败」会变成什么都没发生。
-    setOpen(false);
+    onOpenChange(false);
     try {
       // ① 先渲染：白带按 SUBMISSION_QR_PX 预留好，但还不画码
       const canvas = await renderSubmissionComposite(palette, result);
@@ -118,34 +147,12 @@ export function SubmitWorkButton({
       setPhase('idle');
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [beanCount, busy, colorCount, estimateMinutes, palette, result, title]);
-
-  // beanCount === 0 与「没有图纸」不是一回事，必须一起挡住：App.tsx 的 beanCount
-  // 数的是 mask 里非背景的格子，为 0 说明去背景把整张图都判成背景了。这种图纸
-  // 渲出来是一张没有豆子的空白板 + 白带 + 码，投出去既没人会看，还要吃掉用户
-  // 一天的投稿配额。弹窗摘要里豆子数那格显示「—」也是同一个口径。
-  const blocked = disabled || !result || beanCount <= 0;
+  }, [beanCount, busy, colorCount, estimateMinutes, onOpenChange, palette, result, title]);
 
   return (
-    <div className="submit-work">
-      <button
-        type="button"
-        className="submit-work-btn"
-        disabled={blocked || busy}
-        onClick={() => {
-          // 重置放在「打开」这一刻而不是 useEffect([open]) 里：投稿失败时弹窗
-          // 是被 submit 关掉的，若用 effect 清理，刚设上的 error 会被同一次
-          // 关闭的清理连带抹掉 —— 配额 429 这种第一步失败就再也看不见提示了。
-          setTitle('');
-          setError(null);
-          setOpen(true);
-        }}
-      >
-        {busy ? '正在投稿…' : '投稿到作品库'}
-      </button>
-
+    <>
       {open && (
-        <div className="submit-work-backdrop" onClick={() => setOpen(false)}>
+        <div className="submit-work-backdrop" onClick={() => onOpenChange(false)}>
           <div
             className="submit-work-dialog"
             role="dialog"
@@ -196,7 +203,7 @@ export function SubmitWorkButton({
             {error && <p className="submit-work-error" role="alert">{error}</p>}
 
             <div className="submit-work-actions">
-              <button type="button" className="submit-work-cancel" onClick={() => setOpen(false)}>
+              <button type="button" className="submit-work-cancel" onClick={() => onOpenChange(false)}>
                 取消
               </button>
               <button
@@ -212,6 +219,13 @@ export function SubmitWorkButton({
         </div>
       )}
 
+      {/* 触发器搬去导出面板之后，「正在投稿…」就没有按钮可挂了 —— 提交一开始
+          弹窗就关掉，这一行是那几秒里唯一的进度反馈，不能一起消失。 */}
+      {busy && (
+        <p className="submit-work-busy" role="status" aria-live="polite">
+          正在投稿…
+        </p>
+      )}
       {phase === 'done' && (
         <p className="submit-work-toast" role="status" aria-live="polite">
           投稿成功，等审核通过就会出现在作品库～
@@ -223,6 +237,6 @@ export function SubmitWorkButton({
       {phase === 'idle' && error && (
         <p className="submit-work-error" role="alert">{error}</p>
       )}
-    </div>
+    </>
   );
 }

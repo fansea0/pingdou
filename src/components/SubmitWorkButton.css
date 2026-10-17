@@ -64,6 +64,12 @@
 .submit-work-confirm { background: #111; color: #fff; border-color: #111; }
 .submit-work-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.submit-work-busy {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: #666;
+}
+
 .submit-work-toast {
   margin: 0;
   font-size: var(--text-xs);

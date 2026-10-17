@@ -53,33 +53,76 @@ describe('ExportPanel', () => {
     expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
   });
 
-  // 「投稿和下载在同一个位置」是这条插槽存在的全部理由。位置一旦被拆回两块，
-  // 这组断言会直接变红 —— 而 DOM 里只查「按钮还在」是查不出来的。
-  it('把次级动作与下载按钮放进同一个并排容器', () => {
-    const { container } = render(
-      <ExportPanel onExport={() => {}} disabled={false}>
-        <button type="button">投稿到作品库</button>
-      </ExportPanel>
-    );
-    const row = container.querySelector('.export-actions');
-    expect(row).not.toBeNull();
-    expect(row?.querySelector('button.primary')?.textContent).toMatch(/下载/);
-    expect(row?.textContent).toMatch(/投稿到作品库/);
-  });
+  // 「投稿和下载在一个位置、可以来回切」是这条 secondary 契约存在的全部理由。
+  // 形态退回到两个并排按钮时，下面三条会直接变红 —— 而只查「按钮还在」查不出来。
+  describe('可切换的次级动作', () => {
+    const secondary = { label: '投稿', onSelect: vi.fn() };
 
-  it('次级动作在下载按钮之后 —— 主次顺序不能反', () => {
-    const { container } = render(
-      <ExportPanel onExport={() => {}} disabled={false}>
-        <button type="button">投稿到作品库</button>
-      </ExportPanel>
-    );
-    const buttons = Array.from(container.querySelectorAll('.export-actions button'));
-    expect(buttons.map((b) => b.textContent)).toEqual(['下载', '投稿到作品库']);
-  });
+    it('默认显示「下载」，切换位显示要切过去的「投稿」', () => {
+      const { container } = render(
+        <ExportPanel onExport={() => {}} disabled={false} secondary={secondary} />
+      );
+      expect(container.querySelector('button.primary')?.textContent).toBe('下载');
+      expect(container.querySelector('.export-swap')?.textContent).toBe('投稿');
+    });
 
-  it('没有次级动作时导出面板照常渲染（插槽是可选的）', () => {
-    const { container } = render(<ExportPanel onExport={() => {}} disabled={false} />);
-    expect(container.querySelectorAll('.export-actions button')).toHaveLength(1);
-    expect(container.querySelector('.hint')?.textContent).toMatch(/32px/);
+    it('点切换位只改状态、不执行任何动作', () => {
+      const onExport = vi.fn();
+      const onSelect = vi.fn();
+      const { container } = render(
+        <ExportPanel
+          onExport={onExport}
+          disabled={false}
+          secondary={{ label: '投稿', onSelect }}
+        />
+      );
+      fireEvent.click(container.querySelector('.export-swap')!);
+      // 判别力：把切换位也接上 onSelect 时，本条会红。切和做混在一次点击里，
+      // 用户永远不知道自己刚才那下到底干了什么。
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(onExport).not.toHaveBeenCalled();
+      expect(container.querySelector('button.primary')?.textContent).toBe('投稿');
+    });
+
+    it('切到投稿后点主按钮走投稿，再切回来点主按钮走下载', () => {
+      const onExport = vi.fn();
+      const onSelect = vi.fn();
+      const { container } = render(
+        <ExportPanel
+          onExport={onExport}
+          disabled={false}
+          secondary={{ label: '投稿', onSelect }}
+        />
+      );
+      const swap = () => fireEvent.click(container.querySelector('.export-swap')!);
+      const main = () => fireEvent.click(container.querySelector('button.primary')!);
+
+      swap();
+      main();
+      expect(onSelect).toHaveBeenCalledTimes(1);
+      expect(onExport).not.toHaveBeenCalled();
+
+      swap();
+      expect(container.querySelector('button.primary')?.textContent).toBe('下载');
+      main();
+      expect(onExport).toHaveBeenCalledTimes(1);
+      expect(onSelect).toHaveBeenCalledTimes(1);
+    });
+
+    it('切换位标出当前所处的状态', () => {
+      const { container } = render(
+        <ExportPanel onExport={() => {}} disabled={false} secondary={secondary} />
+      );
+      const swap = container.querySelector('.export-swap')!;
+      expect(swap.getAttribute('aria-pressed')).toBe('false');
+      fireEvent.click(swap);
+      expect(container.querySelector('.export-swap')!.getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('没有次级动作时退化成单个满宽按钮，不留切换位', () => {
+      const { container } = render(<ExportPanel onExport={() => {}} disabled={false} />);
+      expect(container.querySelector('.export-swap')).toBeNull();
+      expect(container.querySelectorAll('.export-actions button')).toHaveLength(1);
+    });
   });
 });

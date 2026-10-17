@@ -49,6 +49,7 @@ export function App() {
   const [colorBudget, setColorBudget] = useState<ColorBudgetLevel>('standard');
   const [exporting, setExporting] = useState(false);
   const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
+  const [submitOpen, setSubmitOpen] = useState(false);
 
   usePageView();
 
@@ -185,27 +186,28 @@ export function App() {
             }}
             disabled={status === 'idle' || status === 'loading'}
           />
-          {/* 投稿入口作为次级动作并进导出面板，和「下载」并排：两者都是
-              「拿这张图纸去做点什么」，参数是它们共同的前置输入，摆在同一个
-              决策点上比拆成两块更准。层级如实反映权重 —— 下载实心（默认动作），
-              投稿描边（公开且要过审）。也不进 MobileActionBar：那里已经有上传
-              和导出，再塞第三个操作会让底部条拥挤。 */}
+          {/* 投稿是导出面板上的一个可切换状态，而不是并排的第二个按钮：
+              手机端左列实测只有 206px，两个按钮各分到 100px，点按区域太小。
+              合成一个之后主按钮拿回整行宽度，另一侧只留一个窄切换位。
+              切换位不进 MobileActionBar —— 那里已经有上传和导出。 */}
           <ExportPanel
             disabled={!result || exporting}
             onExport={handleExport}
             exporting={exporting}
             flash={exportFlash}
-          >
-            <SubmitWorkButton
-              palette={palette}
-              result={result}
-              beanCount={beanCount}
-              colorCount={legend.length}
-              estimateLabel={estimateLabel}
-              estimateMinutes={estimateMinutes}
-              disabled={status === 'idle' || status === 'loading'}
-            />
-          </ExportPanel>
+            secondary={{ label: '投稿', onSelect: () => setSubmitOpen(true) }}
+          />
+          <SubmitWorkButton
+            palette={palette}
+            result={result}
+            beanCount={beanCount}
+            colorCount={legend.length}
+            estimateLabel={estimateLabel}
+            estimateMinutes={estimateMinutes}
+            disabled={status === 'idle' || status === 'loading'}
+            open={submitOpen}
+            onOpenChange={setSubmitOpen}
+          />
         </aside>
 
         <section className="middle">

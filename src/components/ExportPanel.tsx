@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './ExportPanel.css';
+
+/** 可以切到主按钮上的次级动作（当前是投稿） */
+export interface SecondaryAction {
+  /** 切过去之后主按钮显示的文案，必须诚实描述点下去会发生什么 */
+  label: string;
+  /** 主按钮处在该状态时被点击 → 调它 */
+  onSelect: () => void;
+}
 
 interface Props {
   onExport: () => void;
@@ -7,17 +15,18 @@ interface Props {
   exporting?: boolean;
   flash?: 'idle' | 'done';
   /**
-   * 与「下载」并排的次级动作（当前是投稿入口）。
+   * 次级动作。传了就在主按钮右侧挂一个切换位，整行只有**一个**能点出结果的
+   * 按钮 —— 手机端左列只有 206px，两个并排按钮各分到 100px，点按区域太小。
    *
-   * 做成插槽而不是让本组件直接认识投稿：两个按钮共享「拿这张图纸去做点什么」
-   * 这层语义，但各自的流程与状态互不相干（投稿要先弹窗、再占 id、再渲染、
-   * 再上传两轮请求）。硬塞进来只会让 Props 长成两套字段、状态互相污染。
+   * 切换位只改状态、不执行动作：切错了顶多多点一下，但把「切」和「做」混在
+   * 同一次点击里，用户永远不知道自己刚才那下到底干了什么。
    */
-  children?: ReactNode;
+  secondary?: SecondaryAction;
 }
 
-export function ExportPanel({ onExport, disabled, exporting, flash, children }: Props) {
+export function ExportPanel({ onExport, disabled, exporting, flash, secondary }: Props) {
   const [progress, setProgress] = useState(0);
+  const [mode, setMode] = useState<'primary' | 'secondary'>('primary');
   const rafRef = useRef<number | null>(null);
   const wasRunningRef = useRef(false);
 
@@ -46,7 +55,15 @@ export function ExportPanel({ onExport, disabled, exporting, flash, children }: 
     };
   }, [exporting]);
 
-  const label = exporting
+  // 次级动作被撤掉后还停在它的状态上，主按钮就会显示一个点了没反应的标签
+  useEffect(() => {
+    if (!secondary && mode === 'secondary') setMode('primary');
+  }, [secondary, mode]);
+
+  const onSecondary = mode === 'secondary' && secondary;
+  const label = onSecondary
+    ? secondary.label
+    : exporting
     ? '正在生成…'
     : flash === 'done'
     ? '已下载 ✓'
@@ -54,16 +71,15 @@ export function ExportPanel({ onExport, disabled, exporting, flash, children }: 
 
   return (
     <div className="export-panel">
-      {/* 下载吃掉剩余宽度，次级动作按文案自然宽度 —— 层级如实反映权重：
-          下载是即时、私有、不需要别人点头的默认动作，所以实心；投稿会把
-          这张图交给站主审核、公开挂出去，所以描边。 */}
+      {/* 一个行、一个能点出结果的按钮。切换位窄、无填充、字小 —— 它是「换一件事做」
+          而不是第二个动作，所以不能跟主按钮抢同样的视觉权重。 */}
       <div className="export-actions">
         <button
-          className={`primary export-btn${exporting ? ' is-loading' : ''}${progress >= 1 ? ' is-done' : ''}`}
+          className={`primary export-btn${exporting && !onSecondary ? ' is-loading' : ''}${progress >= 1 && !onSecondary ? ' is-done' : ''}`}
           disabled={disabled || !!exporting}
-          onClick={onExport}
+          onClick={() => (onSecondary ? onSecondary.onSelect() : onExport())}
         >
-          {progress > 0 && progress < 1 && (
+          {!onSecondary && progress > 0 && progress < 1 && (
             <span
               className="export-progress"
               style={{ width: `${Math.round(progress * 100)}%` }}
@@ -72,7 +88,16 @@ export function ExportPanel({ onExport, disabled, exporting, flash, children }: 
           )}
           <span className="export-label">{label}</span>
         </button>
-        {children}
+        {secondary && (
+          <button
+            type="button"
+            className="export-swap"
+            aria-pressed={mode === 'secondary'}
+            onClick={() => setMode(mode === 'primary' ? 'secondary' : 'primary')}
+          >
+            {mode === 'primary' ? secondary.label : '下载'}
+          </button>
+        )}
       </div>
       <p className="hint">默认 32px 一格，可直接打印或分享</p>
     </div>

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import type { ComponentProps } from 'react';
 import { SubmitWorkButton } from './SubmitWorkButton';
 import type { Palette, PipelineResult } from '@/types';
@@ -107,18 +108,38 @@ afterEach(() => {
   HTMLCanvasElement.prototype.toBlob = nativeToBlob;
 });
 
-function renderButton(over: Partial<ComponentProps<typeof SubmitWorkButton>> = {}) {
-  return render(
-    <SubmitWorkButton
-      palette={PALETTE}
-      result={RESULT}
-      beanCount={3814}
-      colorCount={42}
-      estimateLabel="约 6.4 小时"
-      estimateMinutes={384}
-      {...over}
-    />,
+/**
+ * 按 App.tsx 的真实接线包一层：触发器在导出面板里，本组件只吃受控的 open。
+ * 直接 render 本组件的话没有按钮可点，下面那些「点开弹窗」的用例全都无从下手。
+ */
+let lastSetOpen: ((open: boolean) => void) | null = null;
+
+function Harness(over: Partial<ComponentProps<typeof SubmitWorkButton>>) {
+  const [open, setOpen] = useState(false);
+  lastSetOpen = setOpen;
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>投稿到作品库</button>
+      <SubmitWorkButton
+        palette={PALETTE}
+        result={RESULT}
+        beanCount={3814}
+        colorCount={42}
+        estimateLabel="约 6.4 小时"
+        estimateMinutes={384}
+        {...over}
+        open={open}
+        onOpenChange={setOpen}
+      />
+    </>
   );
+}
+
+function renderButton(over: Partial<ComponentProps<typeof SubmitWorkButton>> = {}) {
+  lastSetOpen = null;
+  const r = render(<Harness {...over} />);
+  /** 直接开窗，绕开触发器 —— 用来测「被挡住时开不起来」这类分支 */
+  return { ...r, openDialog: (v: boolean) => act(() => lastSetOpen?.(v)) };
 }
 
 /**
@@ -134,16 +155,31 @@ function submitWith(title: string) {
 }
 
 describe('SubmitWorkButton', () => {
-  it('没有图纸时按钮禁用', () => {
-    renderButton({ result: null });
-    expect((screen.getByRole('button', { name: /投稿/ }) as HTMLButtonElement).disabled).toBe(true);
+  // 触发器搬到导出面板之后，本组件不再有按钮可以置灰，挡住的责任落在这条：
+  // 外面把 open 设成 true，本组件必须自己把窗收掉。少了它，用户能对着一张
+  // 没有豆子的图点进一个永远填不完的弹窗，白占一次当天配额。
+  it('没有图纸时即使被要求打开，弹窗也开不起来', () => {
+    const { openDialog } = renderButton({ result: null });
+    openDialog(true);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('豆子数为 0 时按钮禁用：整张图被去背景吃掉，投稿只剩一张空板', () => {
+  it('豆子数为 0 时同样开不起来：整张图被去背景吃掉，投稿只剩一张空板', () => {
     // 判别力：把 blocked 里的 beanCount <= 0 删掉时，本条与「没有图纸」那条
     // 都仍绿，但用户能投出一张没有豆子的图并消耗当天配额。
-    renderButton({ beanCount: 0 });
-    expect((screen.getByRole('button', { name: /投稿/ }) as HTMLButtonElement).disabled).toBe(true);
+    const { openDialog } = renderButton({ beanCount: 0 });
+    openDialog(true);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('先开着窗、随后变成没有图纸时，窗会被收掉', () => {
+    // 只测「一开始就 blocked」不够：导出面板的 disabled 可能在投稿进行途中
+    // 才变（用户重新上传了图、或 pipeline 回到 idle），那时窗已经开着了。
+    const { openDialog, rerender } = renderButton();
+    openDialog(true);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    rerender(<Harness result={null} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('点击后弹窗显示名称输入框与四个参数的只读摘要', () => {
@@ -341,10 +377,12 @@ describe('SubmitWorkButton', () => {
     renderButton();
     submitWith('x');
 
-    // 断的是**外层触发按钮**而不是弹窗里的确认键：submit 一开始就把弹窗关掉了，
-    // 确认键此刻根本不在 DOM 里，防重复提交的责任落在外层按钮的 busy 禁用上。
-    await waitFor(() => expect(screen.getByRole('button', { name: /正在投稿/ })).toBeTruthy());
-    expect((screen.getByRole('button', { name: /正在投稿/ }) as HTMLButtonElement).disabled).toBe(true);
+    // 断的是弹窗**外面**那行状态而不是确认键：submit 一开始就把弹窗关掉了，
+    // 确认键此刻根本不在 DOM 里。触发器搬去导出面板之后，那几秒里唯一的进度
+    // 反馈就是这行 —— 它没了，用户会以为点击没生效，转头再点一次。
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toContain('正在投稿'),
+    );
     // 弹窗已关 → 用户没法在等待期间再点一次「确认投稿」
     expect(screen.queryByRole('dialog')).toBeNull();
     resolveCreate({ id: 42, uploadToken: 'tok' });
