@@ -79,12 +79,16 @@ function fakeQrImage(): HTMLImageElement {
 // jsdom 的 HTMLCanvasElement.toBlob 是「未实现」桩：它既不报错也不回调，于是
 // makeThumb 里 await 的 Promise 永远不 settle，整个 Promise.all 挂住 —— 连
 // uploadSubmissionImage 都走不到。try/catch 救不了这种「不 settle」，只有补桩能。
-// 补出来的 blob.type 是 image/png，所以 makeThumb 会走「mime 不是 webp 就降级
-// 返回 null」那条分支（这正是浏览器不支持 WebP 时的行为），上传照常进行。
+//
+// toBlobType 模拟「这个浏览器支不支持 WebP 编码」：桩不看请求的类型，只按
+// toBlobType 回 Blob。支持就回 webp（makeThumb 正常出缩略图），不支持就静默
+// 回落成 image/png（HTML 规范要求的行为，也正是 makeThumb 专门验 mime 的原因）。
 const nativeToBlob = HTMLCanvasElement.prototype.toBlob;
+let toBlobType = 'image/webp';
 beforeEach(() => {
-  HTMLCanvasElement.prototype.toBlob = function toBlob(cb, type) {
-    cb(new Blob(['x'], { type: typeof type === 'string' ? type : 'image/png' }));
+  toBlobType = 'image/webp';
+  HTMLCanvasElement.prototype.toBlob = function toBlob(cb, _type) {
+    cb(new Blob(['x'], { type: toBlobType }));
   };
   renderComposite.mockReset().mockResolvedValue(fakeCanvas());
   renderQr.mockReset().mockResolvedValue(null);
@@ -135,11 +139,17 @@ describe('SubmitWorkButton', () => {
     expect((screen.getByRole('button', { name: /投稿/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('豆子数为 0 时按钮禁用：整张图被去背景吃掉，投稿只剩一张空板', () => {
+    // 判别力：把 blocked 里的 beanCount <= 0 删掉时，本条与「没有图纸」那条
+    // 都仍绿，但用户能投出一张没有豆子的图并消耗当天配额。
+    renderButton({ beanCount: 0 });
+    expect((screen.getByRole('button', { name: /投稿/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('点击后弹窗显示名称输入框与四个参数的只读摘要', () => {
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toBeTruthy();
     expect(dialog.textContent).toContain('1 × 1 格');
     expect(dialog.textContent).toContain('3,814 颗');
     expect(dialog.textContent).toContain('42 种');
@@ -149,15 +159,40 @@ describe('SubmitWorkButton', () => {
   it('没有预估文案时摘要那一格兜底成「—」，不露出 null', () => {
     renderButton({ estimateLabel: null });
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
-    expect(screen.getByRole('dialog').textContent).not.toContain('null');
+    // 断「—」而不是 not.toContain('null')：兜底被改成空串时后者照样绿。
+    expect(screen.getByRole('dialog').textContent).toContain('—');
   });
 
-  it('名称为空时不能提交，也不发任何请求', () => {
+  it('名称为空时不能提交，也不发任何请求', async () => {
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: /确认投稿/ }));
+
+    const confirm = screen.getByRole('button', { name: /确认投稿/ }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    // 必须等一拍再断言：submit 里的链第一步就是 await renderSubmissionComposite，
+    // 同步断言时它还没 resolve，createSubmission 不被调用是「还没轮到」而不是
+    // 「被挡住了」—— 整条链删光也照样绿。
+    await new Promise((r) => setTimeout(r, 0));
     expect(createSubmission).not.toHaveBeenCalled();
+    expect(renderComposite).not.toHaveBeenCalled();
+    // 真正兜住这条不变量的是上面那个 disabled 属性：React 是按 fiber 上的
+    // props.disabled 决定要不要派发 onClick 的（不是读 DOM 的 disabled），所以
+    // 确认键一旦 disabled，点不动 —— submit 开头那个 `if (!name…)` 属于
+    // 兜底的兜底，单独删它观察不到（实测：只删它，本文件仍全绿）。
+  });
+
+  it('点取消只关弹窗，不发任何请求', async () => {
+    renderButton();
+    fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
+    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: '不投了' } });
+    fireEvent.click(screen.getByRole('button', { name: /取消/ }));
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(createSubmission).not.toHaveBeenCalled();
+    expect(renderComposite).not.toHaveBeenCalled();
   });
 
   it('确认后先渲染成品图，再 POST 元数据，补画码，最后上传带码图', async () => {
@@ -222,6 +257,34 @@ describe('SubmitWorkButton', () => {
     ];
     expect(opts.width).toBe(1234);
     expect(opts.height).toBe(5678);
+  });
+
+  it('浏览器不支持 WebP 时缩略图降级成 null，不把 PNG 当缩略图传上去', async () => {
+    // 契约：opts.thumb 必须是 null。把 PNG 当缩略图传上去的话，服务端按 mime
+    // 判类型直接 400，整次投稿连带原图一起失败 —— 比没有缩略图糟得多。
+    toBlobType = 'image/png';
+    renderButton();
+    submitWith('x');
+
+    await waitFor(() => expect(uploadImage).toHaveBeenCalled());
+    const [, , , opts] = uploadImage.mock.calls[0] as unknown as [
+      number, string, Blob, { thumb: Blob | null },
+    ];
+    expect(opts.thumb).toBeNull();
+  });
+
+  it('支持 WebP 时把缩略图连同原图尺寸一起传上去', async () => {
+    // 判别力：把 thumb 一律写死成 null 时，上面那条照样绿、这条会红。
+    // （缩略图的缩放与编码本身仍由浏览器完成，jsdom 这里只到 mime 校验为止。）
+    renderButton();
+    submitWith('x');
+
+    await waitFor(() => expect(uploadImage).toHaveBeenCalled());
+    const [, , , opts] = uploadImage.mock.calls[0] as unknown as [
+      number, string, Blob, { thumb: Blob | null },
+    ];
+    expect(opts.thumb).toBeInstanceOf(Blob);
+    expect(opts.thumb?.type).toBe('image/webp');
   });
 
   it('成功后提示「等审核」而不是给出链接（还没过审，链接不可访问）', async () => {

@@ -120,6 +120,10 @@ export function SubmitWorkButton({
     }
   }, [beanCount, busy, colorCount, estimateMinutes, palette, result, title]);
 
+  // beanCount === 0 与「没有图纸」不是一回事，必须一起挡住：App.tsx 的 beanCount
+  // 数的是 mask 里非背景的格子，为 0 说明去背景把整张图都判成背景了。这种图纸
+  // 渲出来是一张没有豆子的空白板 + 白带 + 码，投出去既没人会看，还要吃掉用户
+  // 一天的投稿配额。弹窗摘要里豆子数那格显示「—」也是同一个口径。
   const blocked = disabled || !result || beanCount <= 0;
 
   return (

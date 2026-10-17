@@ -15,7 +15,11 @@ import { ProductShowcase } from '@/components/ProductShowcase';
 import { Disclaimer } from '@/components/Disclaimer';
 import { SiteNav } from '@/components/SiteNav';
 import { computeLegend } from '@/pipeline/legend';
-import { estimateAssemblyHours, formatAssemblyHours } from '@/pipeline/timeEstimate';
+import {
+  estimateAssemblyHours,
+  estimateAssemblyMinutes,
+  formatAssemblyHours,
+} from '@/pipeline/timeEstimate';
 import { usePageView, trackImageExport } from '@/hooks/useTracking';
 import type { ColorBudgetLevel, ColorSimplificationStats, ProcessParams } from '@/types';
 
@@ -79,13 +83,9 @@ export function App() {
     () => formatAssemblyHours(estimateAssemblyHours(beanCount)),
     [beanCount]
   );
-  // 投稿要入库的是「分钟数」，而 estimateAssemblyHours 返回的是**小时**（且在
-  // 豆子数为 0 时回 null）。少了 ×60 会把 6.4 小时写成 6 分钟，详情页直接显示
-  // 给用户；少了 ?? 0 则 beanCount 为 0 时把 null 喂给 Math.round。
-  const estimateMinutes = useMemo(
-    () => Math.round((estimateAssemblyHours(beanCount) ?? 0) * 60),
-    [beanCount]
-  );
+  // 投稿要入库的是「分钟数」，换算规则在 timeEstimate.ts 里（hours × 60），
+  // App 这边只负责接线 —— 换算本身有独立用例守着，不该在这里重写一遍。
+  const estimateMinutes = useMemo(() => estimateAssemblyMinutes(beanCount), [beanCount]);
 
   // Auto-process sample image once palette and sample are both ready
   useEffect(() => {
