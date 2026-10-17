@@ -365,11 +365,12 @@ export function getPublishedWork(id: number): WorkDetail | null {
   return toDetail(row);
 }
 
-/** 后台管理用：含草稿。likes 同公开列表一样直读 works.likes 列。 */
 /**
- * 后台管理用：默认全部，含 pending。
+ * 后台管理用：默认全部，含 pending。含草稿。
  *
  * `status` 不传就是全量 —— 与改动前行为完全一致，调用方不传参数时行为不变。
+ *
+ * likes 同公开列表一样直读 works.likes 列（SELECT w.* 已包含它），不需要 join 或额外计数。
  */
 export function listAllWorks(filter?: { status?: WorkStatus }): AdminWorkDetail[] {
   const where = filter?.status ? `WHERE w.status = ?` : '';

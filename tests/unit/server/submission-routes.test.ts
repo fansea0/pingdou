@@ -101,8 +101,8 @@ describe('POST /api/public/works', () => {
 });
 
 describe('POST /api/public/works/:id/image', () => {
-  it('带令牌上传成功，返回 { ok, id }', async () => {
-    const { app } = await bootApp();
+  it('带令牌上传成功，返回 { ok, id }，并落库成品尺寸', async () => {
+    const { app, works } = await bootApp();
     const created = await request(app).post('/api/public/works').send(GOOD);
     const r = await request(app)
       .post(`/api/public/works/${created.body.id}/image`)
@@ -113,6 +113,13 @@ describe('POST /api/public/works/:id/image', () => {
       .attach('thumb', WEBP, 'thumb.webp');
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true, id: created.body.id });
+
+    // width/height 是第二步契约的一部分（Task 13 详情页的「成品尺寸」读它），
+    // 响应体里没有这两个字段，所以只能从持久态回读断言。少了这两行，路由里
+    // 删掉 width:/height: 透传会全绿通过（评审 M12 实测），尺寸静默退化成 0。
+    const row = works.listAllWorks().find(w => w.id === created.body.id)!;
+    expect(row.width).toBe(1500);
+    expect(row.height).toBe(2200);
   });
 
   it('令牌不对返回 400，且没有文件落盘', async () => {
@@ -124,10 +131,16 @@ describe('POST /api/public/works/:id/image', () => {
       .attach('image', PNG, 'image.png');
     expect(r.status).toBe(400);
 
-    // 「没有落盘」用两条互相独立的证据断言，而不是只看状态码：
-    // (a) 该行的 imageUrl 与「同样没传过图的另一条投稿」逐字相等 —— 空 image_key 派生出
-    //     的是 /media/ 这种占位前缀而不是 ''，写死占位串等于把测试绑在存储布局上；
-    // (b) media/works/ 目录里一个文件都没有。
+    // 「没有落盘」在这里有三处断言，**分量并不相等**，照实说：
+    // (a) 与对照行逐字相等 —— 这一条**不是承重的**。构造过两类变异验证：
+    //     「失败路径顺手写了个假 image_key」被 (b)+正向对照拦下（正向对照会因为
+    //     「已上传过图片」而 400），「只有对照行被污染」则 (b) 因为真文件落盘而拦下。
+    //     只要正向对照还能 200，磁盘上就必然有文件，(b) 就必然红 —— 因此 (a) 在本用例里
+    //     可证明是冗余的。它留下的唯一作用是防自欺：断言退化成一常量比较
+    //     （例如两行取成同一个变量）时至少还会被这条对照住。
+    //     空 image_key 派生出来的是 /media/ 这种占位前缀而不是 ''，所以这里与对照行
+    //     比较而不是写死占位串 —— 免得把测试绑在存储布局上。
+    // (b) media/works/ 目录里一个文件都没有 —— 真正承重的一条。
     const control = await request(app).post('/api/public/works').send({ ...GOOD, title: '对照行' });
     const rowOf = (id: number) => works.listAllWorks().find(w => w.id === id)!;
     const controlRow = rowOf(control.body.id);
@@ -153,6 +166,9 @@ describe('POST /api/public/works/:id/image', () => {
       .post(`/api/public/works/${created.body.id}/image`)
       .field('uploadToken', created.body.uploadToken);
     expect(r.status).toBe(400);
+    // 只断言状态码会被别的 400 蒙混过关（例如 multer 报「上传字段名错误」同样是 400，
+    // 说明字段名写错了而不是"没传文件"）。文案锁住"确实是缺 image"这一条路径。
+    expect(r.body.error).toContain('图片');
   });
 
   it('id 不存在返回 404', async () => {
@@ -178,9 +194,13 @@ describe('POST /api/public/works/:id/image', () => {
     expect(typeof r.body.error).toBe('string');
   });
 
-  // 路由层的兜底判定：extFor 抛的是裸 Error（不是 SubmissionInputError），
-  // 若不在这里翻译就会落到全局兜底变成 500。这条用例锁住「消息特征 → 400」的映射本身，
-  // 免得它被当成多余代码删掉（fileFilter 挡住了不等于这条分支没有意义）。
+  // 事实说明，不要把这条用例的效力说大：
+  // 本条**只锁谓词函数本身**的返回值 —— 删掉/改坏 isUnsupportedMimeError 会红，
+  // 但只删掉路由里调用它的那一个分支（函数保留）时，本条依然全绿（评审实测 16/16 通过）。
+  // 也就是说：路由是否真的调用了这个判定，当前没有任何集成用例能证明，那是已知缺口。
+  // 另外这条分支目前从 HTTP 进不来 —— multer 的 fileFilter 放行的三个 mime 与
+  // EXT_BY_MIME 完全一致，所以「上传不被支持的格式」那条集成用例的 400 来自 fileFilter，
+  // 不是来自这里。因此**改动路由里那个 if 分支时必须手工确认**，不能依赖这条用例变红。
   it('裸的 unsupported mime 错误被判为 400 类，其他错误不误判', async () => {
     await bootApp();
     const { isUnsupportedMimeError } = await import('../../../server/index.js');
