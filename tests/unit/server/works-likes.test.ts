@@ -199,39 +199,79 @@ describe('去重 Set 的上限', () => {
    * 内存被撑爆比 DB 慢严重得多。
    *
    * 触顶行为是**整份丢弃**（fail-open）：去重失效、可以重复赞，但进程活着。
-   * 反过来 fail-closed 会把一次异常流量变成「当天全站不可点赞」，更糟。
+   * 反过来 fail-closed（拒绝所有新赞）会把一次异常流量变成「当天全站不可点赞」，更糟。
    *
-   * 这条用例只钉「不越界 + 触顶后功能仍然正确」，不试图观测集合内部大小
-   * —— 那需要为测试改产品形状（导出一个 size getter），不做。
-   * 它杀得死的变异是：把上限检查去掉、或改成「触顶后拒绝所有新赞」。
+   * **灌集合只能用 addLike**：likeStateOf 只做 `Set.has()`，它是纯读，
+   * **不会把指纹登记进去**。用 likeStateOf 灌集合是本文件第一版的写法，
+   * 那版两条上限用例全是空转（详见下面「未到上限」那条的注释）——
+   * 集合里根本没东西，「上限触发后怎样」自然测不出任何差别。
+   * 20_000 次带 DB 写入的 addLike 实测 ~0.9s，可以接受。
    */
-  it('超过上限（LIKES_FINGERPRINT_MAX）后不继续增长，且仍能正常点赞 ★', async () => {
+  async function fillSet(id: number, count: number, now: number, skipFirst = true) {
+    for (let i = skipFirst ? 1 : 0; i < count; i++) {
+      works.addLike(id, fp(`10.0.${(i >> 8) % 256}.${i % 256}`, `UA-${i}`, id, now), now);
+    }
+  }
+
+  it('超过上限后仍然能正常点赞（fail-open，不是拒绝新赞）', async () => {
     const id = await seedWork();
     const t0 = Date.parse('2026-10-17T10:00:00Z');
     const limit = works.LIKES_FINGERPRINT_MAX;
 
-    // 用只读的 likeStateOf 灌集合：它会登记指纹但不写库，
-    // 于是本用例测的是「上限」而不是「上限 × 数据库写入耗时」。
-    for (let i = 0; i < limit + 500; i++) {
-      works.likeStateOf(id, fp(`10.0.0.${i % 256}`, `UA-${i}`, id, t0), t0);
-    }
+    // 灌到远超上限。中途会触发若干次清空，这正是被测的路径。
+    await fillSet(id, limit + 500, t0);
 
-    // 触顶后新来的正常访客必须还能点赞（fail-open 而不是 fail-closed）
-    expect(works.addLike(id, fp('1.1.1.1', UA_A, id, t0), t0))
-      .toEqual({ likes: 1, liked: true });
-    expect(works.addLike(id, fp('1.1.1.1', UA_A, id, t0), t0))
-      .toEqual({ likes: 1, liked: false });
-    expect(works.getPublishedWork(id)?.likes).toBe(1);
+    // 触顶之后来的正常访客必须还能点赞，且幂等仍然成立
+    const fresh = fp('1.1.1.1', UA_A, id, t0);
+    const first = works.addLike(id, fresh, t0);
+    expect(first.liked).toBe(true);
+    expect(works.addLike(id, fresh, t0)).toEqual({ likes: first.likes, liked: false });
   }, 30_000);
 
-  it('未到上限时不去重失效（对照：上限不是随手清的）', async () => {
+  /**
+   * 触顶策略本身的判别力用例。
+   *
+   * 上一版这里只钉「触顶后仍能点赞」，实测**杀不掉「把上限检查整段删掉」的变异**
+   * （M3 全绿）：删掉之后集合只是继续涨，上面那几条断言照样成立 ——
+   * 集合变大不影响 `has()` 的结果。集合大小在产品形状之外，测试观测不到。
+   *
+   * 破法靠「整份丢弃」这个策略的**代价本身是可观测的**：清空之后，
+   * 早期登记过的指纹也一起忘了，那位访客可以再赞一次。
+   * 上限检查若被摘掉，清空永不发生，被忘掉的指纹仍然记得 → 断言立刻变红。
+   *
+   * 时序要点：触发清空的是**一条新指纹**的写入。若拿早期那条去 addLike，
+   * 它此刻还在集合里，会在 `has()` 那一支直接返回、根本走不到清空逻辑。
+   */
+  it('触顶时整份丢弃：早期指纹被一起清掉 ★', async () => {
     const id = await seedWork();
     const t0 = Date.parse('2026-10-17T10:00:00Z');
-    const f = fp('1.1.1.1', UA_A, id, t0);
-    works.addLike(id, f, t0);
-    for (let i = 0; i < 1000; i++) works.likeStateOf(id, fp(`10.1.0.${i % 256}`, `UA-${i}`, id, t0), t0);
-    // 早期登记的那条仍然在：说明没被中途清掉
-    expect(works.likeStateOf(id, f, t0)).toEqual({ likes: 1, liked: true });
+    const early = fp('1.1.1.1', UA_A, id, t0);
+
+    works.addLike(id, early, t0);          // 最早登记的一条
+    await fillSet(id, works.LIKES_FINGERPRINT_MAX, t0);
+    // 再来一条新指纹：此时 size 已达上限 → 整份集合被丢弃
+    expect(works.addLike(id, fp('2.2.2.2', UA_B, id, t0), t0).liked).toBe(true);
+
+    expect(works.likeStateOf(id, early, t0).liked).toBe(false);
+    expect(works.addLike(id, early, t0).liked).toBe(true);   // 忘了 → 当新赞
+  }, 30_000);
+
+  /**
+   * 对照：没到上限时**不许**清空。
+   *
+   * 这条同时是上面那条的判别力前提 —— 若实现写成「每次写入都清空」，
+   * 两条都会绿（本条在 1000 条时就忘了 early，上条则仍然成立），
+   * 所以本条必须保留。
+   *
+   * 顺带钉住上一版用错的那点：这里的填充也走 addLike 而不是 likeStateOf。
+   */
+  it('未到上限时不去重失效（对照）', async () => {
+    const id = await seedWork();
+    const t0 = Date.parse('2026-10-17T10:00:00Z');
+    const early = fp('1.1.1.1', UA_A, id, t0);
+    works.addLike(id, early, t0);
+    await fillSet(id, 1000, t0);
+    expect(works.likeStateOf(id, early, t0)).toEqual({ likes: 1000, liked: true });   // early 1 + 后续 999
   });
 });
 
