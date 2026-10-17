@@ -176,9 +176,16 @@ nohup 起 vite preview 或 `npm run start:backend`；见 [`docs/DEPLOY.md`](./do
   的纵向布局一行不动 —— 色卡既不会被压也不会重排。画不出二维码时（资源 404 /
   被拦截 / jsdom）自动降级为「不画码」，导出照常成功。
 - **作品库页面**：`/works` 列表（缩略图网格 + 加载更多）、`/works/:id` 详情
-  （大图 + 「长按图片保存」提示 + 「下载原图」按钮）。
+  （大图 + 「长按图片保存」提示 + 「下载原图」按钮 + 点赞按钮）。
   同一个图片 URL 承担两种用途：被 `<img>` 引用是内联渲染（可长按），
   被带 `download` 的 `<a>` 引用是直接下载 —— 不需要 `Content-Disposition`。
+- **搜索与排序**：列表页顶部按标题实时搜索（防抖 300ms），搜索词与排序同步进 URL
+  （`replaceState`，不污染历史栈），刷新、分享、从详情页后退回来都保留；排序可切
+  「最新 / 最热」。每页 10 条 + 「加载更多」。排名不随点赞实时重排 —— 列表顺序一律以
+  服务端本次响应为准，点赞只改数字。
+- **点赞**：列表页每张卡片与详情页各有一个心形按钮，文案是「N **次**点赞」而不是
+  「N 人喜欢」（限流粒度是「每 IP 每图每天一次」且不支持取消，同一人次日可再赞，
+  计数会累加）。点击立即乐观更新 +1，失败回滚并提示；被限流时给中文提示而不是英文原文。
 - **后台上传**：后台第 4 个 tab「作品」。上传原图时浏览器用 canvas 生成 480px WebP
   缩略图一起提交，服务端不引入 `sharp`。列表页只加载缩略图，下载仍是原始 PNG。
 - **上下架**：只有 `published=1` 的作品出现在公开列表和详情里。
@@ -191,8 +198,16 @@ nohup 起 vite preview 或 `npm run start:backend`；见 [`docs/DEPLOY.md`](./do
   `docs/nginx-https-setup.md` 的 `location ~ ^/media/works/`）。
 
 API：
-- `GET /api/public/works?limit&offset` — 公开列表（无需登录）
+- `GET /api/public/works?limit&offset&q&sort` — 公开列表（无需登录）。`q` 按标题模糊搜索
+  （`%` `_` 按字面转义），`sort` 为 `latest`（默认）或 `hot`（按点赞数）；
+  默认每页 10 条
 - `GET /api/public/works/:id` — 公开详情（草稿返回 404）
+- `GET /api/public/works/:id/like` — 点赞状态查询（`{ likes, liked }`，只读）
+- `POST /api/public/works/:id/like` — 点赞，返回 `{ ok, likes, alreadyLiked }`。
+  **每个 IP 对每张图每天限一次**（复合主键 + `INSERT OR IGNORE` 保证幂等），
+  另有进程内令牌桶按 IP 限频（1 次/秒），超了返回 429 且完全不碰数据库。
+  点赞不可取消；同一 IP 次日可再赞，所以计数是「次数」不是「人数」。
+  令牌桶只在本进程内生效（当前是 systemd 单进程部署）；横向扩展需换 Redis。
 - `GET /api/admin/works` / `POST /api/admin/works` / `PUT /api/admin/works/:id` /
   `POST /api/admin/works/:id/image` / `DELETE /api/admin/works/:id` — 后台（需 admin）
 
