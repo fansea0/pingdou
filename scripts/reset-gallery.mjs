@@ -8,23 +8,56 @@
  * 其它表（users / products / events / sessions / auth_tokens / settings）一行不动。
  *
  * ## 为什么敢做（也请先读完这段再执行）
+ *
+ * ### ⚠️ 第一条前提：**必须先停服，再跑这个脚本**
+ * 服务在跑着的时候跑本脚本，**脚本会报「完成」但结果是你最不想要的那个**：
+ *   server/db.ts:293-299 的 flushNow() 用 db.export() **整库重写** stats.db，
+ *   而它手里那份内存库是在本脚本开跑之前加载的、works 仍带 5 行。任何一次登录、
+ *   一次 events 写入都会 markDirty()，500ms（SAVE_DEBOUNCE_MS）后就把那份**旧库**
+ *   整个写回磁盘 —— 作品行复活，图片却已经被本脚本删光了：
+ *
+ *     works = 5 行（回来了）   media/works/ = 0 个文件（回不来）
+ *
+ * 而且**这种情况连备份也救不回来**：回滚 stats.db 之后，运行中的服务下一次 flush
+ * 又会用它内存里那份旧库把 5 行 works 再写回去。
+ * 所以：先 systemctl stop（或 whatever your supervisor is），确认进程退出，再跑本脚本。
+ * 脚本里有两道兜底检查（见下面的「两道兜底」），但它们只负责**发现**，不负责替代停服。
+ *
+ * ### 第二条前提：备份只覆盖数据库，不覆盖图片
  * 备份**只覆盖 stats.db，不覆盖 media 下的图片**。所以「先备份再删」并不等于
  * 「可以回滚」：数据库能靠 .bak 还原，图片删了就是永久没了。本脚本只承诺前者。
  *
- * 真正把风险压住的是**执行顺序**——落盘成功之前，一个字节的图片都不会被删：
+ * ### 把风险压住的是执行顺序
+ * 落盘成功之前，一个字节的图片都不会被删：
  *
  *   备份 stats.db → 开库/统计/DELETE（全部只在内存里）→ db.export() → 落盘
  *   （先写临时文件再 rename）→ **重新打开落盘的库，确认 works 确实是 0 行**
- *   → 才删 media/works/ 下的文件
+ *   → 兜底 1a：写回前确认 stats.db 没被外部进程改过
+ *   → 兜底 1b：删文件前再确认一次 → 才删 media/works/ 下的文件
+ *   → 兜底 2：删完再复核一次 works 行数
  *
  * 任何一步抛错，脚本都在「库还是满的、图片还在」的原始状态退出（除落盘那一步
  * 之后：那时库里已经空了，但图片全都还在，只是多了几个没人引用的孤儿文件 ——
  * 孤儿文件不构成不一致，重新跑一次本脚本即可清掉）。
- * 反过来「文件没了但库还在」这种更糟的状态，本脚本的顺序保证不会产生。
+ * 反过来「文件没了但库还在」这种更糟的状态，本脚本的顺序保证不会产生 ——
+ * **前提是服务已停**（见上面第一条前提：服务在跑时它自己就能造出这个状态）。
+ *
+ * ### 三道兜底（防的是「忘记停服」，不是防一切并发）
+ *   1a. 写回之前：比对 stats.db 与「我读进来的那一份」是否还是同一个。变了就说明
+ *       读完之后有人写过，不中止的话这次 rename 会把对方的写入悄悄吃掉。
+ *   1b. 删文件**之前**重新 stat stats.db，比对 inode / size / mtime 与脚本自己刚
+ *       写下的那份是否一致；不一致 = 有别的进程在写库 → 中止并提示先停服。
+ *       放在删文件之前是因为那时还来得及：文件一张都没删。
+ *   2. 删完文件后再复核 works 行数；不为 0 说明库被外部写回了 → 大声告警。
+ *      这时图片已经没了，它只能告诉你出了事，不能替你收拾。
+ *   这两道都只是启发式检查（同一毫秒内、同样大小的写入理论上能骗过去），
+ *   它们的价值是覆盖「运维压根没想起来停服」这个最常见的人为失误。
  *
  * ## 用法
+ *   systemctl stop <服务名>          # ← 先停服，见上面的「第一条前提」
  *   node scripts/reset-gallery.mjs
  *   PINGDOU_DATA_DIR=/var/lib/pingdou node scripts/reset-gallery.mjs
+ *   systemctl start <服务名>
  *
  * ## 路径怎么来的（怕删错库，所以逐条说明）
  *   PINGDOU_DATA_DIR 未设置时默认 /var/lib/pingdou，stats.db 与 media/works/ 都从
@@ -73,6 +106,24 @@ function countRows(db, table) {
   return typeof n === 'number' ? n : NaN;
 }
 
+/**
+ * stats.db 的「身份」。用来发现「脚本跑着的时候有别的进程在写这个库」——
+ * 也就是服务没停就开跑这个场景（见文件头）。
+ *
+ * 为什么这三个字段够用：服务里的 flushNow() 用的是 writeFileSync **原地**覆盖，
+ * inode 不变，但 mtime 和 size 一定会变。反过来本脚本自己写库走的是 rename，
+ * 会换掉 inode —— 所以「inode 变了」同样说明有人动过。
+ * 注意这是启发式检查，不是锁：同一毫秒内、恰好同样大小的写入理论上能混过去。
+ */
+function dbIdentity() {
+  const s = statSync(DB_PATH);
+  return `${s.ino}:${s.size}:${s.mtimeMs}`;
+}
+
+function sameDb(a, b) {
+  return a === b;
+}
+
 // 0. 开跑前的护栏
 if (DATA_DIR === parse(DATA_DIR).root) {
   fail(`PINGDOU_DATA_DIR 解析成了文件系统根目录 ${DATA_DIR}，拒绝在根目录上执行删除`);
@@ -97,6 +148,9 @@ try {
 
 // 2. 开库 + 统计 + 清空 —— 到这里为止全部只发生在内存里，磁盘上的库一个字节没动
 const SQL = await initSqlJs({ locateFile: (file) => resolve(SQLJS_DIST, file) });
+
+// 记住「我读的是哪一份 stats.db」，后面每一步动手前都要跟磁盘上的比一次。
+const identityAtRead = dbIdentity();
 
 let db;
 try {
@@ -128,6 +182,14 @@ try {
   fail(`清空 works 表失败（仍在内存中，磁盘上的库未改动）：${err.message}`);
 }
 console.log(`[reset-gallery] 已在内存中删除 works 表 ${rows} 行`);
+if (rows === 0) {
+  // 重跑场景：这时刚生成的那份 .bak 是「空库」的副本，尺寸和真库可能一模一样，
+  // 回滚时很容易挑错。必须把这件事说出来，否则「挑错备份」就从一个失误变成一次数据丢失。
+  console.warn(
+    `[reset-gallery] 注意：执行前 works 表本来就是空的，所以 ${backupPath} **不含任何作品数据**。` +
+    '要回到有作品的版本，请用更早那一份 .bak，别用这份。',
+  );
+}
 
 // 3. 落盘 —— 先写临时文件再 rename，保证 stats.db 要么是旧的全量库、要么是新的空库，
 //    不会出现「写了一半的坏库」。这一步之前图片一个都没删。
@@ -140,6 +202,15 @@ const exported = (() => {
 })();
 
 const tmpDbPath = `${DB_PATH}.reset-tmp-${stamp}`;
+// 兜底 1a：在把内存库写回去之前先确认没人动过 stats.db。
+// 真的有人动过的话，下面这次 rename 会把对方的写入直接覆盖掉 —— 那就是「悄悄吃掉
+// 别人刚写的数据」，比报错糟糕得多，所以宁可停下来。
+if (!sameDb(identityAtRead, dbIdentity())) {
+  fail(
+    'stats.db 在脚本运行期间被改写过，疑似有服务进程还在运行（它的 flushNow 会整库覆盖）。' +
+      '请先停服再跑。图片一张都没删，stats.db 是对方刚写下的那份，未被本脚本改动。',
+  );
+}
 try {
   writeFileSync(tmpDbPath, exported);
   renameSync(tmpDbPath, DB_PATH); // 同一目录内 rename 是原子的
@@ -147,6 +218,9 @@ try {
   try { rmSync(tmpDbPath, { force: true }); } catch { /* 临时文件残留不影响原始库 */ }
   fail(`写回 stats.db 失败，已中止，图片全部保留、stats.db 未改动：${err.message}`);
 }
+
+// 本脚本自己刚写下的这一份的「身份」，留给下面的兜底 1b 比对。
+const identityAfterWrite = dbIdentity();
 
 // 4. 重新打开落盘的库确认 —— 只有这里验证通过，才允许开始删图片。
 //    这一步是「先删库还是先删文件」顺序能成立的全部依据：它把「写回成功」
@@ -158,10 +232,28 @@ try {
   if (after !== 0) fail(`落盘后 works 表仍有 ${after} 行，判定写回未生效，已中止，图片全部保留`);
   console.log(`[reset-gallery] 已落盘并复核：stats.db 中 works 表 0 行（${statSync(DB_PATH).size} 字节）`);
 } catch (err) {
-  fail(`复核落盘结果失败，已中止，图片全部保留：${err.message}`);
+  // 这条消息要说清当前到底处于什么状态：写回这一步已经成功了，所以**库已经是空的**，
+  // 只是没能复核成功。只说「图片全部保留」的话，运维会以为库根本没动过，
+  // 进而以为「什么都没发生、可以放心重跑」——而实际状态是「库空了、图还在」。
+  fail(
+    `复核落盘结果失败，已中止：stats.db 此刻已是空库（works=0），图片全部保留。` +
+      `方向是安全的（不会有坏图），但请确认库能正常打开再决定是否重跑：${err.message}`,
+  );
 }
 
 db.close();
+
+// 兜底 1b：删文件是本脚本唯一不可逆的一步，所以动手之前再确认一次 stats.db
+// 还是「我刚写下的那一份」。变了 = 有服务进程正在用它内存里的旧库覆盖磁盘
+// （flushNow 每 500ms 就可能来一次）——那种情况下继续删文件，就是在生产
+// 「works 行还在、图没了」这个我们花了一整节顺序去避免的状态。
+if (!sameDb(identityAfterWrite, dbIdentity())) {
+  fail(
+    'stats.db 在删文件之前被别的进程改写过，几乎可以肯定是服务还在跑。' +
+      '**图片一张都没有删除**，但 stats.db 已经不是本脚本清空后的那份了，' +
+      '请立刻停服后重新检查库和 media/works 的实际状态再决定下一步。',
+  );
+}
 
 // 5. 库已确认为空，现在才删文件。此时即使中途失败，最坏结果也只是留下几个
 //    没有库记录引用的孤儿文件，站点不会对外暴露坏图。
@@ -196,12 +288,42 @@ if (existsSync(WORKS_DIR)) {
 
 console.log(`[reset-gallery] 已删除 ${files} 个文件，释放 ${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
+// 兜底 2：删完文件之后**再**复核一次 works 行数。
+// 为什么这时候还要查：兜底 1b 只能证明「动手之前那一瞬间没人写库」，挡不住
+// 服务在我们删文件的这几十毫秒里来一次 flushNow。那样最终状态就是
+// 「works 行又活了 + 图已经没了」——站点对外就会指向不存在的图片。
+// 这一步已经救不回任何东西（文件删了就是删了），它的价值是**把事故喊出来**：
+// 运维不会带着一个静悄悄的坏图库继续跑下去。
+let resurrectWarn = '';
+try {
+  const recheck = new SQL.Database(new Uint8Array(readFileSync(DB_PATH)));
+  const n = countRows(recheck, 'works');
+  recheck.close();
+  if (n !== 0) {
+    resurrectWarn =
+      `[reset-gallery] 严重警告：删完文件后 works 表又有 ${n} 行，说明有服务进程在运行，` +
+      '并且用它内存里的旧库把数据写了回来。**现在站点处于「有作品行、图片却不存在」的状态**。' +
+      '请立刻停服，然后从备份恢复数据库（注意：必须在停服之后恢复，否则运行中的服务' +
+      '会用它内存里的旧库把旧数据再盖回去）。备份路径见上方输出。';
+  }
+} catch (err) {
+  resurrectWarn =
+    `[reset-gallery] 严重警告：删完文件后连 stats.db 都读不开了（${err.message}）。` +
+    '图片已经删除，无法恢复；请立刻停服并从备份恢复数据库。';
+}
+
 if (failed.length > 0) {
   // 如实报告，不粉饰：库已经清空（这步不可逆，只有 .bak 能还原），但有文件没删掉。
   // 这些是没人引用的孤儿文件，重新跑一次本脚本即可补删。
   console.error(`[reset-gallery] 部分失败：${failed.length} 项没删干净 ——`);
   for (const f of failed) console.error(`[reset-gallery]   - ${f}`);
   console.error('[reset-gallery] 库已清空（备份在 ' + backupPath + '），图片只是没删干净；修好权限后重跑本脚本即可。');
+  if (resurrectWarn) console.error(resurrectWarn);
+  process.exit(1);
+}
+
+if (resurrectWarn) {
+  console.error(resurrectWarn);
   process.exit(1);
 }
 

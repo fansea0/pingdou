@@ -95,13 +95,19 @@ async function readCounts() {
   // 不存在的记成 null 而不是让查询直接抛错。
   const count = (t: string) =>
     tables.includes(t) ? (db.exec(`SELECT COUNT(*) FROM ${t}`)[0].values[0][0] as number) : null;
+  // 内容值，不只是行数：db.export() 万一在重排页结构或改编码时把别的表的值改了，
+  // 行数照样是 2，只有逐值比对才看得出来。
+  const values = (sql: string): string[] =>
+    db.exec(sql)[0]?.values.map((r) => (r as unknown[]).join('=')) ?? [];
   const out = {
     works: count('works'),
-    users: count('users'),
-    events: count('events'),
-    sessions: count('sessions'),
-    settings: count('settings'),
+    userCount: count('users'),
+    eventCount: count('events'),
+    sessionCount: count('sessions'),
+    settingCount: count('settings'),
     tables,
+    usernames: values('SELECT username FROM users ORDER BY username'),
+    settings: values('SELECT key, value FROM settings ORDER BY key'),
   };
   db.close();
   return out;
@@ -113,6 +119,14 @@ function backupFiles() {
 
 function mediaFiles() {
   return existsSync(worksDir()) ? readdirSync(worksDir()) : [];
+}
+
+/**
+ * root 不受文件/目录权限位限制，所以任何靠 chmod 注入的故障在 root 下都注入不进去。
+ * 这类用例必须知道自己处在哪种环境，否则会写成一条在 root 下必红的断言。
+ */
+function isRoot(): boolean {
+  return typeof process.getuid === 'function' && process.getuid() === 0;
 }
 
 describe('reset-gallery.mjs 正常路径', () => {
@@ -138,23 +152,27 @@ describe('reset-gallery.mjs 正常路径', () => {
     bak.close();
   });
 
-  it('除了 works，别的表一行不少、schema 一个不少', async () => {
+  it('除了 works，别的表一行不少、内容不变、schema 一个不少', async () => {
     await seedDb();
     expect(runReset().status).toBe(0);
 
     const after = await readCounts();
-    // db.export() 是整库二进制序列化：如果它丢了 schema 或改动了别的表，
-    // 这里会直接炸。整个脚本只允许删 works。
-    expect(after.users).toBe(2);
-    expect(after.events).toBe(2);
-    expect(after.sessions).toBe(1);
-    expect(after.settings).toBe(1);
+    // db.export() 是整库二进制序列化：如果它丢了 schema、改了别的表的行数，
+    // 或者**行数没变但值被改坏了**，这里都要炸。整个脚本只允许删 works。
+    expect(after.userCount).toBe(2);
+    expect(after.eventCount).toBe(2);
+    expect(after.sessionCount).toBe(1);
+    expect(after.settingCount).toBe(1);
+    // 只断言行数是不够的：行数对得上但值被改坏（例如编码/页结构重排），
+    // 行数断言照样全绿，而用户的 username 和站点的设置值已经变了。
+    expect(after.usernames).toEqual(['admin', 'alice']);
+    expect(after.settings).toEqual(['notice=hello']);
     expect(after.tables).toEqual(
       expect.arrayContaining(['works', 'users', 'events', 'sessions', 'settings']),
     );
   });
 
-  it('再跑一次是成功的空操作（补删上次没删干净的文件）', async () => {
+  it('再跑一次是成功的空操作，并提醒本次备份不含作品数据', async () => {
     await seedDb();
     expect(runReset().status).toBe(0);
     const second = runReset();
@@ -162,10 +180,25 @@ describe('reset-gallery.mjs 正常路径', () => {
     expect(second.status).toBe(0);
     expect((await readCounts()).works).toBe(0);
     expect(mediaFiles()).toEqual([]);
+    // 重跑时新生成的 .bak 是「空库」的副本，尺寸可能和真库一模一样，回滚时极易挑错。
+    // 脚本必须把这件事喊出来，否则这份备份就是个会骗人的退路。
+    expect(second.stderr).toMatch(/不含任何作品数据/);
   });
 });
 
 describe('reset-gallery.mjs 失败时的状态', () => {
+  it('PINGDOU_DATA_DIR 指向文件系统根目录时直接拒绝，一个文件都不删', () => {
+    // 这是唯一一处「脚本会主动删东西之前」的最后一道类型检查：
+    // 运维把 PINGDOU_DATA_DIR 写错成 "/" 时，宁可什么都不做。
+    const before = spawnSync(process.execPath, [SCRIPT], {
+      env: { ...process.env, PINGDOU_DATA_DIR: parse(process.cwd()).root },
+      cwd: parse(process.cwd()).root,
+      encoding: 'utf8',
+    });
+    expect(before.status).toBe(1);
+    expect(before.stderr).toMatch(/拒绝在根目录上执行删除/);
+  });
+
   it('数据目录里没有 stats.db 时中止，一个文件都不删', async () => {
     mkdirSync(worksDir(), { recursive: true });
     writeFileSync(join(worksDir(), 'keep.png'), Buffer.alloc(64, 2));
@@ -182,7 +215,7 @@ describe('reset-gallery.mjs 失败时的状态', () => {
     expect(r.status).toBe(1);
     expect(mediaFiles()).toEqual(['a.png', 'b.png', 'c.png']);
     // 库也必须没被改动 —— 中止意味着「什么都没发生」
-    expect((await readCounts()).users).toBe(2);
+    expect((await readCounts()).userCount).toBe(2);
   });
 
   /**
@@ -195,52 +228,70 @@ describe('reset-gallery.mjs 失败时的状态', () => {
    *   - 反过来的顺序（先删文件）：崩在写库之前，works 还留着 3 行。
    * 断言 works === 0 就等于断言了「开始删文件之前库已经写好了」。
    *
+   * ⚠️ 这条注入在 **root 下不成立**：root 不受 chmod 限制，目录照样读得开、
+   *   文件删得掉，脚本会一路成功（exit 0、works 0、图片 0），下面
+   *   `expect(r.status).toBe(1)` 会**真失败**。所以这里必须分 root / 非 root 两种断言。
+   *
    * 之所以不用 chflags/uchg 那类注入：CI 跑在 ubuntu 上，用不了。
-   * chmod 在任何 POSIX 上都成立（以 root 运行时故障注入不生效、测试退化为
-   * 普通成功路径，不会假失败）。
    */
   it('图片目录不可读时：库已清空、图片仍在、退出码非 0 且如实报告', async () => {
     await seedDb();
     chmodSync(worksDir(), 0o000);
 
     const r = runReset();
-    expect(r.status).toBe(1);
     expect((await readCounts()).works).toBe(0);
-    // 断言「文件还在」之前得先把目录权限还回去，否则连测试自己都读不了它
-    chmodSync(worksDir(), 0o755);
-    expect(mediaFiles()).toHaveLength(3);
-    // 失败要说人话：运维得从输出里直接看出「库空了、图还在」，而不是一坨 stack trace
-    expect(r.stderr).toMatch(/库已清空/);
+
+    if (isRoot()) {
+      // 故障没注入进去（root 无视 chmod），退化成一次普通成功路径的验证。
+      // 明确写出来，免得把这条绿当成「顺序被守住」的证据 —— 顺序由下面那条
+      // 源码顺序断言守，这条只保证「真出错时状态是安全的」。
+      expect(r.status).toBe(0);
+      chmodSync(worksDir(), 0o755);
+      expect(mediaFiles()).toEqual([]);
+    } else {
+      expect(r.status).toBe(1);
+      // 断言「文件还在」之前得先把目录权限还回去，否则连测试自己都读不了它
+      chmodSync(worksDir(), 0o755);
+      expect(mediaFiles()).toHaveLength(3);
+      // 失败要说人话：运维得从输出里直接看出「库空了、图还在」，而不是一坨 stack trace
+      expect(r.stderr).toMatch(/库已清空/);
+    }
   });
 
   /**
-   * 核心安全性质：脚本失败时，绝不能留下「图片没了但 works 行还在」的状态。
+   * 把「写回必须在删文件之前」这个顺序钉死 —— 读源码断言，不靠故障注入。
    *
-   * 注入方式取「把 stats.db 设成只读」：备份要读它（成功），而往它身上直接
-   * writeFileSync 会 EACCES —— 正好卡在「内存里已清空、还没落盘」这个位置，
-   * 也就是删除顺序真正要防的那一步。之所以不用 chflags 之类平台专属手段，
-   * 是因为 CI 跑在 ubuntu 上，用不了。
+   * 为什么必须用源码顺序断言（这是上一轮评审指出的真问题）：
+   *   之前那条「写不回 stats.db 时图片必须一个不少」用的是 chmod 444，
+   *   而 **rename 在所有 rename 能成功的 POSIX 上只受目录写权限约束**，
+   *   原文件可不可写根本不影响它 —— 于是这个注入在非 root 的 macOS 和
+   *   ubuntu CI 上**都是空操作**，实测 exit 0、works 0、图片删光，
+   *   那条断言恒真，只是第 1 条正常路径的重复品。更糟的是「删文件在前、
+   *   但保留 per-item catch」的变体能让它照样全绿，而那个变体在真实写回故障下
+   *   会产出 works=5 / 图片=0 的坏状态。
    *
-   * ⚠️ 以 root 运行时 chmod 不生效、故障根本注入不进去（脚本会一路成功）。
-   *    那种环境下这条测试退化成「弱断言」，但不会假失败 —— 这是有意接受的取舍。
+   * 真正能让「写回」失败且跨平台的办法只有平台专属手段（macOS/BSD 的 chflags uchg），
+   *   而 CI 是 ubuntu，用不了。所以顺序这件事改由下面这条源码断言来守：
+   *   它在 ubuntu CI 上真的能判别、也不会因为权限模型差异而退化。
+   *
+   * 断言点：把库写到磁盘的语句（renameSync / writeFileSync(DB_PATH…)）
+   *   在源码里必须出现在删文件语句（rmSync(p, …）**之前**。
    */
-  it('写不回 stats.db 时中止，图片必须一个不少', async () => {
-    await seedDb();
-    chmodSync(join(dataDir, 'stats.db'), 0o444);
+  it('源码顺序：写回 stats.db 在删文件之前', () => {
+    const src = readFileSync(SCRIPT, 'utf8');
+    const at = (needle: string) => src.indexOf(needle);
+    // 认真正写库的那几处：写临时文件 / rename 落盘。注释里出现的同名字样不算，
+    // 所以用带参数形态的完整调用串去定位。
+    const writeMarkers = [
+      'renameSync(tmpDbPath, DB_PATH)',
+      'writeFileSync(DB_PATH,',
+      'writeFileSync(tmpDbPath',
+    ];
+    const positions = writeMarkers.map(at).filter((i) => i >= 0);
+    expect(positions.length, '脚本里一处「写回 stats.db」的语句都找不到').toBeGreaterThan(0);
 
-    const r = runReset();
-    // 成功（rename 只要求目录可写，不要求原文件可写）也算通过；
-    // 关键是不管哪种结局，都不能出现「文件被删了但库里还有 works 行」。
-    const counts = await readCounts();
-    const files = mediaFiles();
-    const deletedButStillInDb = files.length === 0 && (counts.works ?? 0) > 0;
-    expect(deletedButStillInDb).toBe(false);
-
-    if (r.status === 0) {
-      expect(counts.works).toBe(0);
-    } else {
-      expect(counts.works).toBe(3);
-      expect(files).toHaveLength(3);
-    }
+    const rmAt = at('rmSync(p,');
+    expect(rmAt, '脚本里找不到删文件的语句').toBeGreaterThan(-1);
+    expect(Math.min(...positions)).toBeLessThan(rmAt);
   });
 });
