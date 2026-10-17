@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
-import { ensureWorksQrImage, drawWorksQr, WORKS_QR_SRC } from '@/pipeline/qr';
+import { drawWorksQr } from '@/pipeline/qr';
 import type { Palette, PipelineResult } from '@/types';
 
 const originalImage = globalThis.Image;
@@ -8,22 +8,6 @@ afterEach(() => {
   globalThis.Image = originalImage;
   vi.useRealTimers();
 });
-
-/** 造一个可控加载结果的 Image 替身 */
-function stubImage(opts: { fail?: boolean; natural?: number } = {}) {
-  class FakeImage {
-    naturalWidth = opts.natural ?? 0;
-    naturalHeight = opts.natural ?? 0;
-    onload: (() => void) | null = null;
-    onerror: (() => void) | null = null;
-    set src(_v: string) {
-      // 同步派发，模拟资源已缓存的情况
-      if (opts.fail) queueMicrotask(() => this.onerror?.());
-      else queueMicrotask(() => this.onload?.());
-    }
-  }
-  globalThis.Image = FakeImage as unknown as typeof Image;
-}
 
 /** 一个只记录调用、不碰真实像素的画布 */
 function spyCanvas(width: number, height: number) {
@@ -46,37 +30,6 @@ function spyCanvas(width: number, height: number) {
   const canvas = { width, height, getContext: () => ctx } as unknown as HTMLCanvasElement;
   return { canvas, calls };
 }
-
-describe('ensureWorksQrImage', () => {
-  it('资源加载成功后 resolve 出图片对象', async () => {
-    stubImage({ natural: 111 });
-    const img = await ensureWorksQrImage('/brand/test-ok.png');
-    expect(img).not.toBeNull();
-    expect(img!.naturalWidth).toBe(111);
-  });
-
-  it('加载失败 resolve null 而不是 reject', async () => {
-    stubImage({ fail: true });
-    expect(await ensureWorksQrImage('/brand/test-fail.png')).toBeNull();
-  });
-
-  it('Image 事件永不派发时靠超时兜底，不挂起', async () => {
-    vi.useFakeTimers();
-    class SilentImage {
-      naturalWidth = 0; naturalHeight = 0;
-      onload: (() => void) | null = null; onerror: (() => void) | null = null;
-      set src(_v: string) { /* 什么都不做，模拟 jsdom 不派发事件 */ }
-    }
-    globalThis.Image = SilentImage as unknown as typeof Image;
-    const p = ensureWorksQrImage('/brand/test-silent.png');
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(await p).toBeNull();
-  });
-
-  it('默认资源路径是构建期产物', () => {
-    expect(WORKS_QR_SRC).toBe('/brand/works-qr.png');
-  });
-});
 
 describe('drawWorksQr', () => {
   function fakeImg(size: number) {
@@ -123,44 +76,37 @@ describe('drawWorksQr', () => {
 });
 
 /**
- * pipeline 接入层覆盖。
+ * 导出/下载路径不带二维码。
  *
- * 没有这一组，删掉 pipeline.ts 里那两行 qrBandPx / drawWorksQr，整套单测照样全绿，
- * 而那正是本任务唯一真正改变成品图的改动。所以这里必须断言「两条导出路径拿到的
- * 画布高度确实多了二维码那条带子」。
+ * 这一组是**反着**写的。之前导出图右下角贴着一枚指向 /works 的全站码，
+ * 撤掉之后如果不留这道闸，谁都能顺手加回去 —— 而且两处改动（pipeline.ts 里
+ * 的 drawWorksQr 调用和 qrBandPx 预留）都会让成品高度悄悄涨回去，肉眼很难发现。
  *
- * 用 doMock 而不是顶层 vi.mock：文件上半部分的 ensureWorksQrImage 用例要跑真实现，
- * 顶层 mock 会把它一起换掉。resetModules + 动态 import 才能让新加载的 pipeline
- * 模块看到 mock，同时不影响上面已经绑定好的真实导入。
+ * 断言的是「导出全程没碰 qr 模块」，而不是「画出来的图上看不见码」：
+ * 后者在 1×1 的夹具上根本分辨不出来。这里把 composite 的两个渲染函数换成
+ * 记录版，直接检查它们收到的 options 里有没有那条白带。
+ *
+ * 用 doMock 而不是顶层 vi.mock：文件上半部分的 drawWorksQr 用例要跑真实现，
+ * 顶层 mock 会把它一起换掉。resetModules + 动态 import 才能让新加载的
+ * pipeline 模块看到 mock，同时不影响上面已经绑定好的真实导入。
  */
-describe('pipeline 接入：二维码留白带真的进了成品图', () => {
-  interface FakeQr {
-    naturalWidth: number;
-    naturalHeight: number;
-  }
-
-  const QR: FakeQr = { naturalWidth: 111, naturalHeight: 111 };
+describe('导出路径：既不预留二维码白带，也不画码', () => {
   const palette: Palette = [{ id: 'A01', rgb: [255, 0, 0], name: '红' }];
 
-  let ensureWorksQrImage: Mock<() => Promise<FakeQr | null>>;
-  let drawWorksQr: Mock<(canvas: HTMLCanvasElement, img: FakeQr) => void>;
+  /** composite 两个渲染函数各自收到的 options 里的 qrBandPx */
+  let bandHeights: (number | null | undefined)[];
+  let drawWorksQrMock: Mock;
   let canvasToBlob: Mock<(canvas: HTMLCanvasElement) => Promise<Blob>>;
   let triggerDownload: Mock;
 
   beforeEach(() => {
     vi.resetModules();
-    ensureWorksQrImage = vi.fn(async (): Promise<FakeQr | null> => null);
-    drawWorksQr = vi.fn();
-    // 序列化是唯一能拿到「pipeline 内部渲染出的那张画布」的入口
+    bandHeights = [];
+    drawWorksQrMock = vi.fn();
     canvasToBlob = vi.fn(async () => new Blob(['board'], { type: 'image/png' }));
     triggerDownload = vi.fn();
 
-    vi.doMock('@/pipeline/qr', () => ({
-      ensureWorksQrImage,
-      drawWorksQr,
-      WORKS_QR_SRC,
-      QR_LOAD_TIMEOUT_MS: 1500,
-    }));
+    vi.doMock('@/pipeline/qr', () => ({ drawWorksQr: drawWorksQrMock }));
     vi.doMock('@/pipeline/exporter', () => ({ canvasToBlob, triggerDownload }));
     // 水印图标在 jsdom 里同样不派发事件，会白等 1.5s；这里换成即时的 null。
     // composite.ts 依赖 DEFAULT_WATERMARK_OPTIONS，所以保留原模块其余导出。
@@ -169,13 +115,36 @@ describe('pipeline 接入：二维码留白带真的进了成品图', () => {
       applyWatermark: vi.fn(),
       ensureWatermarkIcon: vi.fn(async () => null),
     }));
+    // 只换掉两个出图的入口：换成记录版后既能抓到 options，
+    // 又不必让 1×1 的夹具真的渲染出什么像素。
+    vi.doMock('@/pipeline/composite', async importOriginal => ({
+      ...(await importOriginal<typeof import('@/pipeline/composite')>()),
+      renderComposite: (...a: unknown[]) => {
+        bandHeights.push((a[4] as { qrBandPx?: number } | undefined)?.qrBandPx);
+        return { width: 800, height: 1200, getContext: () => null } as unknown as HTMLCanvasElement;
+      },
+      renderCompositeFromBoard: (...a: unknown[]) => {
+        bandHeights.push((a[6] as { qrBandPx?: number } | undefined)?.qrBandPx);
+        return { width: 800, height: 1200, getContext: () => null } as unknown as HTMLCanvasElement;
+      },
+    }));
   });
 
   afterEach(() => {
     vi.doUnmock('@/pipeline/qr');
     vi.doUnmock('@/pipeline/exporter');
     vi.doUnmock('@/pipeline/watermark');
+    vi.doUnmock('@/pipeline/composite');
   });
+
+  async function runExport(
+    exportOne: (pipeline: InstanceType<typeof import('@/pipeline/pipeline')['Pipeline']>) => Promise<unknown>,
+  ) {
+    const { Pipeline } = await import('@/pipeline/pipeline');
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    await exportOne(pipeline);
+  }
 
   function baseResult(): PipelineResult {
     return {
@@ -211,73 +180,29 @@ describe('pipeline 接入：二维码留白带真的进了成品图', () => {
     return new ImageData(pixels, width, height);
   }
 
-  /** 跑一次导出，返回 pipeline 交给序列化那一步的画布 */
-  async function exportedCanvas(
-    qr: FakeQr | null,
-    // 返回类型放宽到 unknown：exportMulti 会返回 { success, failed } 统计
-    exportOne: (pipeline: InstanceType<
-      typeof import('@/pipeline/pipeline')['Pipeline']
-    >) => Promise<unknown>
-  ): Promise<HTMLCanvasElement> {
-    ensureWorksQrImage.mockResolvedValue(qr);
-    const { Pipeline } = await import('@/pipeline/pipeline');
-    const pipeline = new Pipeline();
-    pipeline.init(palette);
-    await exportOne(pipeline);
-    expect(canvasToBlob).toHaveBeenCalled();
-    return canvasToBlob.mock.calls[0][0];
-  }
+  it('exportComposite 不传 qrBandPx、也不调用 drawWorksQr', async () => {
+    await runExport(p => p.exportComposite(baseResult()));
 
-  it('exportComposite 的成品高度比无码时恰好多出二维码高度', async () => {
-    const base = await exportedCanvas(null, p => p.exportComposite(baseResult()));
-    canvasToBlob.mockClear();
-    drawWorksQr.mockClear();
-
-    const withQr = await exportedCanvas(QR, p => p.exportComposite(baseResult()));
-
-    expect(withQr.height - base.height).toBe(QR.naturalWidth);
-    // 码要画在这张最终画布上，并且画在序列化之前
-    expect(drawWorksQr).toHaveBeenCalledWith(withQr, QR);
-    expect(drawWorksQr.mock.invocationCallOrder[0]).toBeLessThan(
-      canvasToBlob.mock.invocationCallOrder[0]
-    );
+    expect(bandHeights).toHaveLength(1);
+    expect(bandHeights[0] ?? 0).toBe(0);
+    expect(drawWorksQrMock).not.toHaveBeenCalled();
   });
 
-  it('exportMulti 的成品高度比无码时恰好多出二维码高度', async () => {
-    // 显式关掉紧裁剪（tightCrop = false）：这条用例只想量「二维码留白带给成品
-    // 加了多少高度」，不该跟着裁剪链路的改动一起变红
-    const exportNoCrop = (p: import('@/pipeline/pipeline').Pipeline) =>
-      p.exportMulti(source(40, 20), 24, 4, [], false, false, false);
-
-    const base = await exportedCanvas(null, exportNoCrop);
-    canvasToBlob.mockClear();
-    drawWorksQr.mockClear();
-
-    const withQr = await exportedCanvas(QR, exportNoCrop);
-
-    expect(withQr.height - base.height).toBe(QR.naturalWidth);
-    expect(drawWorksQr).toHaveBeenCalledWith(withQr, QR);
-    expect(drawWorksQr.mock.invocationCallOrder[0]).toBeLessThan(
-      canvasToBlob.mock.invocationCallOrder[0]
+  it('exportMulti 每张尺寸都不传 qrBandPx、也不调用 drawWorksQr', async () => {
+    // 显式关掉紧裁剪：这条用例只想验「有没有白带」，不该跟着裁剪链路的改动一起变红
+    await runExport(p =>
+      p.exportMulti(source(40, 20), 24, 2, [16], false, false, false)
     );
+
+    // 2 张（主尺寸 24 + 额外 16），两张都得查 —— 只查第一张会漏掉循环体里的改动
+    expect(bandHeights).toHaveLength(2);
+    for (const h of bandHeights) expect(h ?? 0).toBe(0);
+    expect(drawWorksQrMock).not.toHaveBeenCalled();
   });
 
-  it('二维码拿不到时静默降级：留白带为 0 且不调用 drawWorksQr', async () => {
-    const canvas = await exportedCanvas(null, p => p.exportComposite(baseResult()));
-    expect(drawWorksQr).not.toHaveBeenCalled();
-    // 版式与二维码功能上线前完全一致，画布宽度也不受影响
-    expect(canvas.width).toBeGreaterThan(0);
+  it('导出照常成功：拿掉二维码不能连带把下载弄坏', async () => {
+    await runExport(p => p.exportComposite(baseResult()));
+    expect(canvasToBlob).toHaveBeenCalledTimes(1);
     expect(triggerDownload).toHaveBeenCalledTimes(1);
-  });
-
-  it('留白带高度取 naturalWidth，与 drawWorksQr 画的边长同源', async () => {
-    // 非方码：留白带若误取 naturalHeight，高度差就会跟着变形
-    const tall: FakeQr = { naturalWidth: 60, naturalHeight: 200 };
-    const base = await exportedCanvas(null, p => p.exportComposite(baseResult()));
-    canvasToBlob.mockClear();
-
-    const withQr = await exportedCanvas(tall, p => p.exportComposite(baseResult()));
-
-    expect(withQr.height - base.height).toBe(60);
   });
 });

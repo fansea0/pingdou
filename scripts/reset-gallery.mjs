@@ -98,7 +98,7 @@ import initSqlJs from 'sql.js';
 // server/db.ts 用 cwd 是因为它只由 npm scripts 启动（cwd 必然是仓库根）；
 // 而运维敲的是 `node scripts/reset-gallery.mjs`，cwd 可能是 /、可能是 ~，
 // 那时 cwd 版本的 locateFile 会解析到 /node_modules/sql.js/dist 然后报 ENOENT。
-// 相对脚本自身定位跟 scripts/gen-qr.mjs 的做法一致：与「从哪儿敲」无关。
+// 相对脚本自身定位：与「从哪儿敲」无关，任何 cwd 都指向同一份 sql.js。
 const SQLJS_DIST = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', 'sql.js', 'dist');
 
 const DATA_DIR = resolve(process.env.PINGDOU_DATA_DIR?.trim() || '/var/lib/pingdou');

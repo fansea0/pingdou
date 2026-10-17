@@ -13,5 +13,3 @@ dist-server/
 data/*.db*
 .worktrees/
 package-lock.json
-# gen-qr.test.ts 的临时脚本目录，跑完会自清，中途失败可能残留
-.tmp-gen-qr-*

@@ -11,7 +11,6 @@ import { renderBeadBoard, padToSquareGrid } from './board';
 import { cropGridToContent, DEFAULT_CROP_PADDING } from './crop';
 import { canvasToBlob, triggerDownload } from './exporter';
 import { applyWatermark, ensureWatermarkIcon } from './watermark';
-import { ensureWorksQrImage, drawWorksQr } from './qr';
 import { simplifyRareColors, summarizeColors } from './colorSimplifier';
 import { applyColorBudget } from './colorBudget';
 import {
@@ -212,15 +211,13 @@ export class Pipeline {
     if (!this.palette) throw new Error('Pipeline not initialized');
     const { indices, outW, outH, mask } = result;
 
-    const qrImage = await ensureWorksQrImage();
+    // 不预留二维码白带、也不画码：下载图是给用户拿去打印或分享的，底边那条
+    // 带子对这两种用途都是空白。二维码只属于投稿图 —— 那张图进了公开作品库，
+    // 需要码把人带回自己的详情页；没人会为了「扫码进作品库」而去打印一张图。
     const canvas = renderComposite(indices, outW, outH, this.palette, {
       cellPx: DEFAULT_COMPOSITE_OPTIONS.cellPx,
-      // 与 drawWorksQr 的边长同源（取 naturalWidth），理由见 exportMulti 里的注释
-      qrBandPx: qrImage ? qrImage.naturalWidth : 0,
     }, mask);
     await drawWatermark(canvas);
-    // 水印锚在页眉右侧、二维码锚在底部白带，相隔整个图纸高度，不会互相遮挡
-    if (qrImage) drawWorksQr(canvas, qrImage);
     const blob = await canvasToBlob(canvas);
     triggerDownload(blob, `pingdou-${outW}x${outH}-composite.png`);
   }
@@ -338,9 +335,6 @@ export class Pipeline {
           fontPx: 12,
           mask: boardMask,
         });
-        // QR 是异步资源：先 await 拿到，才能据此决定留白带多高。
-        // 拿不到就传 0 —— 版式与现状完全一致，导出照常成功。
-        const qrImage = await ensureWorksQrImage();
         const compositeCanvas = renderCompositeFromBoard(
           boardCanvas,
           boardIndices,
@@ -348,13 +342,8 @@ export class Pipeline {
           boardH,
           this.palette,
           boardMask,
-          // 留白带用 naturalWidth 而不是 naturalHeight：drawWorksQr 的边长取的是
-          // naturalWidth，两处必须同源，否则将来产出非方图时留白带高度会和实际绘制
-          // 边长对不上（图被拉歪，且顶端越过带上沿压到色卡）。
-          { qrBandPx: qrImage ? qrImage.naturalWidth : 0 }
         );
         await drawWatermark(compositeCanvas);
-        if (qrImage) drawWorksQr(compositeCanvas, qrImage);
         const blob = await canvasToBlob(compositeCanvas);
         // 文件名用实际输出尺寸：非方图 / 紧裁后都可能不等于 gridSize
         triggerDownload(blob, `pingdou-${boardW}x${boardH}.png`);

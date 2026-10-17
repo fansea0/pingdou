@@ -17,7 +17,7 @@
  * 留着只会变成一个纯装饰性的错误信号。
  *
  * 权威域写死为 www + punycode。构建脚本之间以 scripts/site-config.mjs
- * 为单一真源（本脚本与 gen-qr.mjs 都从那里读）；但 index.html 的
+ * 为单一真源（本脚本从那里读）；但 index.html 的
  * canonical/og、robots.txt 的 Sitemap 行仍是字面量——那些是静态文件，
  * 没有模板注入可依赖。改域名三处一起改，src/seo.test.ts 的断言会挡住漂移。
  */

@@ -140,9 +140,8 @@ bash scripts/deploy-server.sh                            # 脚本做的
   `node_modules` 是上一次部署留下的，「目录存在」不代表「包是新的」—— 新增或升级
   依赖后跳过安装，构建期就会 `ERR_MODULE_NOT_FOUND` 直接把部署打断。
 - **`prebuild` 只跑 `scripts/gen-sitemap.mjs`**（只用 Node 内置模块，零外部依赖）。
-  二维码 `public/brand/works-qr.png` 是**提交进仓库的产物**，不再由构建生成，
-  所以线上构建不依赖 devDependency `qrcode`。改了二维码参数跑 `npm run gen:qr`
-  并把产物提交回去。给 `prebuild` 加新的第三方依赖前先想清楚：它会跟着每次部署一起跑。
+  站内已经没有「构建期产物」了 —— 二维码是投稿时在浏览器里现场编码的，
+  构建期不需要任何第三方依赖。给 `prebuild` 加新依赖前先想清楚：它会跟着每次部署一起跑。
 
 如果不想走 GitHub Actions，手动部署时同样用 `npm install`，别照搬 `npm ci`：
 ```bash
@@ -170,15 +169,18 @@ nohup 起 vite preview 或 `npm run start:backend`；见 [`docs/DEPLOY.md`](./do
 
 ## 作品库
 
-导出图纸的**右下角有一个二维码**（111×111，由 `scripts/gen-qr.mjs` 生成、产物提交进仓库），
-扫码直接进入公开作品库 `/works`。
+作品库里的每一张图都由访客投稿，带一枚**只属于它自己**的二维码：111×111，
+扫码直达这件作品的详情页 `/works/:id`。导出/下载的图**不带码** —— 那张图不进
+作品库，扫码无处可去，底边留白也只是打印时的空白边。
 
-- **导出图二维码**：`/brand/works-qr.png`，由 `scripts/gen-qr.mjs` 生成
-  （version 3 / ECC L / 模块 3px / 静区 4 模块）。产物**提交进仓库**，`prebuild` **不**跑它
-  （理由见下方「部署」），要重新生成跑 `npm run gen:qr`。
+- **二维码在哪生成**：用户点投稿时在浏览器里现场编码（`renderSubmissionQr`），
+  `qrcode` 用动态 `import()` 拉，不进首屏 bundle。站点上没有任何构建期生成的二维码文件。
+- **规格钉死**：version 3 / ECC L / 静区 4 模块 / 111×111 = 37 列 × 3px，模块边长必须是整数。
+  version 是钉死的而不是让库自己挑 —— version 1 / 2 只有 29 / 33 列，111 除不开。
+  规格在 `SUBMISSION_QR_OPTIONS`（`src/pipeline/qr.ts`）。
 - **二维码落位**：`composite.ts` 的 `qrBandPx` 只把底部边距加宽，页眉 / 图纸 / 色卡
-  的纵向布局一行不动 —— 色卡既不会被压也不会重排。画不出二维码时（资源 404 /
-  被拦截 / jsdom）自动降级为「不画码」，导出照常成功。
+  的纵向布局一行不动 —— 色卡既不会被压也不会重排。生成或加载失败时自动降级为
+  「留一条空白带、不画码」，投稿照常成功。
 - **作品库页面**：`/works` 列表（缩略图网格 + 加载更多）、`/works/:id` 详情
   （大图 + 「长按图片保存」提示 + 「下载原图」按钮 + 点赞按钮）。
   同一个图片 URL 承担两种用途：被 `<img>` 引用是内联渲染（可长按），
@@ -207,10 +209,8 @@ nohup 起 vite preview 或 `npm run start:backend`；见 [`docs/DEPLOY.md`](./do
 - **上下架**：只有 `published=1` **且** `status='approved'` 的作品出现在公开列表和详情里。
   `GET /api/admin/works` 的响应比公开 detail 多 `published` 与 `status` 两个字段
   （服务端 `toAdminDetail` 单独序列化），公开接口**不带**这两个字段。
-- **二维码**：导出图的二维码是**构建期**生成的静态码，指向 `/works` 列表页；
-  投稿图的二维码是**运行时**生成的，指向 `/works/:id`，扫描直达这一件作品。
-  两者共用同一个 `drawWorksQr`（`src/pipeline/qr.ts`），规格也刻意一致
-  （version 3 / ECC L / 静区 4 / 111×111），所以画法一行不用改。
+- **二维码**：**只有投稿图有码**，指向 `/works/:id`，扫描直达这一件作品；
+  导出/下载的图一律不带码。实现都在 `src/pipeline/qr.ts`。
 - **存储**：`works` 表只存 key（`works/<16hex>.png`），不存 URL，对外地址一律由
   `server/storage/` 里的 `StorageDriver.publicUrl()` 现算。换 S3/OSS 只需新增一个
   driver 实现文件 + 改 `server/storage/index.ts` 一行，老数据一行不用洗。

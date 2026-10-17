@@ -1,29 +1,24 @@
 /**
- * 导出图纸右下角的二维码。
+ * 投稿成品图右下角的二维码。
  *
- * 码分两种，都走同一条加载链路、同一支 drawWorksQr：
- *   1. 构建期用 scripts/gen-qr.mjs 预生成的静态 PNG（全站码，version 3 / 111×111），
- *      运行时只负责加载和绘制；
- *   2. 投稿时按当前作品的 id 现场编码出来的码（renderSubmissionQr），规格由
- *      SUBMISSION_QR_OPTIONS 钉死，见文件末尾。
- * 第 2 种依赖 qrcode，但它只在用户真的点投稿时才动态 import，不进首屏 bundle。
+ * 码在用户点投稿时才现场编码出来，内容是这一件作品自己的详情页地址
+ * （`${origin}/works/${id}`），规格由 SUBMISSION_QR_OPTIONS 钉死，见文件末尾。
+ * 它依赖 qrcode，因此用动态 import，不进首屏 bundle。
  *
- * 加载链路照搬 watermark.ts 的 ensureWatermarkIcon：模块级 Map 缓存先占位
- * （避免并发导出重复发起加载）、onload/onerror 双通道、1.5s 超时兜底
- * （jsdom 根本不派发 img 事件，没有超时会一直挂着）。
+ * 导出/下载路径**不**画码：那张图不进作品库，没有可指回去的地方，
+ * 预留的白带也只是打印时的空白边。所以本文件没有「全站码」这种形态，
+ * 也就没有构建期产物、没有静态资源路径常量。
  *
- * 失败一律降级为 null，绝不抛错：二维码是锦上添花，不能因为它让导出失败。
+ * 加载链路照搬 watermark.ts 的 ensureWatermarkIcon：onload/onerror 双通道
+ * + 1.5s 超时兜底（jsdom 根本不派发 img 事件，没有超时会一直挂着）。
+ *
+ * 失败一律降级为 null，绝不抛错：二维码是锦上添花，不能因为它让投稿失败。
  */
 
 import { DEFAULT_COMPOSITE_OPTIONS } from './composite';
 
-/** 构建期产物（scripts/gen-qr.mjs 写在 public/brand/ 下，Vite 原样拷进 dist） */
-export const WORKS_QR_SRC = '/brand/works-qr.png';
-
 /** 首屏导出时资源还没进 HTTP 缓存时可能慢；超过这个时间就放弃画码 */
 export const QR_LOAD_TIMEOUT_MS = 1500;
-
-const imageCache = new Map<string, HTMLImageElement | null>();
 
 /**
  * 把一个图片地址加载成 HTMLImageElement，在 Image 存在的前提下永不 reject、
@@ -31,19 +26,17 @@ const imageCache = new Map<string, HTMLImageElement | null>();
  *
  * 「永不 reject」这句只对着 Image 存在时成立：`new Image()` 本身在 Image 未定义
  * 时会抛 ReferenceError，而它就发生在 Promise executor 里，异常会直接把返回的
- * Promise 变成 rejected，而不是 resolve 成 null。所以两个公开入口
- * （ensureWorksQrImage / renderSubmissionQr）都各自守了一句
- * `typeof Image === 'undefined'`，这一层不重复守。
+ * Promise 变成 rejected，而不是 resolve 成 null。调用方 renderSubmissionQr 自己也
+ * 守了一句 `typeof Image === 'undefined'`，这一层不重复守。
  *
- * 单独抽出来是为了让「构建期静态码」和「运行时生成的码」共用同一条加载链路：
- * dataURL 灌进 new Image() 之后，得到的对象与 <img src> 完全同型，于是
- * drawWorksQr 一行都不用改就能画两者。
+ * 用 toDataURL 而不是 QRCode.toCanvas：drawWorksQr 吃的是 HTMLImageElement，
+ * 把 dataURL 灌进 new Image() 之后得到的对象与 <img src> 完全同型。
  *
  * 1.5s 超时兜底不是多余的：jsdom 根本不派发 img 的 load/error 事件，
- * 没有超时会永远挂住 —— 导出与投稿两条路径都会卡死。
+ * 没有超时会永远挂住 —— 投稿会卡死。
  *
- * 这里不做任何缓存：缓存归 ensureWorksQrImage 管。缓存命中与否是它自己的事，
- * 这里只负责「拿到 src，给回一个图或 null」。
+ * 这里不做任何缓存：本文件只剩投稿一条加载链路，每次调用都从新生成的 dataURL
+ * 起步，模块级 Map 缓存对它没有命中可言。
  */
 function loadImageOnce(src: string, timeoutMs: number = QR_LOAD_TIMEOUT_MS): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
@@ -59,30 +52,12 @@ function loadImageOnce(src: string, timeoutMs: number = QR_LOAD_TIMEOUT_MS): Pro
   });
 }
 
-export function ensureWorksQrImage(src: string = WORKS_QR_SRC): Promise<HTMLImageElement | null> {
-  const cached = imageCache.get(src);
-  if (cached !== undefined) return Promise.resolve(cached);
-  if (typeof Image === 'undefined') {
-    imageCache.set(src, null);
-    return Promise.resolve(null);
-  }
-  // 先占位，避免并发调用重复发起加载（和 ensureWatermarkIcon 一致）。
-  // 注意这个占位是 null，所以**并发调用的第二个 caller 会拿到 null**，而不是同一个
-  // img 实例 —— 既有行为，新旧一致，不是本次引入的。想让并发安全要等真图落地后
-  // 再发第二次加载，这里不做。
-  imageCache.set(src, null);
-  return loadImageOnce(src).then((img) => {
-    imageCache.set(src, img);
-    return img;
-  });
-}
-
 /**
  * 把二维码画到画布右下角。
  *
  * 尺寸读 img.naturalWidth 而不是写死常量：模块边长必须是整数 px，
- * 任何非整数缩放都会把模块糊在一起，糊了就扫不出来。想换尺寸请改
- * scripts/gen-qr.mjs 重新构建，这样运行时布局自动跟上，不存在两处数字对不上。
+ * 任何非整数缩放都会把模块糊在一起，糊了就扫不出来。上游保证传进来的是
+ * 正方图（SUBMISSION_QR_PX 钉死了版本与静区），所以只读一个边长就够。
  */
 export function drawWorksQr(canvas: HTMLCanvasElement, img: HTMLImageElement): void {
   const ctx = canvas.getContext('2d');
@@ -110,21 +85,21 @@ export function drawWorksQr(canvas: HTMLCanvasElement, img: HTMLImageElement): v
 /**
  * 投稿图上那枚码的输出边长。
  *
- * 注意区分两条不同的契约，别把它们混成一条：
+ * 白带高度和码的实际边长靠**同一个常量**对齐，中间不再有别的换算：
+ * `submission.ts` 预留白带时用的就是 `qrBandPx: SUBMISSION_QR_PX`，而码的实际
+ * 边长来自 `SUBMISSION_QR_OPTIONS.width`，后者也等于 `SUBMISSION_QR_PX`，
+ * drawWorksQr 读的 `img.naturalWidth` 就是它的落地结果。两端同源，
+ * 谁要是对不上，是有人把 111 写死进了别处，不是这里。
  *
- *   1. 「白带预留高度 ↔ 码的实际边长」是**同源**的，不靠这个常量保证。
- *      pipeline.ts 里两条导出路径都是 `qrBandPx: qrImage ? qrImage.naturalWidth : 0`
- *      （exportComposite 与 exportMulti 各一处），跟 drawWorksQr 读的
- *      img.naturalWidth 取的是同一个数，结构上就对不上不了 —— 谁要是哪天真
- *      对不上了，那是 pipeline.ts 写死了 111，不是这里。这条由
- *      tests/unit/qr.test.ts（「留白带高度取 naturalWidth，与 drawWorksQr 画的
- *      边长同源」，用 60×200 的非方图替身验的）守着，本文件不重复断言。
+ * 这个常量的**真正**契约只有一条：**必须能被二维码的矩阵列数整除**，
+ * 否则模块边长不是整数 px，图上看着有个码、真扫扫不出来。
  *
- *   2. 本文件自己的契约是：**这个数字必须能被二维码的矩阵列数整除**，
- *      否则模块边长不是整数 px，码扫不出来。src/pipeline/qr.test.ts 守这条。
- *
- * 把 1 说成 2 是危险的：后续任务读到会以为白带↔边长没人测，反过来把 qrBandPx
- * 写死成 111「加固」，反而真的造出漂移。
+ * 两条下游断言守着这段同源关系，别删：
+ *   - `src/pipeline/submission.test.ts`「底部留出 SUBMISSION_QR_PX 高的白带给二维码」
+ *     —— 守住白带这一端；
+ *   - `src/pipeline/qr.test.ts`「version 3 + 静区 4 + 宽 111 恰好产出 111×111 的方图」
+ *     —— 守住「width 选项真的被库采纳、真图确实是 111×111」这一端。
+ * 只留后者会漏掉白带被改小；只留前者会漏掉 qrcode 升级后 width 语义变化。
  */
 export const SUBMISSION_QR_PX = 111;
 
@@ -148,9 +123,6 @@ export const SUBMISSION_QR_PX = 111;
  * 更宽裕，因为纯数字 id 会走数字模式高压缩（实测 20 位 id、整串 54 字节仍落在
  * version 3 内）。超出容量时库会**抛错**而不是静默降级 —— 显式失败比糊码好，
  * renderSubmissionQr 会把它接成降级成 null。
- *
- * 与构建期 scripts/gen-qr.mjs 的全站码同规格（同为 version 3 / 静区 4 / 3px 模块
- * / 111×111），所以同一个 drawWorksQr 能画两者。
  */
 export const SUBMISSION_QR_OPTIONS = {
   version: 3,
@@ -165,9 +137,8 @@ export const SUBMISSION_QR_OPTIONS = {
  * 用 toDataURL 而不是 toCanvas：drawWorksQr 吃的是 HTMLImageElement，把 dataURL
  * 灌进 new Image() 就得到同型对象，于是画码那段代码完全不用动。
  *
- * 失败一律降级为 null，绝不抛错 —— 与 ensureWorksQrImage 同一个立场：
- * 二维码是锦上添花，不能因为它让投稿失败。降级后成品图会留一条空的白带，
- * 这比整次投稿失败好得多。
+ * 失败一律降级为 null，绝不抛错：二维码是锦上添花，不能因为它让投稿失败。
+ * 降级后成品图会留一条空的白带，这比整次投稿失败好得多。
  */
 export async function renderSubmissionQr(
   id: number,
