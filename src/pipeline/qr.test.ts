@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { create, toDataURL } from 'qrcode';
 import { SUBMISSION_QR_PX, SUBMISSION_QR_OPTIONS } from './qr';
 
@@ -62,5 +62,96 @@ describe('投稿二维码规格', () => {
     expect(pinned.version).toBe(3);
     expect(columnsOf(pinned)).toBe(37);
     expect(SUBMISSION_QR_PX % columnsOf(pinned)).toBe(0);
+  });
+
+  it('ECC 钉死 L：v3 下换 ECC 不动矩阵，所以几何断言抓不到它', () => {
+    // 这条不能省。version 3 的矩阵尺寸与 ECC 无关 —— 对能装下的内容，L/M/Q/H
+    // 都是 29 模块、37 列、3.000px 一个模块，所以上面所有几何断言在 L→M 下
+    // 照样全绿。被牺牲的是容量余量：v3 的字节模式容量 L=53 / M=42 / Q=32 /
+    // H=24，而当前 URL 已经 41 字节，换成 M 只剩 1 字节余量，再长一点就抛错、
+    // 降级成一条空白带。所以 ECC 必须自己有一条断言。
+    expect(SUBMISSION_QR_OPTIONS.errorCorrectionLevel).toBe('L');
+
+    // 把「为什么不靠几何断言」钉成事实：同一条装得下的内容，四档 ECC 矩阵完全一样
+    const probe = 'x'.repeat(20);
+    for (const ecc of ['L', 'M', 'Q', 'H'] as const) {
+      expect(create(probe, { ...SUBMISSION_QR_OPTIONS, errorCorrectionLevel: ecc }).modules.size).toBe(29);
+    }
+
+    // 顺带把余量的真实形状记下来：换成 M 还能编，Q/H 当场就装不下当前链接。
+    expect(() => create(`${SITE}/works/9999999`, { ...SUBMISSION_QR_OPTIONS, errorCorrectionLevel: 'M' }))
+      .not.toThrow();
+    expect(() => create(`${SITE}/works/9999999`, { ...SUBMISSION_QR_OPTIONS, errorCorrectionLevel: 'H' }))
+      .toThrow();
+  });
+});
+
+/**
+ * 「码指向哪件作品」这条链路。
+ *
+ * 上面整组用例都是自己拼 URL 去调库，绕开了 renderSubmissionQr —— 而它才是
+ * 生产代码里唯一生成链接的地方。危害方向恰恰是这个任务最该防的那类：模板写错
+ * （`/works` 写成 `/work`、或漏掉 origin）不会让码消失，也不会让任何几何断言
+ * 变红，只会安静地产出一张**扫得出来、但指向别的页面**的码。所以必须直接断言
+ * 拼出来的字符串。
+ *
+ * 用 doMock + resetModules + 动态 import（沿用 tests/unit/qr.test.ts 的既有范式），
+ * 只把 qrcode 换成一个记录入参的替身，renderSubmissionQr 的其余链路照走真的。
+ */
+describe('renderSubmissionQr 拼出来的链接', () => {
+  const originalImage = globalThis.Image;
+
+  afterEach(() => {
+    globalThis.Image = originalImage;
+    vi.doUnmock('qrcode');
+    vi.resetModules();
+  });
+
+  /** 替换 qrcode，捕获 toDataURL 收到的文本；顺带给 Image 一个立刻 load 的替身 */
+  function stubQrcode() {
+    const seen: string[] = [];
+    vi.doMock('qrcode', () => ({
+      toDataURL: async (text: string) => {
+        seen.push(text);
+        return 'data:image/png;base64,iVBORw0KGgo=';
+      },
+    }));
+    class FakeImage {
+      naturalWidth = 111;
+      naturalHeight = 111;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_v: string) { queueMicrotask(() => this.onload?.()); }
+    }
+    globalThis.Image = FakeImage as unknown as typeof Image;
+    return seen;
+  }
+
+  it('origin + id 拼成 origin/works/:id', async () => {
+    const seen = stubQrcode();
+    const { renderSubmissionQr } = await import('./qr');
+
+    const img = await renderSubmissionQr(9999999, SITE);
+
+    expect(seen).toEqual([`${SITE}/works/9999999`]);
+    expect(img).not.toBeNull();
+  });
+
+  it('id 换成另一个值时链接跟着换，作品不会串', async () => {
+    const seen = stubQrcode();
+    const { renderSubmissionQr } = await import('./qr');
+
+    await renderSubmissionQr(128, SITE);
+
+    expect(seen).toEqual([`${SITE}/works/128`]);
+  });
+
+  it('origin 是运行时参数：换一个 origin，链接的域名跟着换', async () => {
+    const seen = stubQrcode();
+    const { renderSubmissionQr } = await import('./qr');
+
+    await renderSubmissionQr(42, 'http://localhost:5173');
+
+    expect(seen).toEqual(['http://localhost:5173/works/42']);
   });
 });

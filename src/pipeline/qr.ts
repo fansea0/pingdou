@@ -26,7 +26,14 @@ export const QR_LOAD_TIMEOUT_MS = 1500;
 const imageCache = new Map<string, HTMLImageElement | null>();
 
 /**
- * 把一个图片地址加载成 HTMLImageElement，永不抛错、永不挂住。
+ * 把一个图片地址加载成 HTMLImageElement，在 Image 存在的前提下永不 reject、
+ * 永不挂住。
+ *
+ * 「永不 reject」这句只对着 Image 存在时成立：`new Image()` 本身在 Image 未定义
+ * 时会抛 ReferenceError，而它就发生在 Promise executor 里，异常会直接把返回的
+ * Promise 变成 rejected，而不是 resolve 成 null。所以两个公开入口
+ * （ensureWorksQrImage / renderSubmissionQr）都各自守了一句
+ * `typeof Image === 'undefined'`，这一层不重复守。
  *
  * 单独抽出来是为了让「构建期静态码」和「运行时生成的码」共用同一条加载链路：
  * dataURL 灌进 new Image() 之后，得到的对象与 <img src> 完全同型，于是
@@ -59,7 +66,10 @@ export function ensureWorksQrImage(src: string = WORKS_QR_SRC): Promise<HTMLImag
     imageCache.set(src, null);
     return Promise.resolve(null);
   }
-  // 先占位，避免并发调用重复发起加载（和 ensureWatermarkIcon 一致）
+  // 先占位，避免并发调用重复发起加载（和 ensureWatermarkIcon 一致）。
+  // 注意这个占位是 null，所以**并发调用的第二个 caller 会拿到 null**，而不是同一个
+  // img 实例 —— 既有行为，新旧一致，不是本次引入的。想让并发安全要等真图落地后
+  // 再发第二次加载，这里不做。
   imageCache.set(src, null);
   return loadImageOnce(src).then((img) => {
     imageCache.set(src, img);
@@ -100,10 +110,21 @@ export function drawWorksQr(canvas: HTMLCanvasElement, img: HTMLImageElement): v
 /**
  * 投稿图上那枚码的输出边长。
  *
- * 必须与 SUBMISSION_QR_OPTIONS.version / margin 同源：渲染成品图时底部白带按它
- * 预留高度，码画进去时 drawWorksQr 取 img.naturalWidth 当边长 —— 两个数字一旦
- * 对不上，要么码压在白带外，要么白带空一块。src/pipeline/qr.test.ts 是这两个
- * 数字之间唯一的连接点。
+ * 注意区分两条不同的契约，别把它们混成一条：
+ *
+ *   1. 「白带预留高度 ↔ 码的实际边长」是**同源**的，不靠这个常量保证。
+ *      pipeline.ts 里两条导出路径都是 `qrBandPx: qrImage ? qrImage.naturalWidth : 0`
+ *      （exportComposite 与 exportMulti 各一处），跟 drawWorksQr 读的
+ *      img.naturalWidth 取的是同一个数，结构上就对不上不了 —— 谁要是哪天真
+ *      对不上了，那是 pipeline.ts 写死了 111，不是这里。这条由
+ *      tests/unit/qr.test.ts（「留白带高度取 naturalWidth，与 drawWorksQr 画的
+ *      边长同源」，用 60×200 的非方图替身验的）守着，本文件不重复断言。
+ *
+ *   2. 本文件自己的契约是：**这个数字必须能被二维码的矩阵列数整除**，
+ *      否则模块边长不是整数 px，码扫不出来。src/pipeline/qr.test.ts 守这条。
+ *
+ * 把 1 说成 2 是危险的：后续任务读到会以为白带↔边长没人测，反过来把 qrBandPx
+ * 写死成 111「加固」，反而真的造出漂移。
  */
 export const SUBMISSION_QR_PX = 111;
 
