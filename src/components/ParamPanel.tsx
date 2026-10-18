@@ -13,11 +13,14 @@ interface Props {
   simplifyColors: boolean;
   tightCrop: boolean;
   colorBudget: ColorBudgetLevel;
+  /** 导出图是否带「拼豆.xyz」水印。只影响导出，不参与图案计算 */
+  watermark: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
   onSimplifyColorsChange: (enabled: boolean) => void;
   onTightCropChange: (enabled: boolean) => void;
   onColorBudgetChange: (level: ColorBudgetLevel) => void;
+  onWatermarkChange: (enabled: boolean) => void;
   disabled?: boolean;
 }
 
@@ -124,11 +127,13 @@ export function ParamPanel({
   simplifyColors,
   tightCrop,
   colorBudget,
+  watermark,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
   onTightCropChange,
   onColorBudgetChange,
+  onWatermarkChange,
   disabled,
 }: Props) {
   const removed = totalCells > 0 ? totalCells - beanCount : 0;
@@ -223,6 +228,20 @@ export function ParamPanel({
         <span>
           自动简化颜色
           <span className="param-toggle-hint"> · 启用后每种颜色至少 10 颗</span>
+        </span>
+      </label>
+
+      {/* 水印只画在导出图上，切换它不改变图案 —— 所以这里刻意不接 disabled：
+          没有图案时也照样能改，导出时才读这个值。 */}
+      <label className="checkbox param-toggle">
+        <input
+          type="checkbox"
+          checked={watermark}
+          onChange={e => onWatermarkChange(e.target.checked)}
+        />
+        <span>
+          添加水印
+          <span className="param-toggle-hint"> · 导出图页眉右侧的拼豆.xyz 标识</span>
         </span>
       </label>
 

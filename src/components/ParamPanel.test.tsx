@@ -15,6 +15,8 @@ const baseProps = () => ({
   onTightCropChange: () => {},
   colorBudget: 'off' as const,
   onColorBudgetChange: () => {},
+  watermark: true,
+  onWatermarkChange: () => {},
 });
 
 describe('ParamPanel', () => {
@@ -61,13 +63,45 @@ describe('ParamPanel', () => {
     expect(valueBadge?.textContent).toBe('50');
   });
 
-  it('exposes distinct background removal, tight crop and color simplification options (no dither)', () => {
+  it('exposes distinct background removal, tight crop, color simplification and watermark options (no dither)', () => {
     const { container } = render(<ParamPanel {...baseProps()} />);
     const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-    expect(checkboxes).toHaveLength(3);
+    expect(checkboxes).toHaveLength(4);
     expect(within(container).getByRole('checkbox', { name: /自动去背景/ })).toBeTruthy();
     expect(within(container).getByRole('checkbox', { name: /紧裁边缘/ })).toBeTruthy();
     expect(within(container).getByRole('checkbox', { name: /自动简化颜色/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /添加水印/ })).toBeTruthy();
+  });
+
+  it('places the watermark toggle right after the color simplification one', () => {
+    // 顺序是产品要求（水印排在「自动简化颜色」后面）：只断存在性的话，
+    // 有人把它挪到面板顶部也不会红
+    const { container } = render(<ParamPanel {...baseProps()} />);
+    const labels = Array.from(container.querySelectorAll('label.param-toggle')).map(l =>
+      l.textContent ?? ''
+    );
+    const simplifyAt = labels.findIndex(t => t.includes('自动简化颜色'));
+    expect(simplifyAt).toBeGreaterThanOrEqual(0);
+    expect(labels[simplifyAt + 1]).toMatch(/添加水印/);
+  });
+
+  it('keeps the watermark on by default and renders its hint', () => {
+    const { container } = render(<ParamPanel {...baseProps()} />);
+    const checkbox = within(container).getByRole('checkbox', { name: /添加水印/ });
+
+    expect((checkbox as HTMLInputElement).checked).toBe(true);
+    expect(checkbox.closest('label')?.querySelector('.param-toggle-hint')?.textContent).toBe(
+      ' · 导出图页眉右侧的拼豆.xyz 标识',
+    );
+  });
+
+  it('toggling the watermark fires onWatermarkChange', () => {
+    const onChange = vi.fn();
+    const { container } = render(<ParamPanel {...baseProps()} onWatermarkChange={onChange} />);
+
+    fireEvent.click(within(container).getByRole('checkbox', { name: /添加水印/ }));
+
+    expect(onChange).toHaveBeenCalledWith(false);
   });
 
   it('defaults tight crop to on and disables it without background removal', () => {

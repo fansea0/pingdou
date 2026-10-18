@@ -37,11 +37,14 @@ interface Props {
   simplifyColors: boolean;
   tightCrop: boolean;
   colorBudget: ColorBudgetLevel;
+  /** 导出图是否带「拼豆.xyz」水印。只影响导出，不参与图案计算 */
+  watermark: boolean;
   onGridSizeChange: (n: number) => void;
   onRemoveBackgroundChange: (b: boolean) => void;
   onSimplifyColorsChange: (enabled: boolean) => void;
   onTightCropChange: (enabled: boolean) => void;
   onColorBudgetChange: (level: ColorBudgetLevel) => void;
+  onWatermarkChange: (enabled: boolean) => void;
   onLoad: (imageData: ImageData) => void;
   onExport: () => void;
   canExport: boolean;
@@ -62,11 +65,13 @@ export function MobileActionBar({
   simplifyColors,
   tightCrop,
   colorBudget,
+  watermark,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
   onTightCropChange,
   onColorBudgetChange,
+  onWatermarkChange,
   onLoad,
   onExport,
   canExport,
@@ -400,6 +405,16 @@ export function MobileActionBar({
                 onChange={e => onSimplifyColorsChange(e.target.checked)}
               />
               自动简化颜色 · 启用后每种颜色至少 10 颗
+            </label>
+
+            {/* 与桌面一致：水印只影响导出图，不参与重算，所以这一行不受图纸状态约束 */}
+            <label className="mobile-toggle-row">
+              <input
+                type="checkbox"
+                checked={watermark}
+                onChange={e => onWatermarkChange(e.target.checked)}
+              />
+              添加水印 · 导出图页眉右侧的拼豆.xyz 标识
             </label>
 
             <ColorBudgetPicker

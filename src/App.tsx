@@ -47,6 +47,8 @@ export function App() {
   const [simplifyColors, setSimplifyColors] = useState(true);
   const [tightCrop, setTightCrop] = useState(true);
   const [colorBudget, setColorBudget] = useState<ColorBudgetLevel>('standard');
+  // 水印只画在导出图上，不参与重算：独立 state，切它不调 reprocess
+  const [watermark, setWatermark] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportFlash, setExportFlash] = useState<'idle' | 'done'>('idle');
   const [submitOpen, setSubmitOpen] = useState(false);
@@ -121,7 +123,7 @@ export function App() {
     setExporting(true);
     setExportFlash('idle');
     try {
-      const out = await exportMulti(32, gridSize, []);
+      const out = await exportMulti(32, gridSize, [], watermark);
       if (out && out.success > 0) {
         trackImageExport();
         setExportFlash('done');
@@ -164,6 +166,7 @@ export function App() {
             simplifyColors={simplifyColors}
             tightCrop={tightCrop}
             colorBudget={colorBudget}
+            watermark={watermark}
             onGridSizeChange={n => {
               setGridSize(n);
               reprocess(currentParams({ gridSize: n }));
@@ -184,6 +187,7 @@ export function App() {
               setColorBudget(level);
               reprocess(currentParams({ colorBudget: level }));
             }}
+            onWatermarkChange={setWatermark}
             disabled={status === 'idle' || status === 'loading'}
           />
           {/* 投稿是导出面板上的一个可切换状态，而不是并排的第二个按钮：
@@ -259,6 +263,7 @@ export function App() {
         simplifyColors={simplifyColors}
         tightCrop={tightCrop}
         colorBudget={colorBudget}
+        watermark={watermark}
         onGridSizeChange={n => {
           setGridSize(n);
           reprocess(currentParams({ gridSize: n }));
@@ -279,6 +284,7 @@ export function App() {
           setColorBudget(level);
           reprocess(currentParams({ colorBudget: level }));
         }}
+        onWatermarkChange={setWatermark}
         onLoad={(data) => process(data, currentParams())}
         onExport={handleExport}
         canExport={!!result}

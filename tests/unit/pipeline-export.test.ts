@@ -105,6 +105,18 @@ describe('Pipeline.exportMulti', () => {
     );
   });
 
+  it('skips the watermark when it is turned off, but still exports the image', async () => {
+    const pipeline = new Pipeline();
+    pipeline.init(palette);
+    // watermark = false 是最后一位：关掉水印后图照样出，只是页眉不再有品牌标识。
+    // 图标是异步资源，漏调 ensureWatermarkIcon 也不会让这条变慢 —— 这里断的是
+    // 「有没有调 applyWatermark」，删掉那行 if 时唯一会红的地方。
+    await pipeline.exportMulti(source(40, 20), 24, 4, [], false, false, true, 'off', false);
+
+    expect(applyWatermark).not.toHaveBeenCalled();
+    expect(triggerDownload).toHaveBeenCalledTimes(1);
+  });
+
   it('names the file after the real output size, not the board preset', async () => {
     const pipeline = new Pipeline();
     pipeline.init(palette);

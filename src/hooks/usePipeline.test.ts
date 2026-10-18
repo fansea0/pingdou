@@ -1,6 +1,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Palette, PipelineResult, ProcessParams, UIStatus } from '@/types';
+import type {
+  ColorBudgetLevel,
+  Palette,
+  PipelineResult,
+  ProcessParams,
+  UIStatus,
+} from '@/types';
 
 const { exportMultiMock, initMock, processMock } = vi.hoisted(() => ({
   exportMultiMock: vi.fn<
@@ -12,6 +18,7 @@ const { exportMultiMock, initMock, processMock } = vi.hoisted(() => ({
       removeBackground: boolean,
       simplifyColors: boolean,
       tightCrop: boolean,
+      watermark: boolean,
     ) => Promise<{ success: number; failed: number }>
   >(),
   initMock: vi.fn<(palette: Palette) => void>(),
@@ -48,6 +55,10 @@ vi.mock('@/pipeline/pipeline', () => ({
       removeBackground: boolean,
       simplifyColors: boolean,
       tightCrop: boolean,
+      // 位置占位：真实签名里 colorBudget 在 watermark 前一位，mock 不转发它，
+      // 但少了这一位 watermark 就会错位到 colorBudget 的值上
+      _colorBudget: ColorBudgetLevel,
+      watermark: boolean,
     ): Promise<{ success: number; failed: number }> {
       return exportMultiMock(
         src,
@@ -57,6 +68,7 @@ vi.mock('@/pipeline/pipeline', () => ({
         removeBackground,
         simplifyColors,
         tightCrop,
+        watermark,
       );
     }
   },
@@ -156,10 +168,12 @@ describe('usePipeline throttled settings', () => {
       tightCrop: true,
       });
 
+    // 第四个参数是水印开关：hook 自己不存它，由调用点在导出那一刻传进来，
+    // 所以这里必须原样落到 Pipeline.exportMulti 的最后一位
     await act(async () => {
-      await result.current.exportMulti(24, 32, []);
+      await result.current.exportMulti(24, 32, [], false);
     });
 
-    expect(exportMultiMock).toHaveBeenCalledWith(image, 24, 32, [], false, false, true);
+    expect(exportMultiMock).toHaveBeenCalledWith(image, 24, 32, [], false, false, true, false);
   });
 });

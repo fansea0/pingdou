@@ -242,6 +242,10 @@ export class Pipeline {
    *
    * tightCrop = true（默认）→ 裁掉主体外空白，图纸紧贴内容。
    * tightCrop = false       → 保留原采样网格，并居中贴到 gridSize 标准方板。
+   *
+   * watermark = true（默认）→ 导出图页眉右侧带「拼豆.xyz」标识；false → 干净出图。
+   * 它只是导出图上的一个开关，不参与采样 / 量化 / 去背景，所以放在最后一位、
+   * 不进 ProcessParams —— 切它不需要重算图案。
    */
   async exportMulti(
     src: ImageData,
@@ -251,7 +255,8 @@ export class Pipeline {
     removeBackground: boolean,
     simplifyColors: boolean,
     tightCrop = true,
-    colorBudget: ColorBudgetLevel = 'off'
+    colorBudget: ColorBudgetLevel = 'off',
+    watermark = true
   ): Promise<{ success: number; failed: number }> {
     if (!this.palette) throw new Error('Pipeline not initialized');
 
@@ -343,7 +348,7 @@ export class Pipeline {
           this.palette,
           boardMask,
         );
-        await drawWatermark(compositeCanvas);
+        if (watermark) await drawWatermark(compositeCanvas);
         const blob = await canvasToBlob(compositeCanvas);
         // 文件名用实际输出尺寸：非方图 / 紧裁后都可能不等于 gridSize
         triggerDownload(blob, `pingdou-${boardW}x${boardH}.png`);

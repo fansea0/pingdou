@@ -14,6 +14,8 @@ function renderBar(overrides: Partial<BarProps> = {}) {
     onTightCropChange: () => {},
     colorBudget: 'off' as const,
     onColorBudgetChange: () => {},
+    watermark: true,
+    onWatermarkChange: () => {},
     onGridSizeChange: () => {},
     onRemoveBackgroundChange: () => {},
     onSimplifyColorsChange: () => {},
@@ -83,6 +85,30 @@ describe('MobileActionBar', () => {
     fireEvent.click(checkbox);
 
     expect(onSimplifyColorsChange).toHaveBeenCalledWith(true);
+  });
+
+  it('carries the watermark toggle in the sheet, on by default, right after the color one', () => {
+    const onWatermarkChange = vi.fn();
+    const { container } = renderBar({ watermark: true, onWatermarkChange });
+
+    fireEvent.click(screen.getByRole('button', { name: /板子尺寸/ }));
+
+    const rows = Array.from(container.querySelectorAll('label.mobile-toggle-row')).map(
+      l => l.textContent ?? ''
+    );
+    expect(rows[rows.length - 1]).toMatch(/添加水印/);
+    expect(rows.indexOf(rows.find(t => /自动简化颜色/.test(t))!)).toBeLessThan(
+      rows.length - 1,
+    );
+
+    const checkbox = within(container).getByRole('checkbox', {
+      name: '添加水印 · 导出图页眉右侧的拼豆.xyz 标识',
+    });
+    expect((checkbox as HTMLInputElement).checked).toBe(true);
+
+    fireEvent.click(checkbox);
+
+    expect(onWatermarkChange).toHaveBeenCalledWith(false);
   });
 });
 describe('投稿入口（下拉菜单）', () => {

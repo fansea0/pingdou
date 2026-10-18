@@ -67,10 +67,13 @@ export function usePipeline(palette: Palette | null) {
     }
   }, [throttledProcess]);
 
+  // 水印不是图案参数（不进 settingsRef）：它由调用点在导出那一刻显式传入，
+  // 因此切换开关不会触发任何重算。
   const exportMulti = useCallback(async (
     exportCellPx: number,
     selectedGridSize: number,
-    extraGridSizes: number[]
+    extraGridSizes: number[],
+    watermark: boolean
   ) => {
     if (!pipelineRef.current || !result || !srcRef.current) return null;
     setStatus('exporting');
@@ -83,7 +86,8 @@ export function usePipeline(palette: Palette | null) {
         settingsRef.current.removeBackground,
         settingsRef.current.simplifyColors,
         settingsRef.current.tightCrop,
-        settingsRef.current.colorBudget
+        settingsRef.current.colorBudget,
+        watermark
       );
       return out;
     } finally {
