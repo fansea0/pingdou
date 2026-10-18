@@ -28,19 +28,19 @@ describe('homepage SEO contract', () => {
     );
     expect(indexHtml).toContain(`rel="canonical" href="${SITE_URL}"`);
     expect(document.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe(
-      `${SITE_URL}samples/rabbit.jpg`,
+      `${SITE_URL}samples/sample.jpg`,
     );
     expect(document.querySelector('meta[property="og:image:width"]')?.getAttribute('content')).toBe(
-      '1260',
+      '1706',
     );
     expect(document.querySelector('meta[property="og:image:height"]')?.getAttribute('content')).toBe(
-      '1258',
+      '1279',
     );
     expect(document.querySelector('meta[property="og:image:alt"]')?.getAttribute('content')).toBe(
-      '拼豆图生成器示例：兔子拼豆图纸预览',
+      '拼豆图生成器示例：像素风插画的拼豆图纸预览',
     );
     expect(document.querySelector('meta[name="twitter:image"]')?.getAttribute('content')).toBe(
-      `${SITE_URL}samples/rabbit.jpg`,
+      `${SITE_URL}samples/sample.jpg`,
     );
     expect(document.querySelector('meta[name="twitter:url"]')?.getAttribute('content')).toBe(
       SITE_URL,

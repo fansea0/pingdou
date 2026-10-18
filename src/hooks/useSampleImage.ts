@@ -12,7 +12,7 @@ export function useSampleImage(): {
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/samples/rabbit.jpg')
+    fetch('/samples/sample.jpg')
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.blob();
