@@ -51,11 +51,16 @@ describe('likeFingerprint', () => {
   });
 
   it('四个输入项各自都能改变指纹', () => {
-    const base = fp('1.2.3.4', UA_A, 7);
-    expect(fp('1.2.3.5', UA_A, 7)).not.toBe(base);   // IP 变
-    expect(fp('1.2.3.4', UA_B, 7)).not.toBe(base);   // UA 变
-    expect(fp('1.2.3.4', UA_A, 8)).not.toBe(base);   // 作品变
-    expect(fp('1.2.3.4', UA_A, 7, Date.parse('2026-10-18T10:00:00Z'))).not.toBe(base); // 日期变
+    // 基准也显式钉死日期。isoDay 取的是 **UTC** 日期，而基准默认用 Date.now()，
+    // 于是只要「另一个日期」刚好等于今天的 UTC 日（北京时间每天 08:00 之后），
+    // 这条断言就必然失败 —— 它曾是个定时炸弹：每天绿一次、红一整天，还正好在
+    // 提交合并到 main 的当天下午炸出来。基准与变体都固定，与墙上时钟彻底无关。
+    const DAY = Date.parse('2026-10-18T10:00:00Z');
+    const base = fp('1.2.3.4', UA_A, 7, DAY);
+    expect(fp('1.2.3.5', UA_A, 7, DAY)).not.toBe(base);   // IP 变
+    expect(fp('1.2.3.4', UA_B, 7, DAY)).not.toBe(base);   // UA 变
+    expect(fp('1.2.3.4', UA_A, 8, DAY)).not.toBe(base);   // 作品变
+    expect(fp('1.2.3.4', UA_A, 7, DAY + 86_400_000)).not.toBe(base); // 日期变（下一个 UTC 日）
   });
 
   /**
