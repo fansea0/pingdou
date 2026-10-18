@@ -1342,7 +1342,10 @@ describe('rejectWork', () => {
     // 磁盘上本来就什么都没有，删除必须幂等成功而不是抛错
     await expect(works.rejectWork(created.id)).resolves.toBeTruthy();
     expect(readdirSync(join(paths.PATHS.mediaDir, 'works'))).toHaveLength(0);
-    expect(works.listAllWorks()).toHaveLength(0);
+    // 行还在：拒绝只改状态，彻底删除归 DELETE /api/admin/works/:id 负责。
+    // 后台审核列表靠这一行把「未过审」「已拒绝」两个状态分开呈现。
+    expect(works.listAllWorks()).toHaveLength(1);
+    expect(works.listAllWorks()[0].status).toBe('rejected');
   });
 
   it('拒绝后 image_key 仍留在库里（审计线索），但公开接口拿不到它', async () => {
@@ -1458,8 +1461,6 @@ export async function rejectWork(id: number): Promise<AdminWorkDetail> {
 Run: `npx vitest run tests/unit/server/review.test.ts`
 
 Expected: PASS —— 10 个用例全绿。
-
-注意有一个用例断言 `works.listAllWorks()` 长度为 0 —— `rejectWork` 只标记不删行，所以这里应该是 1。**把该断言改成 `toHaveLength(1)`**，并补一句注释说明「拒绝保留行，彻底删除由 DELETE 负责」。
 
 - [ ] **Step 6: 跑全量回归并提交**
 
@@ -2035,10 +2036,11 @@ approveWork 的真实路径造数据。用 INSERT 捷径会绕开 status / uploa
 
 - [ ] **Step 1: 写失败测试**
 
-创建 `src/api/works.test.ts`：
+创建 `src/api/works.test.ts`（**追加到既有文件顶部区域**，该文件已存在并已有
+`listWorks` / `fetchWork` / `likeWork` 的用例，沿用它已有的 `mockFetch` 辅助）：
 
 ```ts
-import { describe, it, expect, vi, afterEach } from 'vitest';
+// 在既有 mockFetch / ok() 辅助之后追加这些 import
 import {
   createWorkSubmission,
   uploadSubmissionImage,
@@ -2046,25 +2048,25 @@ import {
   adminRejectWork,
 } from './works';
 
-function mockFetch(body: unknown, ok = true, status = 200) {
-  const fn = vi.fn(async () => new Response(JSON.stringify(body), {
-    status, headers: { 'Content-Type': 'application/json' },
-  }));
-  vi.stubGlobal('fetch', fn);
-  return fn;
+/** 既有的 ok() 只造成功响应；这里补一个能造失败的，顺带覆盖错误文案透传 */
+function fail(body: unknown, status = 429) {
+  mockFetch.mockResolvedValue({
+    ok: false,
+    status,
+    statusText: 'Too Many Requests',
+    json: async () => body,
+  });
 }
-
-afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('投稿两步', () => {
   it('第一步 POST JSON 到 /api/public/works', async () => {
-    const fn = mockFetch({ id: 7, uploadToken: 'abc' });
+    ok({ id: 7, uploadToken: 'abc' });
     const r = await createWorkSubmission({
       title: '粉色小熊', boardW: 87, boardH: 62,
       beanCount: 3814, colorCount: 42, estimateMinutes: 190,
     });
     expect(r).toEqual({ id: 7, uploadToken: 'abc' });
-    const [url, init] = fn.mock.calls[0];
+    const [url, init] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/public/works');
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/json');
@@ -2075,12 +2077,12 @@ describe('投稿两步', () => {
   });
 
   it('第二步用 multipart 带上令牌、图片、缩略图与尺寸', async () => {
-    const fn = mockFetch({ ok: true, id: 7 });
+    ok({ ok: true, id: 7 });
     await uploadSubmissionImage(7, 'tok', new Blob(['x'], { type: 'image/png' }), {
       thumb: new Blob(['y'], { type: 'image/webp' }),
       width: 1500, height: 2200,
     });
-    const [url, init] = fn.mock.calls[0];
+    const [url, init] = mockFetch.mock.calls[0];
     expect(url).toBe('/api/public/works/7/image');
     const fd = init.body as FormData;
     expect(fd.get('uploadToken')).toBe('tok');
@@ -2091,14 +2093,14 @@ describe('投稿两步', () => {
   });
 
   it('第二步没有缩略图时不发 thumb 字段（而不是发一个空 Blob）', async () => {
-    const fn = mockFetch({ ok: true, id: 7 });
+    ok({ ok: true, id: 7 });
     await uploadSubmissionImage(7, 'tok', new Blob(['x'], { type: 'image/png' }));
-    const fd = fn.mock.calls[0][1].body as FormData;
+    const fd = mockFetch.mock.calls[0][1].body as FormData;
     expect(fd.get('thumb')).toBeNull();
   });
 
   it('服务端返回的错误文案原样抛出来（中文提示，不是英文原文）', async () => {
-    mockFetch({ error: '今天的投稿次数已用完，明天再来吧' }, false, 429);
+    fail({ error: '今天的投稿次数已用完，明天再来吧' });
     await expect(createWorkSubmission({ title: 'x' } as never))
       .rejects.toThrow('今天的投稿次数已用完，明天再来吧');
   });
@@ -2106,20 +2108,26 @@ describe('投稿两步', () => {
 
 describe('后台审核动作', () => {
   it('approve 打 POST /api/admin/works/:id/approve', async () => {
-    const fn = mockFetch({ id: 3, status: 'approved' });
+    ok({ id: 3, status: 'approved' });
     await adminApproveWork(3);
-    expect(fn.mock.calls[0][0]).toBe('/api/admin/works/3/approve');
-    expect(fn.mock.calls[0][1].method).toBe('POST');
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/works/3/approve');
+    expect(mockFetch.mock.calls[0][1].method).toBe('POST');
   });
 
   it('reject 打 POST /api/admin/works/:id/reject', async () => {
-    const fn = mockFetch({ id: 3, status: 'rejected' });
+    ok({ id: 3, status: 'rejected' });
     await adminRejectWork(3);
-    expect(fn.mock.calls[0][0]).toBe('/api/admin/works/3/reject');
-    expect(fn.mock.calls[0][1].method).toBe('POST');
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/works/3/reject');
+    expect(mockFetch.mock.calls[0][1].method).toBe('POST');
   });
 });
 ```
+
+**fetch 桩为什么用普通对象而不是真 `Response`**：仓库既有的 `src/api/works.test.ts`
+用的就是 `{ ok, status, statusText, json: async () => body }` 这个形状
+（见该文件既有的 `ok()` 辅助）。跟既有范式一致，且不依赖 jsdom 是否透出 Node 的
+`Response` 全局。`mockFetch` 是 `vi.fn()` 无参类型，`mock.calls[0][1]` 取到的是
+`any`，所以解构 `[url, init]` 不会 typecheck 报错。
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -2700,7 +2708,9 @@ export interface SubmitWorkButtonProps {
   /** 当前这四个值就是要随投稿入库的图纸参数 */
   beanCount: number;
   colorCount: number;
+  /** 仅用于弹窗摘要展示的文案（如「约 3 小时」）。服务端存的是下面的分钟数。 */
   estimateLabel: string;
+  estimateMinutes: number;
   disabled?: boolean;
 }
 ```
@@ -2710,13 +2720,45 @@ export interface SubmitWorkButtonProps {
 创建 `src/components/SubmitWorkButton.test.tsx`：
 
 ```tsx
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/dom';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/dom';
 import { SubmitWorkButton } from './SubmitWorkButton';
-import * as pipelineApi from '@/api/works';
-import * as submission from '@/pipeline/submission';
-import * as qr from '@/pipeline/qr';
 import type { Palette, PipelineResult } from '@/types';
+
+const renderComposite = vi.fn();
+const renderQr = vi.fn();
+const toBlobMock = vi.fn();
+const createSubmission = vi.fn();
+const uploadImage = vi.fn();
+
+// 统一用仓库既有的 vi.mock + importActual 范式（见 WorksTab.test.tsx /
+// WorkDetailPage.test.tsx）。不要改成 vi.spyOn 打在模块命名空间上 ——
+// 本仓库 8 处组件测试清一色用这个写法，跟既有范式走。
+vi.mock('@/pipeline/submission', async () => {
+  const actual = await vi.importActual<typeof import('@/pipeline/submission')>('@/pipeline/submission');
+  return { ...actual, renderSubmissionComposite: (...a: unknown[]) => renderComposite(...a) };
+});
+
+vi.mock('@/pipeline/qr', async () => {
+  const actual = await vi.importActual<typeof import('@/pipeline/qr')>('@/pipeline/qr');
+  return { ...actual, renderSubmissionQr: (...a: unknown[]) => renderQr(...a) };
+});
+
+// jsdom 没有 canvas.toBlob，不 mock 的话 canvasToBlob 会 reject，整个流程走不到上传那步。
+// makeThumb 内部同样调 toBlob，但组件里它包在 try/catch 里降级返回 null，不影响本组用例。
+vi.mock('@/pipeline/exporter', async () => {
+  const actual = await vi.importActual<typeof import('@/pipeline/exporter')>('@/pipeline/exporter');
+  return { ...actual, canvasToBlob: (...a: unknown[]) => toBlobMock(...a) };
+});
+
+vi.mock('@/api/works', async () => {
+  const actual = await vi.importActual<typeof import('@/api/works')>('@/api/works');
+  return {
+    ...actual,
+    createWorkSubmission: (...a: unknown[]) => createSubmission(...a),
+    uploadSubmissionImage: (...a: unknown[]) => uploadImage(...a),
+  };
+});
 
 const PALETTE: Palette = [{ id: 0, rgb: [1, 2, 3], name: '黑' }];
 
@@ -2733,22 +2775,28 @@ const RESULT: PipelineResult = {
   },
 };
 
-vi.mock('@/pipeline/submission', () => ({
-  renderSubmissionComposite: vi.fn(),
-  SUBMISSION_CELL_PX: 32,
-}));
-
-vi.mock('@/pipeline/qr', async () => {
-  const actual = await vi.importActual<typeof import('@/pipeline/qr')>('@/pipeline/qr');
-  return { ...actual, renderSubmissionQr: vi.fn(async () => null) };
-});
+/** 造一张有真实尺寸的 canvas：组件要读 canvas.width/height 当图片尺寸传给服务端 */
+function fakeCanvas(w = 400, h = 600): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
 
 beforeEach(() => {
-  vi.restoreAllMocks();
-  const c = document.createElement('canvas');
-  c.width = 400; c.height = 600;
-  vi.spyOn(submission, 'renderSubmissionComposite').mockResolvedValue(c);
-  vi.spyOn(qr, 'renderSubmissionQr').mockResolvedValue(null);
+  renderComposite.mockReset().mockResolvedValue(fakeCanvas());
+  renderQr.mockReset().mockResolvedValue(null);
+  toBlobMock.mockReset().mockResolvedValue(new Blob(['png'], { type: 'image/png' }));
+  createSubmission.mockReset().mockResolvedValue({ id: 42, uploadToken: 'tok' });
+  uploadImage.mockReset().mockResolvedValue({ ok: true, id: 42 });
+});
+
+// vitest.config.ts 是 globals:false，RTL 的自动 cleanup 不注册。少了这行 DOM 会
+// 跨用例残留，实现完全正确也会红（既有测试注释里记着同一个坑）。
+afterEach(cleanup);
+
+afterEach(() => {
+  vi.clearAllMocks();
 });
 
 function renderButton(over: Partial<React.ComponentProps<typeof SubmitWorkButton>> = {}) {
@@ -2759,6 +2807,7 @@ function renderButton(over: Partial<React.ComponentProps<typeof SubmitWorkButton
       beanCount={3814}
       colorCount={42}
       estimateLabel="约 3 小时"
+      estimateMinutes={190}
       {...over}
     />,
   );
@@ -2782,34 +2831,19 @@ describe('SubmitWorkButton', () => {
   });
 
   it('名称为空时不能提交，也不发任何请求', () => {
-    const create = vi.spyOn(pipelineApi, 'createWorkSubmission');
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: /确认投稿/ }));
-    expect(create).not.toHaveBeenCalled();
+    expect(createSubmission).not.toHaveBeenCalled();
   });
 
-  it('确认后先渲染成品图，再 POST 元数据，最后上传带码图', async () => {
+  it('确认后先渲染成品图，再 POST 元数据，补画码，最后上传带码图', async () => {
     const order: string[] = [];
-    vi.spyOn(submission, 'renderSubmissionComposite').mockImplementation(async () => {
-      order.push('render');
-      const c = document.createElement('canvas');
-      c.width = 400; c.height = 600;
-      return c;
-    });
-    vi.spyOn(qr, 'renderSubmissionQr').mockImplementation(async () => {
-      order.push('qr');
-      return null;
-    });
-    vi.spyOn(pipelineApi, 'createWorkSubmission').mockImplementation(async () => {
-      order.push('create');
-      return { id: 42, uploadToken: 'tok' };
-    });
-    vi.spyOn(pipelineApi, 'uploadSubmissionImage').mockImplementation(async () => {
-      order.push('upload');
-      return { ok: true, id: 42 };
-    });
+    renderComposite.mockImplementation(async () => { order.push('render'); return fakeCanvas(); });
+    renderQr.mockImplementation(async () => { order.push('qr'); return null; });
+    createSubmission.mockImplementation(async () => { order.push('create'); return { id: 42, uploadToken: 'tok' }; });
+    uploadImage.mockImplementation(async () => { order.push('upload'); return { ok: true, id: 42 }; });
 
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
@@ -2819,40 +2853,46 @@ describe('SubmitWorkButton', () => {
     await waitFor(() => expect(order).toEqual(['render', 'create', 'qr', 'upload']));
   });
 
-  it('POST 元数据时带上四个图纸参数', async () => {
-    const create = vi.spyOn(pipelineApi, 'createWorkSubmission').mockResolvedValue({
-      id: 1, uploadToken: 't',
-    });
-    vi.spyOn(pipelineApi, 'uploadSubmissionImage').mockResolvedValue({ ok: true, id: 1 });
+  it('POST 元数据时带上四个图纸参数与分钟数（不是那句「约 3 小时」的文案）', async () => {
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: 'x' } });
     fireEvent.click(screen.getByRole('button', { name: /确认投稿/ }));
 
-    await waitFor(() => expect(create).toHaveBeenCalledWith({
+    await waitFor(() => expect(createSubmission).toHaveBeenCalledWith({
       title: 'x',
       boardW: 1, boardH: 1,
-      beanCount: 3814, colorCount: 42, estimateMinutes: expect.any(Number),
+      beanCount: 3814, colorCount: 42, estimateMinutes: 190,
     }));
   });
 
+  it('上传时把 canvas 的真实尺寸一并传给服务端（详情页要靠它显示成品尺寸）', async () => {
+    renderComposite.mockResolvedValue(fakeCanvas(1234, 5678));
+    renderButton();
+    fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
+    fireEvent.change(screen.getByLabelText(/名称/), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: /确认投稿/ }));
+
+    await waitFor(() => expect(uploadImage).toHaveBeenCalled());
+    const [, , , opts] = uploadImage.mock.calls[0] as unknown as [
+      number, string, Blob, { width: number; height: number },
+    ];
+    expect(opts.width).toBe(1234);
+    expect(opts.height).toBe(5678);
+  });
+
   it('成功后提示「等审核」而不是给出链接（还没过审，链接不可访问）', async () => {
-    vi.spyOn(pipelineApi, 'createWorkSubmission').mockResolvedValue({ id: 1, uploadToken: 't' });
-    vi.spyOn(pipelineApi, 'uploadSubmissionImage').mockResolvedValue({ ok: true, id: 1 });
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: 'x' } });
     fireEvent.click(screen.getByRole('button', { name: /确认投稿/ }));
 
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('审核'));
-    expect(screen.getByRole('status').textContent).not.toContain('/works/1');
+    expect(screen.getByRole('status').textContent).not.toContain('/works/42');
   });
 
   it('上传失败给中文错误，不吞异常', async () => {
-    vi.spyOn(pipelineApi, 'createWorkSubmission').mockResolvedValue({ id: 1, uploadToken: 't' });
-    vi.spyOn(pipelineApi, 'uploadSubmissionImage').mockRejectedValue(
-      new Error('今天的投稿次数已用完，明天再来吧'),
-    );
+    uploadImage.mockRejectedValue(new Error('今天的投稿次数已用完，明天再来吧'));
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: 'x' } });
@@ -2865,17 +2905,16 @@ describe('SubmitWorkButton', () => {
 
   it('投稿进行中禁用重复点击', async () => {
     let resolveCreate: (v: { id: number; uploadToken: string }) => void = () => {};
-    vi.spyOn(pipelineApi, 'createWorkSubmission').mockImplementation(
-      () => new Promise((r) => { resolveCreate = r; }),
+    createSubmission.mockImplementation(
+      () => new Promise((r) => { resolveCreate = r as typeof resolveCreate; }),
     );
-    vi.spyOn(pipelineApi, 'uploadSubmissionImage').mockResolvedValue({ ok: true, id: 1 });
     renderButton();
     fireEvent.click(screen.getByRole('button', { name: /投稿/ }));
     fireEvent.change(screen.getByLabelText(/名称/), { target: { value: 'x' } });
     fireEvent.click(screen.getByRole('button', { name: /确认投稿/ }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: /确认投稿/ })).toBeDisabled());
-    resolveCreate({ id: 1, uploadToken: 't' });
+    resolveCreate({ id: 42, uploadToken: 'tok' });
   });
 });
 ```
@@ -2953,6 +2992,7 @@ export function SubmitWorkButton({
   beanCount,
   colorCount,
   estimateLabel,
+  estimateMinutes,
   disabled,
 }: SubmitWorkButtonProps) {
   const [open, setOpen] = useState(false);
@@ -2983,8 +3023,9 @@ export function SubmitWorkButton({
         boardH: result.outH,
         beanCount,
         colorCount,
-        // 前端拿的是分钟数，UI 用的是格式化后的文案，这里要的是数字本身
-        estimateMinutes: estimateMinutesOf(beanCount),
+        // 传数字而不是「约 3 小时」那句文案：服务端存的必须是分钟数，
+        // 以后改 estimateAssemblyHours 的措辞不该洗历史数据
+        estimateMinutes,
       });
 
       // ③ 补画这一件作品自己的码
@@ -3102,27 +3143,7 @@ export function SubmitWorkButton({
     </div>
   );
 }
-
-/**
- * 预估工时的分钟数。走与 ParamPanel 完全相同的两步（算分钟 → 格式化成文案），
- * 服务端存的必须是数字而不是那句文案 —— 以后改措辞不该洗历史数据。
- */
-function estimateMinutesOf(beanCount: number): number {
-  const rate = 3; // 每小时 200 颗，与 pipeline/timeEstimate.ts 保持同一量级
-  void rate;
-  return Math.round((beanCount / 200) * 60);
-}
 ```
-
-**重要 —— 修掉上面这处占位实现**：`estimateMinutesOf` 不要自己算速率，那会和 `src/pipeline/timeEstimate.ts` 的真实口径漂移。改成从该模块导入：
-
-```tsx
-import { estimateAssemblyHours } from '@/pipeline/timeEstimate';
-```
-
-并把 `estimateMinutesOf` 整个删掉，改为在组件里直接用 props 传入的分钟数 —— 即把 props 从 `estimateLabel: string` 改成 `estimateMinutes: number`，另加一个仅用于展示的 `estimateLabel: string`。`submit` 里用 `estimateMinutes`，弹窗摘要里用 `estimateLabel`。`App.tsx` 两个值都有现成的（见下一步）。
-
-**同样修掉测试**：把「POST 元数据时带上四个图纸参数」里的 `estimateMinutes: expect.any(Number)` 改成 `estimateMinutes: 190`，并在 `renderButton` 的默认 props 里补上 `estimateMinutes={190}`。
 
 - [ ] **Step 4: 写样式**
 
@@ -3277,31 +3298,64 @@ estimateMinutes 传数字而不是那句「约 3 小时」的文案，服务端�
 把 `src/pages/admin/WorksTab.test.tsx` 整个替换为：
 
 ```tsx
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/dom';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/dom';
 import { WorksTab } from './WorksTab';
-import * as api from '@/api/works';
 
-const PENDING = {
-  id: 1, title: '待审作品', description: '', status: 'pending' as const, published: false,
+const adminListWorks = vi.fn();
+const adminApproveWork = vi.fn();
+const adminRejectWork = vi.fn();
+const adminUpdateWork = vi.fn();
+const adminDeleteWork = vi.fn();
+
+// 用仓库既有的 vi.mock + importActual 范式（与本文件改动前的写法一致），
+// 不要改成 vi.spyOn 打在模块命名空间上。
+vi.mock('@/api/works', async () => {
+  const actual = await vi.importActual<typeof import('@/api/works')>('@/api/works');
+  return {
+    ...actual,
+    adminListWorks: (...a: unknown[]) => adminListWorks(...a),
+    adminApproveWork: (...a: unknown[]) => adminApproveWork(...a),
+    adminRejectWork: (...a: unknown[]) => adminRejectWork(...a),
+    adminUpdateWork: (...a: unknown[]) => adminUpdateWork(...a),
+    adminDeleteWork: (...a: unknown[]) => adminDeleteWork(...a),
+  };
+});
+
+const BASE = {
+  id: 1, title: '待审作品', description: '', published: false,
   thumbUrl: '/media/works/a-t.webp', imageUrl: '/media/works/a.png',
   width: 100, height: 100, bytes: 1024, createdAt: 1, updatedAt: 1, likes: 0,
   boardW: 87, boardH: 62, beanCount: 3814, colorCount: 42, estimateMinutes: 190,
 };
-const APPROVED = { ...PENDING, id: 2, title: '已上架', status: 'approved' as const, published: true };
+const PENDING = { ...BASE, status: 'pending' as const };
+const APPROVED = { ...BASE, id: 2, title: '已上架', status: 'approved' as const, published: true };
 const UNLISTED = { ...APPROVED, id: 3, title: '已下架', published: false };
-const REJECTED = { ...PENDING, id: 4, title: '被拒的', status: 'rejected' as const };
+const REJECTED = { ...BASE, id: 4, title: '被拒的', status: 'rejected' as const };
+
+/** window.confirm 在拒绝/删除路径上会被问，返回 true 让流程走到底 */
+function acceptConfirm(): void {
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+}
 
 beforeEach(() => {
+  adminListWorks.mockReset().mockResolvedValue([PENDING, APPROVED, UNLISTED, REJECTED]);
+  adminApproveWork.mockReset().mockResolvedValue({ ...PENDING, status: 'approved', published: true });
+  adminRejectWork.mockReset().mockResolvedValue({ ...PENDING, status: 'rejected' });
+  adminUpdateWork.mockReset().mockImplementation(async (id: number, patch: { published?: boolean; title?: string }) => ({
+    ...APPROVED, id, ...patch,
+  }));
+  adminDeleteWork.mockReset().mockResolvedValue({ ok: true });
+  acceptConfirm();
+});
+
+// vitest.config.ts 是 globals:false，RTL 的自动 cleanup 不注册。少了这行 DOM 会
+// 跨用例残留，实现完全正确也会红（本文件改前就有这条注释）。
+afterEach(cleanup);
+
+afterEach(() => {
+  vi.clearAllMocks();
   vi.restoreAllMocks();
-  vi.spyOn(api, 'adminListWorks').mockResolvedValue([PENDING, APPROVED, UNLISTED, REJECTED]);
-  vi.spyOn(api, 'adminApproveWork').mockResolvedValue({ ...PENDING, status: 'approved', published: true });
-  vi.spyOn(api, 'adminRejectWork').mockResolvedValue({ ...PENDING, status: 'rejected' });
-  vi.spyOn(api, 'adminUpdateWork').mockImplementation(async (id, patch) => ({
-    ...(patch.published === undefined ? APPROVED : APPROVED),
-    id, ...patch,
-  } as never));
-  vi.spyOn(api, 'adminDeleteWork').mockResolvedValue({ ok: true });
 });
 
 describe('WorksTab 审核队列', () => {
@@ -3324,56 +3378,72 @@ describe('WorksTab 审核队列', () => {
   it('待审核区提供通过与拒绝两个动作', async () => {
     render(<WorksTab />);
     await waitFor(() => expect(screen.getByText('待审作品')).toBeTruthy());
-    const pendingSection = screen.getByRole('region', { name: '待审核' });
-    expect(pendingSection.querySelector('button')?.textContent).toContain('通过');
-    expect(screen.getAllByRole('button', { name: /拒绝/ }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: '通过 待审作品' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '拒绝 待审作品' })).toBeTruthy();
   });
 
-  it('点通过后行状态乐观更新为已上架', async () => {
+  it('点通过后行进入作品集并已上架', async () => {
     render(<WorksTab />);
     await waitFor(() => expect(screen.getByText('待审作品')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '通过 待审作品' }));
-    await waitFor(() => expect(api.adminApproveWork).toHaveBeenCalledWith(1));
-    await waitFor(() =>
-      expect(screen.getByRole('region', { name: '作品集' }).textContent).toContain('待审作品'),
-    );
+    await waitFor(() => expect(adminApproveWork).toHaveBeenCalledWith(1));
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: '待审核' }).textContent).not.toContain('待审作品');
+      expect(screen.getByRole('region', { name: '作品集' }).textContent).toContain('待审作品');
+    });
   });
 
-  it('点拒绝后行从待审核消失', async () => {
+  it('点拒绝后行离开待审核区', async () => {
     render(<WorksTab />);
     await waitFor(() => expect(screen.getByText('待审作品')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '拒绝 待审作品' }));
-    await waitFor(() => expect(api.adminRejectWork).toHaveBeenCalledWith(1));
-    await waitFor(() =>
-      expect(screen.getByRole('region', { name: '待审核' }).textContent).not.toContain('待审作品'),
-    );
+    await waitFor(() => expect(adminRejectWork).toHaveBeenCalledWith(1));
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: '待审核' }).textContent).not.toContain('待审作品');
+      expect(screen.getByRole('region', { name: '已拒绝' }).textContent).toContain('待审作品');
+    });
   });
 
   it('已拒绝的行不渲染 img（文件已删，画出来是破图），改显示文字占位', async () => {
-    const { container } = render(<WorksTab />);
+    render(<WorksTab />);
     await waitFor(() => expect(screen.getByText('被拒的')).toBeTruthy());
     const rejectedSection = screen.getByRole('region', { name: '已拒绝' });
     expect(rejectedSection.textContent).toContain('源文件已删除');
     expect(rejectedSection.querySelector('img')).toBeNull();
-    void container;
   });
 
-  it('已下架的作品提供「上架」而不是「下架」', async () => {
+  it('已上架的作品显示「下架」按钮，已下架的显示「上架」', async () => {
     render(<WorksTab />);
     await waitFor(() => expect(screen.getByText('已下架')).toBeTruthy());
-    const gallery = screen.getByRole('region', { name: '作品集' });
-    expect(gallery.querySelector('button')?.textContent).not.toBe('上架');
-    expect(screen.getByRole('button', { name: /上架/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下架 已上架' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '上架 已下架' })).toBeTruthy();
+  });
+
+  it('点上架调用 adminUpdateWork 并把 published 置 true', async () => {
+    render(<WorksTab />);
+    await waitFor(() => expect(screen.getByText('已下架')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '上架 已下架' }));
+    await waitFor(() => expect(adminUpdateWork).toHaveBeenCalledWith(3, { published: true }));
   });
 
   it('操作失败时回滚并显示中文错误', async () => {
-    vi.spyOn(api, 'adminApproveWork').mockRejectedValue(new Error('磁盘满了'));
+    adminApproveWork.mockRejectedValue(new Error('磁盘满了'));
     render(<WorksTab />);
     await waitFor(() => expect(screen.getByText('待审作品')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '通过 待审作品' }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('磁盘满了'));
     // 回滚：行仍在待审核区
     expect(screen.getByRole('region', { name: '待审核' }).textContent).toContain('待审作品');
+  });
+
+  it('没有图片的 pending 行显示「图片未上传」并仍可被拒绝', async () => {
+    adminListWorks.mockResolvedValue([{ ...PENDING, id: 5, title: '半途而废', imageUrl: '' }]);
+    render(<WorksTab />);
+    await waitFor(() => expect(screen.getByText('半途而废')).toBeTruthy());
+    const pendingSection = screen.getByRole('region', { name: '待审核' });
+    expect(pendingSection.textContent).toContain('图片未上传');
+    fireEvent.click(screen.getByRole('button', { name: '拒绝 半途而废' }));
+    await waitFor(() => expect(adminRejectWork).toHaveBeenCalledWith(5));
   });
 });
 ```
@@ -3404,13 +3474,11 @@ import './WorksTab.css';
 
 type Section = 'pending' | 'gallery' | 'rejected';
 
-interface Props {
-  /** 状态 → 展示区。gallery 装 approved（不管上架与否），rejected 单独一区。 */
-  function sectionOf(w: AdminWorkDetail): Section {
-    if (w.status === 'pending') return 'pending';
-    if (w.status === 'rejected') return 'rejected';
-    return 'gallery';
-  }
+/** 状态 → 展示区。gallery 装 approved（不管上架与否），rejected 单独一区。 */
+function sectionOf(w: AdminWorkDetail): Section {
+  if (w.status === 'pending') return 'pending';
+  if (w.status === 'rejected') return 'rejected';
+  return 'gallery';
 }
 
 /** 预估工时只存分钟数，展示时现算文案 —— 以后改措辞不动历史数据 */
@@ -3680,18 +3748,7 @@ export function WorksTab() {
 }
 ```
 
-**注意**：上面声明的 `interface Props { function sectionOf... }` 是笔误 —— `sectionOf` 应该是模块级函数。改成把它挪到 `ThumbOrPlaceholder` 之前：
-
-```tsx
-/** 状态 → 展示区。gallery 装 approved（不管上架与否），rejected 单独一区。 */
-function sectionOf(w: AdminWorkDetail): Section {
-  if (w.status === 'pending') return 'pending';
-  if (w.status === 'rejected') return 'rejected';
-  return 'gallery';
-}
-```
-
-并删掉那个空的 `interface Props`。
+**注意**：上面已经写对，不需要再改什么。
 
 - [ ] **Step 4: 补 CSS**
 
@@ -3748,70 +3805,106 @@ image_url 为空的 pending 行显示「图片未上传」，它同样可以被�
 
 - [ ] **Step 1: 写失败测试**
 
-在 `src/pages/WorkDetailPage.test.tsx` 末尾追加：
+在 `src/pages/WorkDetailPage.test.tsx` 末尾追加。**该文件已经自带完整的 mock 骨架**：
+`const fetchWork = vi.fn()` + `vi.mock('@/api/works', …)` 工厂 + `afterEach(cleanup)`。
+本组用例直接复用它们，**不要重新定义 mock、不要重复写 cleanup**。
 
 ```tsx
 describe('投稿参数展示', () => {
   it('详情页展示图纸比例、豆子数、颜色数与预估工时', async () => {
-    vi.spyOn(api, 'fetchWork').mockResolvedValue({
-      id: 1, title: '粉色小熊', description: '',
-      thumbUrl: '/t.webp', imageUrl: '/i.png',
-      width: 100, height: 100, bytes: 1024, createdAt: 1, updatedAt: 1, likes: 0,
+    // detail() 是本文件既有的工厂，返回字段完整的 WorkDetail；用 overrides 补参数
+    fetchWork.mockResolvedValue(detail({
       boardW: 87, boardH: 62, beanCount: 3814, colorCount: 42, estimateMinutes: 190,
-    } as never);
-    render(<WorkDetailPage id={1} />);
-    const facts = await screen.findByText('图纸比例');
-    expect(facts.textContent).toBe('87 × 62 格');
+    }));
+    render(<WorkDetailPage id={42} />);
+    await waitFor(() => expect(screen.getByText('图纸比例')).toBeTruthy());
+    expect(screen.getByText('图纸比例').nextElementSibling?.textContent).toBe('87 × 62 格');
     expect(screen.getByText('豆子数量').nextElementSibling?.textContent).toBe('3,814 颗');
     expect(screen.getByText('颜色数量').nextElementSibling?.textContent).toBe('42 种');
-    // 190 分钟 → 约 3 小时（走 timeEstimate 的同一套格式化）
+    // 190 分钟 → 走 timeEstimate 的同一套格式化，不是硬编码字符串
     expect(screen.getByText('预估时间').nextElementSibling?.textContent).toContain('小时');
   });
 
-  it('参数缺失（旧数据全 0）时显示「—」而不是 NaN', async () => {
-    vi.spyOn(api, 'fetchWork').mockResolvedValue({
-      id: 1, title: '旧作品', description: '',
-      thumbUrl: '/t.webp', imageUrl: '/i.png',
-      width: 0, height: 0, bytes: 0, createdAt: 1, updatedAt: 1, likes: 0,
+  it('参数全 0（旧数据没有这些列）时显示「—」而不是 0 或 NaN', async () => {
+    fetchWork.mockResolvedValue(detail({
       boardW: 0, boardH: 0, beanCount: 0, colorCount: 0, estimateMinutes: 0,
-    } as never);
-    render(<WorkDetailPage id={1} />);
-    await screen.findByText('图纸比例');
+    }));
+    render(<WorkDetailPage id={42} />);
+    await waitFor(() => expect(screen.getByText('图纸比例')).toBeTruthy());
     expect(screen.getByText('图纸比例').nextElementSibling?.textContent).toBe('—');
+    expect(screen.getByText('豆子数量').nextElementSibling?.textContent).toBe('—');
   });
 });
 
 describe('拿不到作品时自动跳回列表', () => {
-  it('404 时先显示提示，800ms 后 replace 到 /works', async () => {
-    vi.useFakeTimers();
+  /** 900ms > 组件里的 800ms 延迟，留了 100ms 余量 */
+  const AFTER_REDIRECT = 900;
+
+  function stubLocation() {
     const replace = vi.fn();
-    vi.stubGlobal('location', { ...window.location, replace, pathname: '/works/999', search: '' });
-    vi.spyOn(api, 'fetchWork').mockRejectedValue(new Error('404'));
+    // 必须用 stubGlobal：实测 vi.spyOn(window.location, 'replace') 在本仓库的
+    // jsdom 下抛 "TypeError: Cannot redefine property: replace"。
+    vi.stubGlobal('location', { replace, pathname: '/works/999', search: '' });
+    return replace;
+  }
+
+  it('fetchWork 失败时先显示提示，800ms 后 replace 到 /works', async () => {
+    const replace = stubLocation();
+    fetchWork.mockRejectedValue(new Error('404'));
     render(<WorkDetailPage id={999} />);
 
-    await vi.waitFor(() => expect(screen.getByText(/不存在或已下架/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/不存在或已下架/)).toBeTruthy());
     expect(replace).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(800);
+    await new Promise((r) => setTimeout(r, AFTER_REDIRECT));
     expect(replace).toHaveBeenCalledWith('/works');
-    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
-  it('用 replace 而不是赋值 location.href：无效详情页不该堆进浏览器历史', async () => {
-    vi.useFakeTimers();
-    const replace = vi.fn();
-    vi.stubGlobal('location', { ...window.location, replace, pathname: '/works/999', search: '' });
-    vi.spyOn(api, 'fetchWork').mockResolvedValue(null as never);
+  it('fetchWork 返回 null 走同一条导航', async () => {
+    const replace = stubLocation();
+    fetchWork.mockResolvedValue(null as never);
     render(<WorkDetailPage id={999} />);
-    await vi.waitFor(() => expect(screen.getByText(/不存在或已下架/)).toBeTruthy());
-    await vi.advanceTimersByTimeAsync(800);
+    await waitFor(() => expect(screen.getByText(/不存在或已下架/)).toBeTruthy());
+    await new Promise((r) => setTimeout(r, AFTER_REDIRECT));
+    expect(replace).toHaveBeenCalledWith('/works');
+    vi.unstubAllGlobals();
+  });
+
+  it('用 replace 而不是赋值 location.href（无效详情页不该堆进历史）', async () => {
+    const replace = stubLocation();
+    fetchWork.mockResolvedValue(null as never);
+    render(<WorkDetailPage id={999} />);
+    await waitFor(() => expect(screen.getByText(/不存在或已下架/)).toBeTruthy());
+    await new Promise((r) => setTimeout(r, AFTER_REDIRECT));
+    // 桩上只有 replace 一个方法：组件若去赋值 location.href 会拿到 undefined 而炸，
+    // 这条断言因此同时锁住了「用 replace」这个选择
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith('/works');
-    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('拿到作品时不跳转', async () => {
+    const replace = stubLocation();
+    fetchWork.mockResolvedValue(detail({}));
+    render(<WorkDetailPage id={42} />);
+    await waitFor(() => expect(screen.getByRole('heading')).toBeTruthy());
+    await new Promise((r) => setTimeout(r, AFTER_REDIRECT));
+    expect(replace).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
 ```
 
-**注意**：既有 `WorkDetailPage.test.tsx` 的顶部需要补 `import { screen } from '@testing-library/dom'` 与 `import * as api from '@/api/works'`；若已有同名绑定，沿用既有的。若既有测试里也断言了旧的「返回作品库」按钮，**删掉那条断言**（行为已被自动导航取代）。
+**为什么用真实定时器而不是 `vi.useFakeTimers()`**：本仓库 `globals: false`，
+RTL 的 `waitFor` 走真实定时器；一旦 `useFakeTimers()`，`waitFor` 会与推进定时器
+互相等待而挂死。900ms 的真实等待在这个测试里完全可接受，换来的是不会假死。
+
+**既有断言要调整**：若原有用例断言了旧的「返回作品库」按钮
+（`getByRole('link', { name: /返回作品库/ })` 或 `getByText('返回作品库')`），
+**删掉那条断言** —— 自动导航已取代它，组件里不再有那个 `<a>`。
+
+**`detail()` 工厂**是本文件既有的辅助（既有注释写明它是为了避免字面量漏字段导致
+typecheck 失败），用它加 overrides 即可，不要另造一个。
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -3953,7 +4046,10 @@ git commit -m "feat(详情页): 展示投稿图纸参数 + 拿不到作品自动
  * 不值得为它往生产依赖里塞东西。
  */
 
-import { copyFileSync, existsSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  copyFileSync, existsSync, readdirSync, readFileSync,
+  rmSync, statSync, writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import initSqlJs from 'sql.js';
 
@@ -3983,7 +4079,7 @@ try {
 const SQL = await initSqlJs({
   locateFile: (file) => resolve(process.cwd(), 'node_modules/sql.js/dist', file),
 });
-const db = new SQL.Database(new Uint8Array(readFileSyncBuffer(DB_PATH)));
+const db = new SQL.Database(new Uint8Array(readFileSync(DB_PATH)));
 
 // 2. 清表
 let rows = 0;
@@ -4016,20 +4112,11 @@ if (existsSync(WORKS_DIR)) {
 console.log(`[reset-gallery] 已删除 ${files} 个文件，释放 ${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
 // 4. 把清空后的库写回
-const { writeFileSync, readFileSync } = await import('node:fs');
 writeFileSync(DB_PATH, Buffer.from(db.export()));
 db.close();
 
 console.log(`[reset-gallery] 完成。确认线上没问题后可以删除 ${backupPath}`);
 ```
-
-**注意**：上面第 3 段用到的 `readFileSyncBuffer` / 结尾的动态 import 都是占位写法。**改成顶部一次性 import**：
-
-```js
-import { copyFileSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-```
-
-`const db = new SQL.Database(new Uint8Array(readFileSync(DB_PATH)));`，结尾直接 `writeFileSync(DB_PATH, Buffer.from(db.export()));`。删掉那句动态 `await import('node:fs')`。
 
 - [ ] **Step 2: 加 npm 脚本**
 

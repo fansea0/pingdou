@@ -155,6 +155,7 @@ export function MobileActionBar({
     alternatives,
   );
   const onDownload = menu.current.onSelect === onExport;
+  const primaryDisabled = !canExport || exporting;
 
   return (
     <>
@@ -226,10 +227,14 @@ export function MobileActionBar({
         </button>
 
         <div className="mobile-primary-group" ref={menu.ref}>
-          <div className="mobile-split">
+          {/* 状态类挂在这一格容器上而不是主按钮上：箭头和主按钮共用同一块填充，
+              置灰 / 变绿都要一起变 —— 填充画在按钮上时箭头那半会留在橙色。 */}
+          <div
+            className={`mobile-split${exporting && onDownload ? ' is-loading' : ''}${flash === 'done' && onDownload ? ' is-done' : ''}${primaryDisabled ? ' is-disabled' : ''}`}
+          >
             <button
-              className={`primary mobile-action-button mobile-btn-primary${exporting && onDownload ? ' is-loading' : ''}${flash === 'done' && onDownload ? ' is-done' : ''}`}
-              disabled={!canExport || exporting}
+              className="primary mobile-action-button mobile-btn-primary"
+              disabled={primaryDisabled}
               onClick={menu.current.onSelect}
               /* 语音控制读的是 aria-label 而不是可见文案，切到投稿后必须跟着变，
                  否则会念「下载图片」然后真的去下载。 */
@@ -263,24 +268,24 @@ export function MobileActionBar({
               </span>
             </button>
             {alternatives && alternatives.length > 0 && (
-              <>
-                <span className="mobile-split-divider" aria-hidden />
-                <button
-                  type="button"
-                  className="mobile-caret"
-                  aria-haspopup="menu"
-                  aria-expanded={menu.open}
-                  aria-label="更多操作"
-                  disabled={!canExport || exporting}
-                  onClick={menu.toggleMenu}
-                >
-                  <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"
-                    fill="none" stroke="currentColor" strokeWidth="2.5"
-                    strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </button>
-              </>
+              /* 不画分隔竖线：竖线会把这一格切成「两个按钮」的样子，很突兀。
+                 箭头跟尺寸芯片的 ⌄ 一样直接跟在文字后面，靠 hover/展开时的
+                 半透明高光表示「这一小块自己可点」，主按钮区域照旧执行下载。 */
+              <button
+                type="button"
+                className="mobile-caret"
+                aria-haspopup="menu"
+                aria-expanded={menu.open}
+                aria-label="更多操作"
+                disabled={primaryDisabled}
+                onClick={menu.toggleMenu}
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"
+                  fill="none" stroke="currentColor" strokeWidth="2.5"
+                  strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
             )}
           </div>
 

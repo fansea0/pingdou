@@ -71,6 +71,13 @@
     box-shadow: 0 6px 14px rgba(192, 95, 63, 0.28);
   }
 
+  /* 整格（主按钮 + 箭头）作为一个按钮抬起/按下，所以分栏里的主按钮
+     自己那份 hover 位移要作废，否则只有左半边会动。 */
+  .mobile-split .mobile-btn-primary.primary:not(:disabled):hover {
+    transform: none;
+    box-shadow: none;
+  }
+
   .mobile-action-button:not(:disabled):active {
     transform: translateY(0);
   }
@@ -116,45 +123,94 @@
 
   /* === 下载 / 投稿：最右边这一个按钮的两态 ===
      底部栏只有一行，塞不下第四格。投稿因此不做成独立按钮，而是挂在下载按钮
-     上：主按钮在「下载 / 投稿」之间切换，右侧窄切换位只改状态。切换位无填充、
-     字小、灰 —— 它是「换一件事做」，给同等视觉权重就又变回两个按钮并排。 */
+     上：主按钮在「下载 / 投稿」之间切换，右侧箭头只开菜单。
+     箭头和文字不再用竖线切开 —— 和尺寸芯片一样，「⌄」直接跟在文字后面，
+     整格读起来就是一个按钮；它自己可点这件事，用 hover/展开时的高光交代。 */
   .mobile-primary-group {
     position: relative;          /* 下拉菜单的定位上下文 */
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: stretch;
-    gap: 4px;
-  }
-
-  .mobile-primary-group .mobile-btn-primary {
-    flex: 1 1 auto;
+    /* 右格比左格多拿 0.45 份：它内部是「主按钮 + 箭头」两块，等分出来的宽度
+       扣掉箭头后只剩 ~60px，「下载」「生成中…」这类文案必然被裁掉。 */
+    flex: 1.45 1 0;
     min-width: 0;
   }
 
-  /* 箭头并进下载按钮的框里，与桌面同一个契约、同一套手感。 */
+  /* 箭头并进下载按钮的框里，与桌面同一个契约：整格 accent 填充、同一组圆角，
+     中间不切、不画竖线。填充画在**这一格容器**上而不是主按钮上 —— 画在按钮上
+     时箭头那半没有填充，会漏出底栏的白底，而且置灰/生成完成变色时箭头跟不上。 */
   .mobile-split {
     display: flex;
     align-items: stretch;
     min-width: 0;
+    height: 44px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--color-accent);
+    transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
   }
 
-  .mobile-split-divider {
-    width: 1px;
-    flex: 0 0 auto;
-    background: rgba(255, 255, 255, 0.38);
+  /* 主按钮只管「点下去发生什么」，不画自己的底色和圆角。
+     选择器要压过 global.css 的 `button.primary:hover:not(:disabled)`。 */
+  .mobile-split .mobile-btn-primary.primary {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 4px 0 10px;       /* 右侧内边距让给箭头的热区 */
+    background: transparent;
+    border-radius: 0;
   }
 
+  /* 整格一起抬起，而不是只有左半边动 */
+  .mobile-split:not(.is-disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(192, 95, 63, 0.28);
+  }
+
+  .mobile-split:not(.is-disabled):active {
+    transform: translateY(0);
+  }
+
+  .mobile-split.is-disabled {
+    background: var(--color-border-strong);
+  }
+
+  .mobile-split.is-done:not(.is-disabled) {
+    background: linear-gradient(135deg, var(--color-mint), #7cc596);
+    animation: mb-export-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* 箭头的热区够宽，视觉上却只是一个跟在文字后的 ⌄ ——
+     和尺寸芯片同一个读法，只是这一小块单独可点。 */
   .mobile-caret {
     flex: 0 0 auto;
-    padding: 0 9px;
+    min-width: 40px;
+    height: 44px;
+    padding: 0 8px;
     border: 0;
-    border-radius: 0 12px 12px 0;
-    background: var(--color-accent);
-    color: #fff;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.92);
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  /* 可点性靠高光而不是靠竖线：一层薄薄的白压在同一个填充上，
+     读起来是「这一小块被按下去」，而不是「旁边多了一个控件」。 */
+  .mobile-caret:hover:not(:disabled),
+  .mobile-caret[aria-expanded='true'] {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .mobile-caret:active:not(:disabled) {
+    background: rgba(255, 255, 255, 0.32);
+  }
+
+  .mobile-caret svg {
+    transition: transform 0.2s ease;
+  }
+
+  .mobile-caret[aria-expanded='true'] svg {
+    transform: rotate(180deg);
   }
 
   .mobile-caret:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -166,16 +222,40 @@
     min-width: 100%;
   }
 
-  /* 上传与下载等宽：两格都 flex:1 1 0，宽度由「剩余空间均分」决定，
-     与各自文案长度无关 —— 否则「投稿到作品库」那种长文案会把右格撑变形。
+  /* 上传与下载都按「剩余空间」分配（flex-grow），宽度与各自文案长度无关 ——
+     否则「投稿到作品库」那种长文案会把右格撑变形。右格的 grow 是 1.45
+     （见 .mobile-primary-group），因为它还要分一块给箭头。
      尺寸芯片按内容走（flex:0 0 auto），它是可变的量不是可分的量。 */
-  .mobile-action-button,
-  .mobile-primary-group {
+  .mobile-action-button {
     flex: 1 1 0;
     min-width: 0;
   }
 
   .mobile-split { flex: 1 1 auto; }
+
+  /* 窄屏（≤360px）：芯片和三格一起收紧，先保文案完整，再谈留白。
+     箭头的点按宽度在这里让位给主按钮文案：它只是「换一件事做」的次级入口，
+     触摸目标仍保持整行 44px 高。 */
+  @media (max-width: 360px) {
+    .mobile-action-bar { gap: 6px; padding-left: 10px; padding-right: 10px; }
+
+    .mobile-action-button {
+      padding: 0 10px;
+      font-size: 12.5px;
+    }
+
+    .mobile-size-chip {
+      padding: 0 9px;
+      font-size: 12.5px;
+    }
+
+    .mobile-split .mobile-btn-primary.primary { padding: 0 2px 0 8px; }
+
+    .mobile-caret {
+      min-width: 30px;
+      padding: 0 3px;
+    }
+  }
 
   /* === Export progress / states === */
   .mobile-action-button .export-progress {
@@ -207,18 +287,14 @@
     min-width: 0;
   }
 
-  .mobile-btn-primary.is-loading .export-label {
+  /* 状态类都挂在 .mobile-split 容器上（见上面的 is-loading / is-done / is-disabled） */
+  .mobile-split.is-loading .export-label {
     animation: mb-export-pulse 1.2s ease-in-out infinite;
   }
 
   @keyframes mb-export-pulse {
     0%, 100% { opacity: 1;   }
     50%      { opacity: 0.6; }
-  }
-
-  .mobile-btn-primary.is-done:not(:disabled) {
-    background: linear-gradient(135deg, var(--color-mint), #7cc596);
-    animation: mb-export-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   @keyframes mb-export-pop {
