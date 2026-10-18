@@ -53,7 +53,7 @@ src/
 ├── palette/schema.ts        # 色板加载 + 校验
 ├── data/palette.ts          # IndexedDB 缓存
 ├── pipeline/
-│   ├── sampler.ts           # 像素采样（box-average）
+│   ├── sampler.ts           # 像素采样（box-average + 边界格不产混合色）
 │   ├── quantizer.canvas.ts  # 颜色量化（纯 JS）
 │   ├── quantizer.webgl.ts   # WebGL2 量化器（占位）
 │   ├── colorSimplifier.ts   # 自动合并低频近似色
