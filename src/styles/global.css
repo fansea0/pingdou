@@ -76,6 +76,18 @@ header h1 {
   font-weight: 700;
   margin-bottom: var(--space-1);
   letter-spacing: -0.01em;
+  /* 品牌图标与标题文字同行基线对齐；图标按 em 缩放，跟着 h1 字号走。 */
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+header h1 .brand-mark {
+  flex: none;
+  width: 1.55em;
+  height: 1.55em;
+  /* 图标本身是圆角方豆，给一点圆角和浅底，压在浅色页面上不散。 */
+  border-radius: 26%;
 }
 header .subtitle {
   color: var(--color-text-muted);

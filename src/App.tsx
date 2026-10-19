@@ -137,7 +137,17 @@ export function App() {
   return (
     <div className="app">
       <header>
-        <h1>🐰 拼豆图生成器</h1>
+        <h1>
+          <img
+            className="brand-mark"
+            src="/brand/bead-256.png"
+            width={40}
+            height={40}
+            alt=""
+            aria-hidden="true"
+          />
+          拼豆图生成器
+        </h1>
         <p className="subtitle">
           上传图片 → 一键生成你的拼豆图纸
           <span className="subtitle-palette">（MARD {palette.length} 色）</span>
