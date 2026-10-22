@@ -191,3 +191,69 @@
   font-size: var(--text-xs);
   margin-bottom: var(--space-3);
 }
+
+/* === 高级设置折叠区 === */
+.advanced-settings {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-2);
+}
+
+.advanced-settings summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  user-select: none;
+}
+
+/* 隐藏 WebKit/Safari 自带的三角标记，改用自绘箭头 */
+.advanced-settings summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-settings summary:hover {
+  color: var(--color-accent);
+}
+
+.advanced-settings-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.advanced-settings-caret {
+  transition: transform 0.15s ease;
+}
+
+.advanced-settings[open] .advanced-settings-caret {
+  transform: rotate(180deg);
+}
+
+.advanced-settings-summary {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 折叠区内第一项不该再顶上边距，后续项各自保留间距 */
+.advanced-settings-body {
+  margin-top: var(--space-3);
+}
+
+.advanced-settings-body > .segmented-picker {
+  margin-top: 0;
+}
+
+/* 显式声明收起时的隐藏：不依赖浏览器对 details 的原生 UA 隐藏，
+   跨浏览器（含 headless 测试）行为一致 */
+.advanced-settings:not([open]) .advanced-settings-body {
+  display: none;
+}

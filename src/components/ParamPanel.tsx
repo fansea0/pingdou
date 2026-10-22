@@ -1,5 +1,6 @@
 import './ParamPanel.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
+import { buildAdvancedSettingsSummary, formatAdvancedSettingsSummary } from '@/constants/advancedSettings';
 import { ColorBudgetPicker } from './ColorBudgetPicker';
 import { SampleModePicker } from './SampleModePicker';
 import type { ColorBudgetLevel, SampleMode } from '@/types';
@@ -142,6 +143,16 @@ export function ParamPanel({
   disabled,
 }: Props) {
   const removed = totalCells > 0 ? totalCells - beanCount : 0;
+  // 折叠头摘要：收起时也能看到高级里开了什么；从现有 props 推导，不触发重算
+  const advancedSummary = formatAdvancedSettingsSummary(
+    buildAdvancedSettingsSummary({
+      removeBackground,
+      simplifyColors,
+      watermark,
+      colorBudget,
+      sampleMode,
+    })
+  );
   return (
     <div className="param-panel">
       <div className="board-size-shortcuts" aria-label="快捷板子尺寸">
@@ -194,73 +205,99 @@ export function ParamPanel({
       </p>
       <p className="hint">推荐 20-100 档位（普通图案常用范围）</p>
 
-      <SampleModePicker
-        value={sampleMode}
-        onChange={onSampleModeChange}
-        disabled={disabled}
-      />
-
-      <label className="checkbox param-toggle">
-        <input
-          type="checkbox"
-          checked={removeBackground}
-          onChange={e => onRemoveBackgroundChange(e.target.checked)}
-          disabled={disabled}
-        />
-        <span>
-          自动去背景
-          <span className="param-toggle-hint"> · 适合卡通插画</span>
-        </span>
-      </label>
-
-      <label className="checkbox param-toggle">
-        <input
-          type="checkbox"
-          checked={tightCrop}
-          onChange={e => onTightCropChange(e.target.checked)}
-          disabled={disabled || !removeBackground}
-        />
-        <span>
-          紧裁边缘
-          <span className="param-toggle-hint">
-            {' '}
-            {removeBackground ? '· 裁掉主体外的空白格' : '· 需先开启去背景'}
+      <details className="advanced-settings">
+        <summary>
+          <span className="advanced-settings-title">
+            高级设置
+            <svg
+              className="advanced-settings-caret"
+              viewBox="0 0 24 24"
+              width="13"
+              height="13"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
           </span>
-        </span>
-      </label>
+          {advancedSummary && (
+            <span className="advanced-settings-summary">{advancedSummary}</span>
+          )}
+        </summary>
+        <div className="advanced-settings-body">
+          <SampleModePicker
+            value={sampleMode}
+            onChange={onSampleModeChange}
+            disabled={disabled}
+          />
 
-      <label className="checkbox param-toggle">
-        <input
-          type="checkbox"
-          checked={simplifyColors}
-          onChange={e => onSimplifyColorsChange(e.target.checked)}
-          disabled={disabled}
-        />
-        <span>
-          自动简化颜色
-          <span className="param-toggle-hint"> · 启用后每种颜色至少 10 颗</span>
-        </span>
-      </label>
+          <label className="checkbox param-toggle">
+            <input
+              type="checkbox"
+              checked={removeBackground}
+              onChange={e => onRemoveBackgroundChange(e.target.checked)}
+              disabled={disabled}
+            />
+            <span>
+              自动去背景
+              <span className="param-toggle-hint"> · 适合卡通插画</span>
+            </span>
+          </label>
 
-      {/* 水印只画在导出图上，切换它不改变图案 —— 所以这里刻意不接 disabled：
-          没有图案时也照样能改，导出时才读这个值。 */}
-      <label className="checkbox param-toggle">
-        <input
-          type="checkbox"
-          checked={watermark}
-          onChange={e => onWatermarkChange(e.target.checked)}
-        />
-        <span>
-          添加水印
-          <span className="param-toggle-hint"> · 导出图页眉右侧的拼豆.xyz 标识</span>
-        </span>
-      </label>
+          <label className="checkbox param-toggle">
+            <input
+              type="checkbox"
+              checked={tightCrop}
+              onChange={e => onTightCropChange(e.target.checked)}
+              disabled={disabled || !removeBackground}
+            />
+            <span>
+              紧裁边缘
+              <span className="param-toggle-hint">
+                {' '}
+                {removeBackground ? '· 裁掉主体外的空白格' : '· 需先开启去背景'}
+              </span>
+            </span>
+          </label>
 
-      <ColorBudgetPicker
-        value={colorBudget}
-        onChange={onColorBudgetChange}
-        disabled={disabled}
-      />
+          <label className="checkbox param-toggle">
+            <input
+              type="checkbox"
+              checked={simplifyColors}
+              onChange={e => onSimplifyColorsChange(e.target.checked)}
+              disabled={disabled}
+            />
+            <span>
+              自动简化颜色
+              <span className="param-toggle-hint"> · 启用后每种颜色至少 10 颗</span>
+            </span>
+          </label>
+
+          {/* 水印只画在导出图上，切换它不改变图案 —— 所以这里刻意不接 disabled：
+              没有图案时也照样能改，导出时才读这个值。 */}
+          <label className="checkbox param-toggle">
+            <input
+              type="checkbox"
+              checked={watermark}
+              onChange={e => onWatermarkChange(e.target.checked)}
+            />
+            <span>
+              添加水印
+              <span className="param-toggle-hint"> · 导出图页眉右侧的拼豆.xyz 标识</span>
+            </span>
+          </label>
+
+          <ColorBudgetPicker
+            value={colorBudget}
+            onChange={onColorBudgetChange}
+            disabled={disabled}
+          />
+        </div>
+      </details>
     </div>
   );
 }

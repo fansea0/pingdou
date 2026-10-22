@@ -507,4 +507,65 @@
     cursor: pointer;
     flex-shrink: 0;
   }
+
+  /* === 高级选项折叠区（sheet 内） === */
+  .mobile-advanced {
+    margin-top: var(--space-3);
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-2);
+  }
+
+  .mobile-advanced summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text);
+    user-select: none;
+  }
+
+  .mobile-advanced summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .mobile-advanced-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .mobile-advanced-caret {
+    transition: transform 0.15s ease;
+  }
+
+  .mobile-advanced[open] .mobile-advanced-caret {
+    transform: rotate(180deg);
+  }
+
+  .mobile-advanced-summary {
+    color: var(--color-text-muted);
+    font-size: 12px;
+    font-weight: 400;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-advanced-body {
+    margin-top: var(--space-3);
+  }
+
+  .mobile-advanced-body > .segmented-picker {
+    margin-top: 0;
+  }
+
+  /* 显式声明收起时的隐藏：不依赖浏览器对 details 的原生 UA 隐藏，
+     跨浏览器（含 headless 测试）行为一致 */
+  .mobile-advanced:not([open]) .mobile-advanced-body {
+    display: none;
+  }
 }

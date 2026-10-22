@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import './MobileActionBar.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
+import { buildAdvancedSettingsSummary, formatAdvancedSettingsSummary } from '@/constants/advancedSettings';
 import { ColorBudgetPicker } from './ColorBudgetPicker';
 import { SampleModePicker } from './SampleModePicker';
 import { useActionMenu, type ActionChoice } from '@/hooks/useActionMenu';
@@ -88,6 +89,16 @@ export function MobileActionBar({
   const [progress, setProgress] = useState(0);
   const rafRef = useRef<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 折叠头摘要：与桌面同一份推导，避免两处文案漂移
+  const advancedSummary = formatAdvancedSettingsSummary(
+    buildAdvancedSettingsSummary({
+      removeBackground,
+      simplifyColors,
+      watermark,
+      colorBudget,
+      sampleMode,
+    })
+  );
 
   useEffect(() => {
     if (exporting) {
@@ -384,53 +395,79 @@ export function MobileActionBar({
               <span className="mobile-grid-value">{gridSize}</span>
             </div>
 
-            <SampleModePicker
-              value={sampleMode}
-              onChange={onSampleModeChange}
-            />
+            <details className="mobile-advanced">
+              <summary>
+                <span className="mobile-advanced-title">
+                  高级选项
+                  <svg
+                    className="mobile-advanced-caret"
+                    viewBox="0 0 24 24"
+                    width="12"
+                    height="12"
+                    aria-hidden="true"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </span>
+                {advancedSummary && (
+                  <span className="mobile-advanced-summary">{advancedSummary}</span>
+                )}
+              </summary>
+              <div className="mobile-advanced-body">
+                <SampleModePicker
+                  value={sampleMode}
+                  onChange={onSampleModeChange}
+                />
 
-            <label className="mobile-toggle-row">
-              <input
-                type="checkbox"
-                checked={removeBackground}
-                onChange={e => onRemoveBackgroundChange(e.target.checked)}
-              />
-              自动去纯色背景
-            </label>
+                <label className="mobile-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={removeBackground}
+                    onChange={e => onRemoveBackgroundChange(e.target.checked)}
+                  />
+                  自动去纯色背景
+                </label>
 
-            <label className="mobile-toggle-row">
-              <input
-                type="checkbox"
-                checked={tightCrop}
-                disabled={!removeBackground}
-                onChange={e => onTightCropChange(e.target.checked)}
-              />
-              紧裁边缘 · 裁掉主体外的空白格
-            </label>
+                <label className="mobile-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={tightCrop}
+                    disabled={!removeBackground}
+                    onChange={e => onTightCropChange(e.target.checked)}
+                  />
+                  紧裁边缘 · 裁掉主体外的空白格
+                </label>
 
-            <label className="mobile-toggle-row">
-              <input
-                type="checkbox"
-                checked={simplifyColors}
-                onChange={e => onSimplifyColorsChange(e.target.checked)}
-              />
-              自动简化颜色 · 启用后每种颜色至少 10 颗
-            </label>
+                <label className="mobile-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={simplifyColors}
+                    onChange={e => onSimplifyColorsChange(e.target.checked)}
+                  />
+                  自动简化颜色 · 启用后每种颜色至少 10 颗
+                </label>
 
-            {/* 与桌面一致：水印只影响导出图，不参与重算，所以这一行不受图纸状态约束 */}
-            <label className="mobile-toggle-row">
-              <input
-                type="checkbox"
-                checked={watermark}
-                onChange={e => onWatermarkChange(e.target.checked)}
-              />
-              添加水印 · 导出图页眉右侧的拼豆.xyz 标识
-            </label>
+                {/* 与桌面一致：水印只影响导出图，不参与重算，所以这一行不受图纸状态约束 */}
+                <label className="mobile-toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={watermark}
+                    onChange={e => onWatermarkChange(e.target.checked)}
+                  />
+                  添加水印 · 导出图页眉右侧的拼豆.xyz 标识
+                </label>
 
-            <ColorBudgetPicker
-              value={colorBudget}
-              onChange={onColorBudgetChange}
-            />
+                <ColorBudgetPicker
+                  value={colorBudget}
+                  onChange={onColorBudgetChange}
+                />
+              </div>
+            </details>
           </div>
         </div>
       )}

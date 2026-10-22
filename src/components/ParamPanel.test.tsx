@@ -201,6 +201,53 @@ describe('ParamPanel', () => {
     expect(onChange).toHaveBeenCalledWith(78);
   });
 
+  it('collapses everything but size and grid into an advanced settings fold, closed by default', () => {
+    const { container } = render(<ParamPanel {...baseProps()} />);
+
+    const details = container.querySelector('details.advanced-settings') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    const summary = container.querySelector('details.advanced-settings summary')!;
+    expect(summary.textContent).toContain('高级设置');
+    // 摘要只显示已开启的项；baseProps 里只有水印开
+    expect(summary.textContent).toContain('已开：水印');
+    // 核心区不受影响
+    expect(within(container).getByRole('slider')).toBeTruthy();
+  });
+
+  it('opens the advanced fold on summary click and exposes every control', () => {
+    const { container } = render(<ParamPanel {...baseProps()} />);
+
+    fireEvent.click(container.querySelector('details.advanced-settings summary')!);
+    expect(
+      (container.querySelector('details.advanced-settings') as HTMLDetailsElement).open
+    ).toBe(true);
+
+    // 六个控件：采样模式两个 radio、四个开关、颜色预算四个 radio
+    expect(within(container).getByRole('radio', { name: '渐变色' })).toBeTruthy();
+    expect(within(container).getByRole('radio', { name: '同步相近色' })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /自动去背景/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /紧裁边缘/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /自动简化颜色/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /添加水印/ })).toBeTruthy();
+    expect(within(container).getByRole('radio', { name: '不限' })).toBeTruthy();
+    expect(within(container).getByRole('radio', { name: '20 色' })).toBeTruthy();
+  });
+
+  it('summarises every enabled advanced option in fixed order', () => {
+    const { container } = render(
+      <ParamPanel
+        {...baseProps()}
+        removeBackground
+        simplifyColors
+        colorBudget="standard"
+        sampleMode="similar"
+        watermark
+      />
+    );
+    const summary = container.querySelector('details.advanced-settings summary')!;
+    expect(summary.textContent).toContain('已开：去背景 · 简化颜色 · 水印 · 20 色 · 同步相近色');
+  });
+
   it('defaults the sample mode to the gradient one and reports a switch', () => {
     const onChange = vi.fn();
     const { container } = render(<ParamPanel {...baseProps()} onSampleModeChange={onChange} />);

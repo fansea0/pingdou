@@ -89,6 +89,50 @@ describe('MobileActionBar', () => {
     expect(onSimplifyColorsChange).toHaveBeenCalledWith(true);
   });
 
+  it('folds the advanced options inside the sheet, closed by default', () => {
+    const { container } = renderBar({ watermark: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /板子尺寸/ }));
+
+    const details = container.querySelector('details.mobile-advanced') as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    const summary = container.querySelector('details.mobile-advanced summary')!;
+    expect(summary.textContent).toContain('高级选项');
+    expect(summary.textContent).toContain('已开：水印');
+  });
+
+  it('opens the advanced fold on summary click and exposes every control', () => {
+    const { container } = renderBar();
+
+    fireEvent.click(screen.getByRole('button', { name: /板子尺寸/ }));
+    fireEvent.click(container.querySelector('details.mobile-advanced summary')!);
+    expect(
+      (container.querySelector('details.mobile-advanced') as HTMLDetailsElement).open
+    ).toBe(true);
+
+    expect(within(container).getByRole('radio', { name: '渐变色' })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: '自动去纯色背景' })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /紧裁边缘/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /自动简化颜色/ })).toBeTruthy();
+    expect(within(container).getByRole('checkbox', { name: /添加水印/ })).toBeTruthy();
+    expect(within(container).getByRole('radio', { name: '20 色' })).toBeTruthy();
+  });
+
+  it('summarises every enabled advanced option inside the sheet', () => {
+    const { container } = renderBar({
+      removeBackground: true,
+      simplifyColors: true,
+      watermark: true,
+      colorBudget: 'standard',
+      sampleMode: 'similar',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /板子尺寸/ }));
+
+    const summary = container.querySelector('details.mobile-advanced summary')!;
+    expect(summary.textContent).toContain('已开：去背景 · 简化颜色 · 水印 · 20 色 · 同步相近色');
+  });
+
   it('carries the sample mode picker in the sheet and reports a switch', () => {
     const onSampleModeChange = vi.fn();
     const { container } = renderBar({ sampleMode: 'gradient', onSampleModeChange });
