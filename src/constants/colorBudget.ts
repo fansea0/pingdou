@@ -32,7 +32,3 @@ export const COLOR_BUDGET_OPTIONS: readonly ColorBudgetOption[] = [
     hint: '色数与画质比较均衡',
   },
 ];
-
-export function findColorBudgetOption(level: ColorBudgetLevel): ColorBudgetOption {
-  return COLOR_BUDGET_OPTIONS.find(option => option.value === level) ?? COLOR_BUDGET_OPTIONS[0];
-}

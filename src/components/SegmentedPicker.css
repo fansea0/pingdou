@@ -1,9 +1,9 @@
-.budget-picker {
+.segmented-picker {
   margin-top: var(--space-3);
 }
 
 /* 与参数面板里其它小标签保持一致：小字、弱化 */
-.budget-picker-label {
+.segmented-picker-label {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
@@ -12,15 +12,16 @@
   margin-bottom: var(--space-2);
 }
 
-.budget-picker-label-hint {
+.segmented-picker-label-hint {
   font-size: var(--text-xs);
   color: var(--color-border-strong);
 }
 
-/* 凹槽 + 白色滑块：模拟实体分段拨片，比四个独立按钮更紧凑 */
-.budget-picker-track {
+/* 凹槽 + 白色滑块：模拟实体分段拨片，比几个独立按钮更紧凑 */
+.segmented-picker-track {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* 段数由组件按选项个数写入 --seg-columns */
+  grid-template-columns: repeat(var(--seg-columns, 2), 1fr);
   gap: 2px;
   padding: 3px;
   background: var(--color-surface-alt);
@@ -30,7 +31,7 @@
 
 /* 全局 `.param-panel label { display:block; margin-bottom:... }` 权重更高，
    会把这里压成块级并撑高轨道。因此组件内选择器必须带父级类名提权。 */
-.budget-picker .budget-picker-option {
+.segmented-picker .segmented-picker-option {
   position: relative;
   display: flex;
   align-items: center;
@@ -48,18 +49,18 @@
   transition: color 0.15s, background-color 0.15s;
 }
 
-.budget-picker .budget-picker-option:hover:not(.is-active):not(:has(input:disabled)) {
+.segmented-picker .segmented-picker-option:hover:not(.is-active):not(:has(input:disabled)) {
   color: var(--color-accent);
 }
 
-.budget-picker .budget-picker-option.is-active {
+.segmented-picker .segmented-picker-option.is-active {
   background: var(--color-surface);
   color: var(--color-accent);
   box-shadow: var(--shadow-sm);
 }
 
 /* 视觉上隐藏但保留可访问性与键盘焦点 */
-.budget-picker .budget-picker-option input {
+.segmented-picker .segmented-picker-option input {
   position: absolute;
   inset: 0;
   margin: 0;
@@ -68,25 +69,25 @@
   appearance: none;
 }
 
-.budget-picker .budget-picker-option:has(input:focus-visible) {
+.segmented-picker .segmented-picker-option:has(input:focus-visible) {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
 }
 
-.budget-picker .budget-picker-option:has(input:disabled) {
+.segmented-picker .segmented-picker-option:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.budget-picker-hint {
+.segmented-picker-hint {
   color: var(--color-text-muted);
   font-size: var(--text-xs);
   margin-top: var(--space-2);
 }
 
-/* 窄屏：4 段仍要放得下，数字是核心信息，不能换行 */
+/* 窄屏：段数多时仍要放得下，数字是核心信息，不能换行 */
 @media (max-width: 360px) {
-  .budget-picker .budget-picker-option {
+  .segmented-picker .segmented-picker-option {
     font-size: var(--text-xs);
   }
 }

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './MobileActionBar.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
 import { ColorBudgetPicker } from './ColorBudgetPicker';
+import { SampleModePicker } from './SampleModePicker';
 import { useActionMenu, type ActionChoice } from '@/hooks/useActionMenu';
-import type { ColorBudgetLevel } from '@/types';
+import type { ColorBudgetLevel, SampleMode } from '@/types';
 
 const GRID_PRESETS = [20, 30, 50, 75, 100, 150, 200, 300] as const;
 const LOG_MIN = Math.log(GRID_PRESETS[0]);
@@ -37,6 +38,7 @@ interface Props {
   simplifyColors: boolean;
   tightCrop: boolean;
   colorBudget: ColorBudgetLevel;
+  sampleMode: SampleMode;
   /** 导出图是否带「拼豆.xyz」水印。只影响导出，不参与图案计算 */
   watermark: boolean;
   onGridSizeChange: (n: number) => void;
@@ -44,6 +46,7 @@ interface Props {
   onSimplifyColorsChange: (enabled: boolean) => void;
   onTightCropChange: (enabled: boolean) => void;
   onColorBudgetChange: (level: ColorBudgetLevel) => void;
+  onSampleModeChange: (mode: SampleMode) => void;
   onWatermarkChange: (enabled: boolean) => void;
   onLoad: (imageData: ImageData) => void;
   onExport: () => void;
@@ -65,12 +68,14 @@ export function MobileActionBar({
   simplifyColors,
   tightCrop,
   colorBudget,
+  sampleMode,
   watermark,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
   onTightCropChange,
   onColorBudgetChange,
+  onSampleModeChange,
   onWatermarkChange,
   onLoad,
   onExport,
@@ -378,6 +383,11 @@ export function MobileActionBar({
               </div>
               <span className="mobile-grid-value">{gridSize}</span>
             </div>
+
+            <SampleModePicker
+              value={sampleMode}
+              onChange={onSampleModeChange}
+            />
 
             <label className="mobile-toggle-row">
               <input

@@ -5,6 +5,7 @@ import type {
   Palette,
   PipelineResult,
   ProcessParams,
+  SampleMode,
   UIStatus,
 } from '@/types';
 
@@ -18,6 +19,8 @@ const { exportMultiMock, initMock, processMock } = vi.hoisted(() => ({
       removeBackground: boolean,
       simplifyColors: boolean,
       tightCrop: boolean,
+      colorBudget: ColorBudgetLevel,
+      sampleMode: SampleMode,
       watermark: boolean,
     ) => Promise<{ success: number; failed: number }>
   >(),
@@ -55,9 +58,8 @@ vi.mock('@/pipeline/pipeline', () => ({
       removeBackground: boolean,
       simplifyColors: boolean,
       tightCrop: boolean,
-      // 位置占位：真实签名里 colorBudget 在 watermark 前一位，mock 不转发它，
-      // 但少了这一位 watermark 就会错位到 colorBudget 的值上
-      _colorBudget: ColorBudgetLevel,
+      colorBudget: ColorBudgetLevel,
+      sampleMode: SampleMode,
       watermark: boolean,
     ): Promise<{ success: number; failed: number }> {
       return exportMultiMock(
@@ -68,6 +70,8 @@ vi.mock('@/pipeline/pipeline', () => ({
         removeBackground,
         simplifyColors,
         tightCrop,
+        colorBudget,
+        sampleMode,
         watermark,
       );
     }
@@ -89,6 +93,7 @@ const pipelineResult: PipelineResult = {
   mask: new Uint8Array([0]),
   simplifyColors: false,
   colorBudget: 'off',
+  sampleMode: 'gradient' as const,
   colorSimplification: {
     beforeColorCount: 1,
     afterColorCount: 1,
@@ -134,6 +139,7 @@ describe('usePipeline throttled settings', () => {
         simplifyColors: true,
         colorBudget: 'off',
         tightCrop: true,
+        sampleMode: 'gradient',
       });
       result.current.reprocess({
         gridSize: 24,
@@ -141,6 +147,7 @@ describe('usePipeline throttled settings', () => {
         simplifyColors: true,
         colorBudget: 'off',
         tightCrop: true,
+        sampleMode: 'gradient',
       });
       result.current.reprocess({
         gridSize: 40,
@@ -148,6 +155,7 @@ describe('usePipeline throttled settings', () => {
         simplifyColors: false,
         colorBudget: 'off',
         tightCrop: true,
+        sampleMode: 'gradient',
       });
       result.current.reprocess({
         gridSize: 32,
@@ -155,6 +163,7 @@ describe('usePipeline throttled settings', () => {
         simplifyColors: false,
         colorBudget: 'off',
         tightCrop: true,
+        sampleMode: 'gradient',
       });
       await vi.advanceTimersByTimeAsync(200);
     });
@@ -166,14 +175,50 @@ describe('usePipeline throttled settings', () => {
       simplifyColors: false,
       colorBudget: 'off',
       tightCrop: true,
+      sampleMode: 'gradient',
       });
 
-    // 第四个参数是水印开关：hook 自己不存它，由调用点在导出那一刻传进来，
-    // 所以这里必须原样落到 Pipeline.exportMulti 的最后一位
+    // 最后一个参数是水印开关：hook 自己不存它，由调用点在导出那一刻传进来，
+    // 所以这里必须原样落到 Pipeline.exportMulti 的最后一位。
+    // 采样模式也在其中 —— 导出按每个尺寸重新采样，模式必须跟预览一致。
     await act(async () => {
       await result.current.exportMulti(24, 32, [], false);
     });
 
-    expect(exportMultiMock).toHaveBeenCalledWith(image, 24, 32, [], false, false, true, false);
+    expect(exportMultiMock).toHaveBeenCalledWith(
+      image,
+      24,
+      32,
+      [],
+      false,
+      false,
+      true,
+      'off',
+      'gradient',
+      false
+    );
+  });
+
+  it('passes the current sample mode to the export path', async () => {
+    const image = source();
+    const { result } = renderHook(() => usePipeline(palette));
+
+    await act(async () => {
+      result.current.process(image, {
+        gridSize: 32,
+        removeBackground: false,
+        simplifyColors: false,
+        colorBudget: 'off',
+        tightCrop: true,
+        sampleMode: 'similar',
+      });
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    await act(async () => {
+      await result.current.exportMulti(24, 32, [], true);
+    });
+
+    expect(exportMultiMock.mock.calls[0][8]).toBe('similar');
   });
 });

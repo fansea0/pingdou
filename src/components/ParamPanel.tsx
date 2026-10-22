@@ -1,7 +1,8 @@
 import './ParamPanel.css';
 import { BOARD_SIZE_PRESETS } from '@/constants/boardSizes';
 import { ColorBudgetPicker } from './ColorBudgetPicker';
-import type { ColorBudgetLevel } from '@/types';
+import { SampleModePicker } from './SampleModePicker';
+import type { ColorBudgetLevel, SampleMode } from '@/types';
 
 interface Props {
   gridSize: number;
@@ -13,6 +14,7 @@ interface Props {
   simplifyColors: boolean;
   tightCrop: boolean;
   colorBudget: ColorBudgetLevel;
+  sampleMode: SampleMode;
   /** 导出图是否带「拼豆.xyz」水印。只影响导出，不参与图案计算 */
   watermark: boolean;
   onGridSizeChange: (n: number) => void;
@@ -20,6 +22,7 @@ interface Props {
   onSimplifyColorsChange: (enabled: boolean) => void;
   onTightCropChange: (enabled: boolean) => void;
   onColorBudgetChange: (level: ColorBudgetLevel) => void;
+  onSampleModeChange: (mode: SampleMode) => void;
   onWatermarkChange: (enabled: boolean) => void;
   disabled?: boolean;
 }
@@ -127,12 +130,14 @@ export function ParamPanel({
   simplifyColors,
   tightCrop,
   colorBudget,
+  sampleMode,
   watermark,
   onGridSizeChange,
   onRemoveBackgroundChange,
   onSimplifyColorsChange,
   onTightCropChange,
   onColorBudgetChange,
+  onSampleModeChange,
   onWatermarkChange,
   disabled,
 }: Props) {
@@ -188,6 +193,12 @@ export function ParamPanel({
         )}
       </p>
       <p className="hint">推荐 20-100 档位（普通图案常用范围）</p>
+
+      <SampleModePicker
+        value={sampleMode}
+        onChange={onSampleModeChange}
+        disabled={disabled}
+      />
 
       <label className="checkbox param-toggle">
         <input

@@ -19,6 +19,22 @@ either via:
 - a second GPU pass that maps back through the palette look-up table, or
 - continued JS run for index + GPU run for color rendering (current hybrid).
 
+## Sampling Modes
+
+`sampler.ts` has two modes, picked by the user in the parameter panel:
+
+- `gradient` (default) — every cell is the average of its pixels. One pass, no
+  extra bookkeeping. A cell straddling two colors keeps a blend that the source
+  image never contained (the source's own gradients stay intact, though).
+- `similar` — boundary cells snap to the dominant color cluster, so no blend is
+  invented. It needs a per-cell bucket histogram (16 levels per channel, 4096
+  buckets) to find the dominant and runner-up clusters, and it only snaps when
+  the two clusters differ by ΔE76 ≥ 20 *and* the blend is at least ΔE76 12 away
+  from the dominant color.
+
+Preview and export must use the same mode: export re-samples for every output
+size, so the mode travels with the other pattern parameters.
+
 ## Performance
 
 - Sampler: O(srcW × srcH), runs once per parameter change with 200ms throttle

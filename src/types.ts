@@ -14,10 +14,21 @@ export type Palette = ReadonlyArray<PaletteEntry>;
  */
 export type ColorBudgetLevel = 'off' | 'minimal' | 'relaxed' | 'standard';
 
+/**
+ * 采样模式，决定格子撞上两种颜色时怎么办。
+ *
+ * - `gradient`：格子取该格所有像素的平均色。边界格因此会得到一个源图里并不存在的
+ *   混合色（渐变带），换来的是真实的渐变过渡被如实保留。
+ * - `similar`：边界格在判定为「两种颜色在争这一格」时吸附到主色簇均值，
+ *   不再产出混合色。描边干净的平涂图更省色号。
+ */
+export type SampleMode = 'gradient' | 'similar';
+
 export interface ProcessParams {
   readonly gridSize: number;
   readonly removeBackground: boolean;
   readonly simplifyColors: boolean;
+  readonly sampleMode: SampleMode;
   /**
    * 裁掉主体外的空白格，让图纸边界紧贴内容。
    * 仅在 removeBackground 开启（mask 有内容）时才会真的产生裁剪。
@@ -72,6 +83,7 @@ export interface PipelineResult {
   readonly mask: BackgroundMask;
   readonly simplifyColors: boolean;
   readonly colorBudget: ColorBudgetLevel;
+  readonly sampleMode: SampleMode;
   readonly colorSimplification: ColorSimplificationStats;
 }
 

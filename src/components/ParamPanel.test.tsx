@@ -15,6 +15,8 @@ const baseProps = () => ({
   onTightCropChange: () => {},
   colorBudget: 'off' as const,
   onColorBudgetChange: () => {},
+  sampleMode: 'gradient' as const,
+  onSampleModeChange: () => {},
   watermark: true,
   onWatermarkChange: () => {},
 });
@@ -197,6 +199,20 @@ describe('ParamPanel', () => {
     fireEvent.click(shortcuts.getByRole('button', { name: '78 × 78 板子' }));
 
     expect(onChange).toHaveBeenCalledWith(78);
+  });
+
+  it('defaults the sample mode to the gradient one and reports a switch', () => {
+    const onChange = vi.fn();
+    const { container } = render(<ParamPanel {...baseProps()} onSampleModeChange={onChange} />);
+
+    const gradient = within(container).getByRole('radio', { name: '渐变色' }) as HTMLInputElement;
+    const similar = within(container).getByRole('radio', { name: '同步相近色' }) as HTMLInputElement;
+    expect(gradient.checked).toBe(true);
+    expect(similar.checked).toBe(false);
+
+    fireEvent.click(similar);
+
+    expect(onChange).toHaveBeenCalledWith('similar');
   });
 
   it('highlights the selected board size and renders its estimate', () => {

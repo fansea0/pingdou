@@ -51,6 +51,7 @@ function makeResult(masked = false): PipelineResult {
     mask,
     simplifyColors: false,
     colorBudget: 'off',
+    sampleMode: 'gradient' as const,
     colorSimplification: {
       beforeColorCount: 2, afterColorCount: 2, mergedColorCount: 0,
       rareColorCountBefore: 0, rareColorCountAfter: 0,

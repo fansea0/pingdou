@@ -159,6 +159,7 @@ describe('导出路径：既不预留二维码白带，也不画码', () => {
       mask: new Uint8Array(1),
       simplifyColors: false,
       colorBudget: 'off',
+      sampleMode: 'gradient' as const,
       colorSimplification: {
         beforeColorCount: 1,
         afterColorCount: 1,

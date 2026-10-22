@@ -122,6 +122,7 @@ async function process(simplifyColors: boolean): Promise<PipelineResult> {
     source(),
     { gridSize: 11, removeBackground: false, simplifyColors, tightCrop: false,
     colorBudget: 'off',
+    sampleMode: 'gradient' as const,
   },
     () => {},
     value => {
@@ -221,6 +222,7 @@ describe('Pipeline color simplification', () => {
       backgroundMaskedSource(),
       { gridSize: 11, removeBackground: true, simplifyColors: true, tightCrop: false,
     colorBudget: 'off',
+    sampleMode: 'gradient' as const,
   },
       () => {},
       value => {

@@ -21,7 +21,12 @@ import {
   formatAssemblyHours,
 } from '@/pipeline/timeEstimate';
 import { usePageView, trackImageExport } from '@/hooks/useTracking';
-import type { ColorBudgetLevel, ColorSimplificationStats, ProcessParams } from '@/types';
+import type {
+  ColorBudgetLevel,
+  ColorSimplificationStats,
+  ProcessParams,
+  SampleMode,
+} from '@/types';
 
 const PREVIEW_CELL_PX = 24;
 const EMPTY_COLOR_SIMPLIFICATION: ColorSimplificationStats = Object.freeze({
@@ -47,6 +52,9 @@ export function App() {
   const [simplifyColors, setSimplifyColors] = useState(true);
   const [tightCrop, setTightCrop] = useState(true);
   const [colorBudget, setColorBudget] = useState<ColorBudgetLevel>('standard');
+  // 采样模式默认「渐变色」：格子取平均色，原图的渐变过渡如实保留。
+  // 想让边缘格子跟随主色、少花色号时再切到「同步相近色」。
+  const [sampleMode, setSampleMode] = useState<SampleMode>('gradient');
   // 水印只画在导出图上，不参与重算：独立 state，切它不调 reprocess
   const [watermark, setWatermark] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -60,7 +68,10 @@ export function App() {
     [result, palette]
   );
   const statisticsCurrent =
-    result !== null && result.simplifyColors === simplifyColors && result.colorBudget === colorBudget;
+    result !== null &&
+    result.simplifyColors === simplifyColors &&
+    result.colorBudget === colorBudget &&
+    result.sampleMode === sampleMode;
 
   // 所有处理入口共用同一份参数，避免各处漏改某个开关
   const currentParams = (patch: Partial<ProcessParams> = {}): ProcessParams => ({
@@ -69,6 +80,7 @@ export function App() {
     simplifyColors,
     tightCrop,
     colorBudget,
+    sampleMode,
     ...patch,
   });
 
@@ -176,6 +188,7 @@ export function App() {
             simplifyColors={simplifyColors}
             tightCrop={tightCrop}
             colorBudget={colorBudget}
+            sampleMode={sampleMode}
             watermark={watermark}
             onGridSizeChange={n => {
               setGridSize(n);
@@ -196,6 +209,10 @@ export function App() {
             onColorBudgetChange={level => {
               setColorBudget(level);
               reprocess(currentParams({ colorBudget: level }));
+            }}
+            onSampleModeChange={mode => {
+              setSampleMode(mode);
+              reprocess(currentParams({ sampleMode: mode }));
             }}
             onWatermarkChange={setWatermark}
             disabled={status === 'idle' || status === 'loading'}
@@ -273,6 +290,7 @@ export function App() {
         simplifyColors={simplifyColors}
         tightCrop={tightCrop}
         colorBudget={colorBudget}
+        sampleMode={sampleMode}
         watermark={watermark}
         onGridSizeChange={n => {
           setGridSize(n);
@@ -293,6 +311,10 @@ export function App() {
         onColorBudgetChange={level => {
           setColorBudget(level);
           reprocess(currentParams({ colorBudget: level }));
+        }}
+        onSampleModeChange={mode => {
+          setSampleMode(mode);
+          reprocess(currentParams({ sampleMode: mode }));
         }}
         onWatermarkChange={setWatermark}
         onLoad={(data) => process(data, currentParams())}

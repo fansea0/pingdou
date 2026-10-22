@@ -14,6 +14,8 @@ function renderBar(overrides: Partial<BarProps> = {}) {
     onTightCropChange: () => {},
     colorBudget: 'off' as const,
     onColorBudgetChange: () => {},
+    sampleMode: 'gradient' as const,
+    onSampleModeChange: () => {},
     watermark: true,
     onWatermarkChange: () => {},
     onGridSizeChange: () => {},
@@ -85,6 +87,21 @@ describe('MobileActionBar', () => {
     fireEvent.click(checkbox);
 
     expect(onSimplifyColorsChange).toHaveBeenCalledWith(true);
+  });
+
+  it('carries the sample mode picker in the sheet and reports a switch', () => {
+    const onSampleModeChange = vi.fn();
+    const { container } = renderBar({ sampleMode: 'gradient', onSampleModeChange });
+
+    fireEvent.click(screen.getByRole('button', { name: /板子尺寸/ }));
+
+    const gradient = within(container).getByRole('radio', { name: '渐变色' }) as HTMLInputElement;
+    const similar = within(container).getByRole('radio', { name: '同步相近色' }) as HTMLInputElement;
+    expect(gradient.checked).toBe(true);
+
+    fireEvent.click(similar);
+
+    expect(onSampleModeChange).toHaveBeenCalledWith('similar');
   });
 
   it('carries the watermark toggle in the sheet, on by default, right after the color one', () => {

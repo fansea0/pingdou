@@ -6,6 +6,7 @@ import type {
   Palette,
   ProcessParams,
   PipelineResult,
+  SampleMode,
   UIStatus,
 } from '@/types';
 
@@ -20,6 +21,7 @@ export function usePipeline(palette: Palette | null) {
     simplifyColors: false,
     tightCrop: true,
     colorBudget: 'standard' as ColorBudgetLevel,
+    sampleMode: 'gradient' as SampleMode,
   });
 
   useEffect(() => {
@@ -36,6 +38,7 @@ export function usePipeline(palette: Palette | null) {
         simplifyColors: params.simplifyColors,
         tightCrop: params.tightCrop,
         colorBudget: params.colorBudget,
+        sampleMode: params.sampleMode,
       };
       await pipelineRef.current.process(src, params, setStatus, setResult);
       setError(null);
@@ -51,6 +54,7 @@ export function usePipeline(palette: Palette | null) {
       simplifyColors: params.simplifyColors,
       tightCrop: params.tightCrop,
       colorBudget: params.colorBudget,
+      sampleMode: params.sampleMode,
     };
     return throttledProcess(src, params);
   }, [throttledProcess]);
@@ -62,6 +66,7 @@ export function usePipeline(palette: Palette | null) {
         simplifyColors: params.simplifyColors,
         tightCrop: params.tightCrop,
         colorBudget: params.colorBudget,
+        sampleMode: params.sampleMode,
       };
       throttledProcess(srcRef.current, params);
     }
@@ -87,6 +92,7 @@ export function usePipeline(palette: Palette | null) {
         settingsRef.current.simplifyColors,
         settingsRef.current.tightCrop,
         settingsRef.current.colorBudget,
+        settingsRef.current.sampleMode,
         watermark
       );
       return out;

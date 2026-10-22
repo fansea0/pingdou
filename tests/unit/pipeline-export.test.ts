@@ -65,6 +65,7 @@ function baseResult(overrides: Partial<PipelineResult> = {}): PipelineResult {
     mask: new Uint8Array(1),
     simplifyColors: false,
     colorBudget: 'off',
+    sampleMode: 'gradient' as const,
     colorSimplification: {
       beforeColorCount: 1,
       afterColorCount: 1,
@@ -111,7 +112,7 @@ describe('Pipeline.exportMulti', () => {
     // watermark = false 是最后一位：关掉水印后图照样出，只是页眉不再有品牌标识。
     // 图标是异步资源，漏调 ensureWatermarkIcon 也不会让这条变慢 —— 这里断的是
     // 「有没有调 applyWatermark」，删掉那行 if 时唯一会红的地方。
-    await pipeline.exportMulti(source(40, 20), 24, 4, [], false, false, true, 'off', false);
+    await pipeline.exportMulti(source(40, 20), 24, 4, [], false, false, true, 'off', 'gradient', false);
 
     expect(applyWatermark).not.toHaveBeenCalled();
     expect(triggerDownload).toHaveBeenCalledTimes(1);
@@ -159,6 +160,7 @@ describe('Pipeline tight crop', () => {
       paddedSubjectSource(),
       { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: true,
     colorBudget: 'off',
+    sampleMode: 'gradient' as const,
   },
       () => {},
       value => {
@@ -183,6 +185,7 @@ describe('Pipeline tight crop', () => {
       paddedSubjectSource(),
       { gridSize: 20, removeBackground: true, simplifyColors: false, tightCrop: false,
     colorBudget: 'off',
+    sampleMode: 'gradient' as const,
   },
       () => {},
       value => {
@@ -203,6 +206,7 @@ describe('Pipeline tight crop', () => {
       paddedSubjectSource(),
       { gridSize: 20, removeBackground: false, simplifyColors: false, tightCrop: true,
     colorBudget: 'off',
+    sampleMode: 'gradient' as const,
   },
       () => {},
       value => {

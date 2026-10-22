@@ -29,6 +29,7 @@ import type {
   ColorBudgetResult,
   ColorSimplificationStats,
   RGB,
+  SampleMode,
 } from '@/types';
 import type { ColorSimplificationResult } from './colorSimplifier';
 
@@ -105,7 +106,7 @@ export class Pipeline {
 
     try {
       onStatus('recomputing');
-      const sampled = sampleImage(src, params.gridSize);
+      const sampled = sampleImage(src, params.gridSize, params.sampleMode);
       if (myToken !== this.token) return;
 
       const indices = quantizeWithCanvas2D(sampled, this.palette);
@@ -196,6 +197,7 @@ export class Pipeline {
         mask: finalMask,
         simplifyColors: params.simplifyColors,
         colorBudget: params.colorBudget,
+        sampleMode: params.sampleMode,
         colorSimplification: colorSimplification.stats,
       });
     } catch (err) {
@@ -243,6 +245,9 @@ export class Pipeline {
    * tightCrop = true（默认）→ 裁掉主体外空白，图纸紧贴内容。
    * tightCrop = false       → 保留原采样网格，并居中贴到 gridSize 标准方板。
    *
+   * sampleMode              → 与预览同一个采样模式。导出按每个尺寸重新采样，
+   * 模式必须一起传下去，否则预览和导出会画出两套不同的图。
+   *
    * watermark = true（默认）→ 导出图页眉右侧带「拼豆.xyz」标识；false → 干净出图。
    * 它只是导出图上的一个开关，不参与采样 / 量化 / 去背景，所以放在最后一位、
    * 不进 ProcessParams —— 切它不需要重算图案。
@@ -256,6 +261,7 @@ export class Pipeline {
     simplifyColors: boolean,
     tightCrop = true,
     colorBudget: ColorBudgetLevel = 'off',
+    sampleMode: SampleMode = 'gradient',
     watermark = true
   ): Promise<{ success: number; failed: number }> {
     if (!this.palette) throw new Error('Pipeline not initialized');
@@ -267,7 +273,7 @@ export class Pipeline {
     for (let i = 0; i < sizes.length; i++) {
       const gridSize = sizes[i];
       try {
-        const sampled = sampleImage(src, gridSize);
+        const sampled = sampleImage(src, gridSize, sampleMode);
         const indices = quantizeWithCanvas2D(sampled, this.palette);
         const outW = sampled.width;
         const outH = sampled.height;

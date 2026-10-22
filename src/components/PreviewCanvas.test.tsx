@@ -20,6 +20,7 @@ const result: PipelineResult = {
   mask: new Uint8Array([0, 0, 0, 0]),
   simplifyColors: false,
   colorBudget: 'off',
+  sampleMode: 'gradient' as const,
   colorSimplification: {
     beforeColorCount: 2,
     afterColorCount: 2,

@@ -40,6 +40,7 @@ async function runProcess(
       simplifyColors: false,
       tightCrop: false,
       colorBudget: 'off',
+      sampleMode: 'gradient' as const,
     },
     () => {},
     r => {

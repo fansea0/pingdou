@@ -67,11 +67,61 @@ describe('sampleImage', () => {
     expect(out.height).toBe(50);
   });
 
-  describe('边界格不再产出混合色', () => {
+  it('defaults to the gradient mode', () => {
+    // 不传模式时必须与显式传 'gradient' 逐字节一致 —— 默认值写错会悄悄换算法
+    const src = makePainted(4, 4, (_x, y) => (y % 2 === 0 ? RED : BLUE));
+
+    expect(Array.from(sampleImage(src, 2).data)).toEqual(
+      Array.from(sampleImage(src, 2, 'gradient').data)
+    );
+  });
+
+  describe('渐变色模式（默认）：边界格保留混合色', () => {
+    it('两色各半时输出平均色，而不是其中之一', () => {
+      // 4x4 → 2x2，每格 2x2 上半红下半蓝
+      const src = makePainted(4, 4, (_x, y) => (y % 2 === 0 ? RED : BLUE));
+      const out = sampleImage(src, 2, 'gradient');
+
+      for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
+        expect(cellAt(out, x, y)).toEqual([125, 45, 130]);
+      }
+    });
+
+    it('次色占到 1/4 时同样是混合色', () => {
+      // 16x16 → 4x4，每格 4x4 = 16px，格 (1,1) 内 12 红 4 蓝
+      const src = gridWithCells([
+        16, 16, 16, 16,
+        16, 12, 16, 16,
+        16, 16, 16, 16,
+        16, 16, 16, 16,
+      ]);
+      const out = sampleImage(src, 4, 'gradient');
+
+      expect(cellAt(out, 1, 1)).toEqual([173, 38, 85]);
+    });
+
+    it('真实渐变整段保留', () => {
+      const src = makePainted(64, 4, (x) => {
+        const t = x / 63;
+        return [
+          Math.round(RED[0] + (BLUE[0] - RED[0]) * t),
+          Math.round(RED[1] + (BLUE[1] - RED[1]) * t),
+          Math.round(RED[2] + (BLUE[2] - RED[2]) * t),
+        ];
+      });
+      const out = sampleImage(src, 16);
+
+      const seen = new Set<string>();
+      for (let x = 0; x < out.width; x++) seen.add(cellAt(out, x, 0).join(','));
+      expect(seen.size).toBeGreaterThan(3);
+    });
+  });
+
+  describe('同步相近色模式：边界格不再产出混合色', () => {
     it('两色各半时输出其中之一，而不是平均色', () => {
       // 4x4 → 2x2，每格 2x2 上半红下半蓝
       const src = makePainted(4, 4, (_x, y) => (y % 2 === 0 ? RED : BLUE));
-      const out = sampleImage(src, 2);
+      const out = sampleImage(src, 2, 'similar');
 
       for (const [x, y] of [[0, 0], [1, 0], [0, 1], [1, 1]] as const) {
         const rgb = cellAt(out, x, y);
@@ -89,7 +139,7 @@ describe('sampleImage', () => {
         16, 16, 16, 16,
         16, 16, 16, 16,
       ]);
-      const out = sampleImage(src, 4);
+      const out = sampleImage(src, 4, 'similar');
 
       expect(cellAt(out, 1, 1)).toEqual(RED);
     });
@@ -102,7 +152,7 @@ describe('sampleImage', () => {
         16, 16, 16, 16,
         16, 16, 16, 16,
       ]);
-      const out = sampleImage(src, 4);
+      const out = sampleImage(src, 4, 'similar');
 
       const rgb = cellAt(out, 1, 1);
       // 仍按比例往蓝里混了一点，既没被吸成纯红，也没被吸成纯蓝
@@ -110,32 +160,31 @@ describe('sampleImage', () => {
       expect(rgb[0]).toBeGreaterThan(BLUE[0]);
       expect(rgb[0]).toBe(208);
     });
+
+    it('与渐变模式在同一张图上给出不同的边界格', () => {
+      const src = gridWithCells([
+        16, 16, 16, 16,
+        16, 12, 16, 16,
+        16, 16, 16, 16,
+        16, 16, 16, 16,
+      ]);
+
+      const gradient = cellAt(sampleImage(src, 4, 'gradient'), 1, 1);
+      const similar = cellAt(sampleImage(src, 4, 'similar'), 1, 1);
+
+      expect(gradient).not.toEqual(similar);
+      expect(similar).toEqual(RED);
+    });
   });
 
   describe('不该被改动的地方', () => {
-    it('真实渐变整段保留', () => {
-      const src = makePainted(64, 4, (x) => {
-        const t = x / 63;
-        return [
-          Math.round(RED[0] + (BLUE[0] - RED[0]) * t),
-          Math.round(RED[1] + (BLUE[1] - RED[1]) * t),
-          Math.round(RED[2] + (BLUE[2] - RED[2]) * t),
-        ];
-      });
-      const out = sampleImage(src, 16);
-
-      const seen = new Set<string>();
-      for (let x = 0; x < out.width; x++) seen.add(cellAt(out, x, 0).join(','));
-      expect(seen.size).toBeGreaterThan(3);
-    });
-
     it('压缩噪声切出的近色次簇不触发吸附，格子保持原来的平均值', () => {
       // 4x4 → 2x2，格 (0,0) 内 3 像素主色 + 1 像素近色（JPEG 噪声量级）。
       // 两者 ΔE 过不了 20 的边界门，因此这一格仍按 box-average 出值。
       const base: RGB = [200, 100, 50];
       const noisy: RGB = [208, 104, 53];
       const src = makePainted(4, 4, (x, y) => (x === 0 && y === 0 ? noisy : base));
-      const out = sampleImage(src, 2);
+      const out = sampleImage(src, 2, 'similar');
 
       expect(cellAt(out, 0, 0)).toEqual([202, 101, 51]);
     });

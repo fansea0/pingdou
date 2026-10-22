@@ -55,7 +55,7 @@ const RESULT: PipelineResult = {
   indices: new Uint8Array([0]),
   gridSize: 1, outW: 1, outH: 1, sourceW: 1, sourceH: 1,
   cropped: false, token: 0, mask: new Uint8Array([0]),
-  simplifyColors: false, colorBudget: 'off',
+  simplifyColors: false, colorBudget: 'off', sampleMode: 'gradient' as const,
   colorSimplification: {
     beforeColorCount: 1, afterColorCount: 1, mergedColorCount: 0,
     rareColorCountBefore: 0, rareColorCountAfter: 0,
